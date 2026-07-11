@@ -8,6 +8,9 @@
       "end_time": "10:00",
       "personality_id": "mo-main",
       "show_name": "Morning at Mo's",
+      "music_format": "Classic Rock",
+      "requests_enabled": true,
+      "notes": "Weekday morning drive.",
       "color": "#2d6a9f"
     },
     {
@@ -17,6 +20,9 @@
       "end_time": "23:00",
       "personality_id": "jazz-nights",
       "show_name": "Jazz Nights",
+      "music_format": "Jazz",
+      "requests_enabled": false,
+      "notes": "Late-night jazz block.",
       "color": "#5b3a8c"
     },
     {
@@ -26,6 +32,9 @@
       "end_time": "10:00",
       "personality_id": "mo-main",
       "show_name": "Morning at Mo's",
+      "music_format": "Classic Rock",
+      "requests_enabled": true,
+      "notes": "",
       "color": "#2d6a9f"
     }
   ]
