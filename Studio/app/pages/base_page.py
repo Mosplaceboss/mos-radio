@@ -24,11 +24,13 @@ class BasePage(ttk.Frame, ABC):
         parent: tk.Misc,
         config_manager: ConfigManager,
         on_status: Callable[[str], None],
+        on_navigate: Callable[[str], None] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(parent, style="Studio.TFrame", **kwargs)
         self.config_manager = config_manager
         self.on_status = on_status
+        self.on_navigate = on_navigate
         self._header = ttk.Frame(self, style="Studio.TFrame")
         self._header.pack(fill="x", padx=24, pady=(20, 12))
         self._title = ttk.Label(

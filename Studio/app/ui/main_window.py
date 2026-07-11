@@ -72,7 +72,10 @@ class MainWindow(ttk.Frame):
             return
 
         if self._current_page_id and self._current_page_id in self._pages:
-            self._pages[self._current_page_id].pack_forget()
+            current = self._pages[self._current_page_id]
+            if hasattr(current, "on_hide"):
+                current.on_hide()
+            current.pack_forget()
 
         if page_id not in self._pages:
             page_class = self.PAGE_CLASSES[page_id]
@@ -80,6 +83,7 @@ class MainWindow(ttk.Frame):
                 self._content,
                 config_manager=self.config_manager,
                 on_status=self.set_status,
+                on_navigate=self.show_page,
             )
 
         page = self._pages[page_id]
