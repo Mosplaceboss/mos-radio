@@ -1,0 +1,90 @@
+"""Main application window shell."""
+
+from __future__ import annotations
+
+import tkinter as tk
+from typing import Type
+
+import ttkbootstrap as ttk
+
+from app.core.config_manager import ConfigManager
+from app.pages.base_page import BasePage
+from app.pages.dashboard import DashboardPage
+from app.pages.livedj import LiveDJPage
+from app.pages.news import NewsPage
+from app.pages.personalities import PersonalitiesPage
+from app.pages.requests import RequestsPage
+from app.pages.schedule import SchedulePage
+from app.pages.settings import SettingsPage
+from app.pages.voice_library import VoiceLibraryPage
+from app.ui.banner import BannerBar
+from app.ui.navigation import NavigationPanel
+from app.ui.status_bar import StatusBar
+from app.ui.theme import StudioTheme
+
+
+class MainWindow(ttk.Frame):
+    """Hosts navigation, banner, page content, and status bar."""
+
+    PAGE_CLASSES: dict[str, Type[BasePage]] = {
+        "dashboard": DashboardPage,
+        "personalities": PersonalitiesPage,
+        "voice_library": VoiceLibraryPage,
+        "schedule": SchedulePage,
+        "requests": RequestsPage,
+        "news": NewsPage,
+        "livedj": LiveDJPage,
+        "settings": SettingsPage,
+    }
+
+    def __init__(self, master: tk.Misc, config_manager: ConfigManager) -> None:
+        super().__init__(master, style="Studio.TFrame")
+        self.config_manager = config_manager
+        self._pages: dict[str, BasePage] = {}
+        self._current_page_id: str | None = None
+
+        settings = config_manager.load("settings")
+        station_name = settings.get("station_name", "Mo's Place Radio")
+
+        self._banner = BannerBar(self, station_name=station_name)
+        self._banner.pack(fill="x", side="top")
+
+        body = ttk.Frame(self, style="Studio.TFrame")
+        body.pack(fill="both", expand=True)
+
+        self._content = ttk.Frame(body, style="Studio.TFrame")
+
+        self._navigation = NavigationPanel(body, on_navigate=self.show_page)
+        self._navigation.pack(side="left", fill="y")
+
+        self._content.pack(side="left", fill="both", expand=True)
+
+        self._status_bar = StatusBar(self)
+        self._status_bar.pack(fill="x", side="bottom")
+
+        self.show_page("dashboard")
+
+    def set_status(self, message: str) -> None:
+        self._status_bar.set_message(message)
+
+    def show_page(self, page_id: str) -> None:
+        if page_id not in self.PAGE_CLASSES:
+            return
+
+        if self._current_page_id and self._current_page_id in self._pages:
+            self._pages[self._current_page_id].pack_forget()
+
+        if page_id not in self._pages:
+            page_class = self.PAGE_CLASSES[page_id]
+            self._pages[page_id] = page_class(
+                self._content,
+                config_manager=self.config_manager,
+                on_status=self.set_status,
+            )
+
+        page = self._pages[page_id]
+        page.pack(fill="both", expand=True)
+        page.on_show()
+        self._current_page_id = page_id
+        self._navigation.select(page_id, notify=False)
+        self.set_status(f"Viewing {page.page_title}")

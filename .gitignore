@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+Studio/build/
+Studio/dist/
+Studio/*.spec
+Studio/logs/*.log
+Releases/*
+!Releases/.gitkeep

@@ -1,0 +1,36 @@
+{
+  "voices": [
+    {
+      "id": "vb-mo-primary",
+      "name": "Mo — Primary Host",
+      "provider": "voicebox",
+      "voicebox_id": "mos-place-mo-v1",
+      "description": "Warm, conversational host voice for general programming.",
+      "tags": ["host", "default"]
+    },
+    {
+      "id": "vb-jazz-evening",
+      "name": "Jazz Evening",
+      "provider": "voicebox",
+      "voicebox_id": "mos-place-jazz-v1",
+      "description": "Relaxed delivery suited for late-night jazz blocks.",
+      "tags": ["jazz", "evening"]
+    },
+    {
+      "id": "vb-news-desk",
+      "name": "News Desk",
+      "provider": "voicebox",
+      "voicebox_id": "mos-place-news-v1",
+      "description": "Clear, authoritative tone for news segments.",
+      "tags": ["news", "announcement"]
+    },
+    {
+      "id": "vb-request-greeter",
+      "name": "Request Greeter",
+      "provider": "voicebox",
+      "voicebox_id": "mos-place-requests-v1",
+      "description": "Friendly voice for listener request acknowledgements.",
+      "tags": ["requests", "listener"]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "station_name": "Mo's Place Radio",
+  "timezone": "America/New_York",
+  "log_level": "INFO",
+  "auto_save": true,
+  "theme": "darkly"
+}

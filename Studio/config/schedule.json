@@ -1,0 +1,32 @@
+{
+  "timezone": "America/New_York",
+  "slots": [
+    {
+      "id": "slot-morning",
+      "day": "monday",
+      "start_time": "06:00",
+      "end_time": "10:00",
+      "personality_id": "mo-main",
+      "show_name": "Morning at Mo's",
+      "color": "#2d6a9f"
+    },
+    {
+      "id": "slot-jazz-mon",
+      "day": "monday",
+      "start_time": "20:00",
+      "end_time": "23:00",
+      "personality_id": "jazz-nights",
+      "show_name": "Jazz Nights",
+      "color": "#5b3a8c"
+    },
+    {
+      "id": "slot-morning-tue",
+      "day": "tuesday",
+      "start_time": "06:00",
+      "end_time": "10:00",
+      "personality_id": "mo-main",
+      "show_name": "Morning at Mo's",
+      "color": "#2d6a9f"
+    }
+  ]
+}

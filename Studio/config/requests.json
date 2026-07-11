@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "cooldown_seconds": 300,
+  "per_user_limit": 3,
+  "per_user_period_hours": 24,
+  "max_queue_length": 50,
+  "duplicate_track_cooldown_minutes": 60,
+  "announce_requests": true
+}

@@ -1,0 +1,22 @@
+{
+  "personalities": [
+    {
+      "id": "mo-main",
+      "name": "Mo",
+      "description": "Primary station host and default on-air personality.",
+      "voice_id": "vb-mo-primary",
+      "active": true,
+      "created": "2026-01-01T00:00:00",
+      "updated": "2026-01-01T00:00:00"
+    },
+    {
+      "id": "jazz-nights",
+      "name": "Jazz Nights",
+      "description": "Smooth evening jazz programming voice.",
+      "voice_id": "vb-jazz-evening",
+      "active": true,
+      "created": "2026-01-01T00:00:00",
+      "updated": "2026-01-01T00:00:00"
+    }
+  ]
+}
