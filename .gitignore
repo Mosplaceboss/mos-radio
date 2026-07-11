@@ -6,5 +6,7 @@ Studio/*.spec
 Studio/logs/*.log
 Studio/assets/personalities/*
 !Studio/assets/personalities/.gitkeep
+Studio/assets/voices/*
+!Studio/assets/voices/.gitkeep
 Releases/*
 !Releases/.gitkeep

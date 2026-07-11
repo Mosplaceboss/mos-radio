@@ -2,35 +2,63 @@
   "voices": [
     {
       "id": "vb-mo-primary",
-      "name": "Mo — Primary Host",
-      "provider": "voicebox",
+      "display_name": "Mo — Primary Host",
       "voicebox_id": "mos-place-mo-v1",
-      "description": "Warm, conversational host voice for general programming.",
-      "tags": ["host", "default"]
+      "personality_id": "mo-main",
+      "voice_description": "Warm, conversational host voice for general programming.",
+      "portrait": "",
+      "active": true,
+      "default_greeting": "Good morning and welcome to Mo's Place Radio!",
+      "default_closing": "Thanks for listening to Mo's Place Radio.",
+      "personality_prompt": "Friendly station host with a relaxed, welcoming tone.",
+      "pronunciation_notes": "Pronounce Mo's as Moes, not M-O-apostrophe-S.",
+      "genre_specialties": ["Classic Rock", "Deep Cuts"],
+      "default_shift": "Morning at Mo's"
     },
     {
       "id": "vb-jazz-evening",
-      "name": "Jazz Evening",
-      "provider": "voicebox",
+      "display_name": "Jazz Evening",
       "voicebox_id": "mos-place-jazz-v1",
-      "description": "Relaxed delivery suited for late-night jazz blocks.",
-      "tags": ["jazz", "evening"]
+      "personality_id": "jazz-nights",
+      "voice_description": "Relaxed delivery suited for late-night jazz blocks.",
+      "portrait": "",
+      "active": true,
+      "default_greeting": "Ease into the evening with Jazz Nights on Mo's Place Radio.",
+      "default_closing": "Until next time, keep it smooth.",
+      "personality_prompt": "Smooth jazz evening host with unhurried pacing.",
+      "pronunciation_notes": "",
+      "genre_specialties": ["Jazz", "Smooth Jazz"],
+      "default_shift": "Jazz Nights"
     },
     {
       "id": "vb-news-desk",
-      "name": "News Desk",
-      "provider": "voicebox",
+      "display_name": "News Desk",
       "voicebox_id": "mos-place-news-v1",
-      "description": "Clear, authoritative tone for news segments.",
-      "tags": ["news", "announcement"]
+      "personality_id": "",
+      "voice_description": "Clear, authoritative tone for news segments.",
+      "portrait": "",
+      "active": true,
+      "default_greeting": "Here is the latest from Mo's Place Radio News.",
+      "default_closing": "That wraps this news update.",
+      "personality_prompt": "Professional news desk delivery with clarity and authority.",
+      "pronunciation_notes": "",
+      "genre_specialties": ["News", "Announcements"],
+      "default_shift": ""
     },
     {
       "id": "vb-request-greeter",
-      "name": "Request Greeter",
-      "provider": "voicebox",
+      "display_name": "Request Greeter",
       "voicebox_id": "mos-place-requests-v1",
-      "description": "Friendly voice for listener request acknowledgements.",
-      "tags": ["requests", "listener"]
+      "personality_id": "",
+      "voice_description": "Friendly voice for listener request acknowledgements.",
+      "portrait": "",
+      "active": true,
+      "default_greeting": "Thanks for your request here at Mo's Place Radio!",
+      "default_closing": "We'll get that on the air for you soon.",
+      "personality_prompt": "Upbeat request greeter with concise, friendly delivery.",
+      "pronunciation_notes": "",
+      "genre_specialties": ["Requests", "Listener"],
+      "default_shift": ""
     }
   ]
 }

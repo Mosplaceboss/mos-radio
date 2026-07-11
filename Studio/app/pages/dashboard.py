@@ -10,6 +10,7 @@ from ttkbootstrap.constants import *
 
 from app.core.paths import config_dir
 from app.core.requests_model import effective_cooldown_hours, normalize_requests_data, request_mode_label
+from app.core.voice_model import normalize_voice_library_data
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -96,7 +97,7 @@ class DashboardPage(BasePage):
 
     def refresh(self) -> None:
         personalities = self.config_manager.load("personalities", {"personalities": []})
-        voices = self.config_manager.load("voice_library", {"voices": []})
+        voices = normalize_voice_library_data(self.config_manager.load("voice_library", {"voices": []}))
         schedule = self.config_manager.load("schedule", {"slots": []})
         requests = normalize_requests_data(self.config_manager.load("requests", {}))
 
@@ -111,7 +112,7 @@ class DashboardPage(BasePage):
         )
 
         self._card_labels["voices"].configure(text=str(len(voice_list)))
-        voicebox_count = sum(1 for item in voice_list if item.get("provider") == "voicebox")
+        voicebox_count = sum(1 for item in voice_list if item.get("voicebox_id"))
         self._detail_labels["voices"].configure(text=f"{voicebox_count} Voicebox voice(s)")
 
         self._card_labels["schedule"].configure(text=str(len(slot_list)))

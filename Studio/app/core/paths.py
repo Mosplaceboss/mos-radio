@@ -47,6 +47,13 @@ def personality_images_dir() -> Path:
     return path
 
 
+def voice_portraits_dir() -> Path:
+    """Return the directory for voice portrait images."""
+    path = writable_assets_dir() / "voices"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def logs_dir() -> Path:
     """Return the writable logs directory."""
     path = studio_root() / "logs"
