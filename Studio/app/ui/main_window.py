@@ -61,7 +61,7 @@ class MainWindow(ttk.Frame):
 
         self._content.pack(side="left", fill="both", expand=True)
 
-        self._status_bar = StatusBar(self)
+        self._status_bar = StatusBar(self, config_manager)
         self._status_bar.pack(fill="x", side="bottom")
 
         self.show_page("dashboard")
