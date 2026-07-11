@@ -1,0 +1,28 @@
+{
+  "modules": {
+    "livedj": {
+      "enabled": true,
+      "version": "external-1.0"
+    },
+    "news": {
+      "enabled": true,
+      "version": "external-1.0"
+    },
+    "requests": {
+      "enabled": true,
+      "version": "external-1.0"
+    },
+    "casey": {
+      "enabled": false,
+      "version": "planned"
+    },
+    "sunday_morning_blues": {
+      "enabled": false,
+      "version": "planned"
+    },
+    "future_modules": {
+      "enabled": false,
+      "version": "planned"
+    }
+  }
+}

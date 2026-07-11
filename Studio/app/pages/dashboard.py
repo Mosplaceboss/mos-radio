@@ -7,13 +7,8 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from app.core.dashboard_model import (
-    HEALTH_ERROR,
-    HEALTH_OK,
-    HEALTH_WARN,
-    DashboardSnapshot,
-    build_dashboard_snapshot,
-)
+from app.core.dashboard_model import DashboardSnapshot, build_dashboard_snapshot
+from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -79,7 +74,41 @@ class DashboardPage(BasePage):
         body = ttk.Frame(self._body, style="Studio.TFrame")
         body.pack(fill="both", expand=True)
 
-        left = ttk.Frame(body, style="Studio.TFrame")
+        automation_card = ttk.Labelframe(
+            body,
+            text="Automation Health",
+            style="StudioCard.TLabelframe",
+            padding=16,
+        )
+        automation_card.pack(fill="x", pady=(0, 12))
+        automation_card.bind("<Button-1>", lambda _e: self._open_page("automation"))
+        self._automation_summary_label = ttk.Label(
+            automation_card,
+            text="—",
+            style="StudioCard.TLabel",
+            font=("Segoe UI", 18, "bold"),
+            cursor="hand2",
+        )
+        self._automation_summary_label.pack(anchor="w")
+        self._automation_summary_label.bind("<Button-1>", lambda _e: self._open_page("automation"))
+        self._automation_detail_label = ttk.Label(
+            automation_card,
+            text="Click to open Automation Manager",
+            style="StudioMuted.TLabel",
+            cursor="hand2",
+        )
+        self._automation_detail_label.pack(anchor="w", pady=(4, 0))
+        self._automation_detail_label.bind("<Button-1>", lambda _e: self._open_page("automation"))
+        ttk.Button(
+            automation_card,
+            text="Open Automation Manager",
+            bootstyle="primary",
+            command=lambda: self._open_page("automation"),
+        ).pack(anchor="w", pady=(10, 0))
+
+        columns = ttk.Frame(body, style="Studio.TFrame")
+        columns.pack(fill="both", expand=True)
+        left = ttk.Frame(columns, style="Studio.TFrame")
         left.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
         on_air = ttk.Labelframe(left, text="On Air Now", style="StudioCard.TLabelframe", padding=16)
@@ -101,7 +130,7 @@ class DashboardPage(BasePage):
         self._add_metric_row(systems, "last_requests", "Last Requests Run")
         self._add_metric_row(systems, "last_studio", "Last Studio Activity")
 
-        right = ttk.Frame(body, style="Studio.TFrame")
+        right = ttk.Frame(columns, style="Studio.TFrame")
         right.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
         health = ttk.Labelframe(right, text="Health Indicators", style="StudioCard.TLabelframe", padding=16)
@@ -196,6 +225,9 @@ class DashboardPage(BasePage):
         self._value_labels["last_news"].configure(text=snapshot.last_news_run)
         self._value_labels["last_requests"].configure(text=snapshot.last_requests_run)
         self._value_labels["last_studio"].configure(text=snapshot.last_studio_run)
+
+        self._automation_summary_label.configure(text=snapshot.automation_summary)
+        self._automation_detail_label.configure(text=snapshot.automation_detail)
 
         for child in self._health_frame.winfo_children():
             child.destroy()

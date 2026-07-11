@@ -15,6 +15,7 @@ class NavigationPanel(ttk.Frame):
 
     NAV_ITEMS = (
         ("dashboard", "Dashboard"),
+        ("automation", "Automation"),
         ("personalities", "Personalities"),
         ("voice_library", "Voice Library"),
         ("schedule", "Schedule"),

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.automation_model import build_automation_snapshot
 from app.core.paths import config_dir, logs_dir, studio_root
 from app.core.personality_model import display_label as personality_label, normalize_personalities_data
 from app.core.requests_model import normalize_requests_data, request_mode_label
@@ -17,9 +18,7 @@ from app.core.voice_model import display_label as voice_label, normalize_voice_l
 
 logger = logging.getLogger("moplace.studio.dashboard")
 
-HEALTH_OK = "ok"
-HEALTH_WARN = "warn"
-HEALTH_ERROR = "error"
+from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 
 
 @dataclass
@@ -57,6 +56,8 @@ class DashboardSnapshot:
     last_news_run: str = "Not monitored"
     last_requests_run: str = "Not monitored"
     last_studio_run: str = "—"
+    automation_summary: str = "—"
+    automation_detail: str = "—"
     health_indicators: list[HealthIndicator] = field(default_factory=list)
     activity_log: list[str] = field(default_factory=list)
 
@@ -241,6 +242,8 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
     on_air = current_event.personality if current_slot else "Off air / no scheduled block"
     music_format = current_event.music_format if current_slot else "—"
 
+    automation = build_automation_snapshot(config_manager)
+
     return DashboardSnapshot(
         clock=clock,
         clock_date=clock_date,
@@ -257,6 +260,11 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
         last_news_run=_last_log_timestamp(studio_root().parent / "Automation" / "News" / "studio.log"),
         last_requests_run=_last_log_timestamp(studio_root().parent / "Automation" / "Requests" / "studio.log"),
         last_studio_run=_last_log_timestamp(logs_dir() / "studio.log"),
+        automation_summary=automation.summary,
+        automation_detail=(
+            f"{automation.healthy_count} healthy · {automation.warning_count} warning(s) · "
+            f"{automation.stopped_count} stopped"
+        ),
         health_indicators=health,
         activity_log=_recent_activity(),
     )

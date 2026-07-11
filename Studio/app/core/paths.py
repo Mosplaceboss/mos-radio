@@ -61,6 +61,18 @@ def logs_dir() -> Path:
     return path
 
 
+def automation_root() -> Path:
+    """Return the external Automation engines directory."""
+    return studio_root().parent / "Automation"
+
+
+def automation_logs_dir() -> Path:
+    """Return Studio-side automation monitoring logs."""
+    path = logs_dir() / "automation"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def ensure_default_configs() -> None:
     """Copy bundled default JSON configs on first run of a frozen build."""
     bundled = resource_root() / "config"

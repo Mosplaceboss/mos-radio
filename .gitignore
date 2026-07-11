@@ -4,6 +4,8 @@ Studio/build/
 Studio/dist/
 Studio/*.spec
 Studio/logs/*.log
+Studio/logs/automation/*
+!Studio/logs/automation/.gitkeep
 Studio/assets/personalities/*
 !Studio/assets/personalities/.gitkeep
 Studio/assets/voices/*
