@@ -1,9 +1,16 @@
 {
+  "request_mode": "by_schedule",
   "enabled": true,
-  "cooldown_seconds": 300,
-  "per_user_limit": 3,
-  "per_user_period_hours": 24,
-  "max_queue_length": 50,
-  "duplicate_track_cooldown_minutes": 60,
-  "announce_requests": true
+  "requests_per_listener": 3,
+  "cooldown_preset": "2",
+  "cooldown_custom_hours": 2,
+  "cooldown_hours": 2,
+  "opening_time": "06:00",
+  "closing_time": "23:00",
+  "max_active_queue": 50,
+  "allowed_formats": ["Classic Rock", "Deep Cuts", "Jazz", "Smooth Jazz"],
+  "disable_during_specialty_shows": true,
+  "intro_announcement_enabled": true,
+  "song_not_found_email": "requests@mosplaceradio.com",
+  "limit_reached_message": "You've reached your request limit. Please try again later."
 }

@@ -9,6 +9,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
 from app.core.paths import config_dir
+from app.core.requests_model import effective_cooldown_hours, normalize_requests_data, request_mode_label
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -97,7 +98,7 @@ class DashboardPage(BasePage):
         personalities = self.config_manager.load("personalities", {"personalities": []})
         voices = self.config_manager.load("voice_library", {"voices": []})
         schedule = self.config_manager.load("schedule", {"slots": []})
-        requests = self.config_manager.load("requests", {})
+        requests = normalize_requests_data(self.config_manager.load("requests", {}))
 
         personality_list = personalities.get("personalities", [])
         voice_list = voices.get("voices", [])
@@ -119,11 +120,11 @@ class DashboardPage(BasePage):
             text=f"Scheduled on {len(days)} day(s)" if days else "No schedule slots yet"
         )
 
-        enabled = "Enabled" if requests.get("enabled", True) else "Disabled"
-        cooldown = requests.get("cooldown_seconds", 0)
-        self._card_labels["requests"].configure(text=enabled)
+        mode_label = request_mode_label(requests.get("request_mode", "by_schedule"))
+        cooldown_hours = effective_cooldown_hours(requests)
+        self._card_labels["requests"].configure(text=mode_label)
         self._detail_labels["requests"].configure(
-            text=f"Cooldown: {cooldown // 60} min · Limit: {requests.get('per_user_limit', 0)}/user"
+            text=f"Cooldown: {cooldown_hours} hr · Limit: {requests.get('requests_per_listener', 0)}/user"
         )
 
         for child in self._health_list.winfo_children():
