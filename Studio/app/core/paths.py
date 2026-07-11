@@ -33,6 +33,20 @@ def assets_dir() -> Path:
     return resource_root() / "assets"
 
 
+def writable_assets_dir() -> Path:
+    """Return the writable assets directory beside the Studio root."""
+    path = studio_root() / "assets"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def personality_images_dir() -> Path:
+    """Return the directory for personality profile images."""
+    path = writable_assets_dir() / "personalities"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def logs_dir() -> Path:
     """Return the writable logs directory."""
     path = studio_root() / "logs"

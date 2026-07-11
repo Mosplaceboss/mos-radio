@@ -188,7 +188,10 @@ class SchedulePage(BasePage):
 
     def _personality_names(self) -> dict[str, str]:
         personalities = self.config_manager.load("personalities", {"personalities": []})
-        return {item["id"]: item.get("name", item["id"]) for item in personalities.get("personalities", [])}
+        return {
+            item["id"]: item.get("display_name") or item.get("name", item["id"])
+            for item in personalities.get("personalities", [])
+        }
 
     def _open_slot_editor(self, slot: dict | None = None) -> dict | None:
         dialog = ttk.Toplevel(self)
