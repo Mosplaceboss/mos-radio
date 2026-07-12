@@ -25,7 +25,7 @@ FIRST_BUILD_MS = 500
 LOAD_WAIT_S = 5.0
 STATUS_CALL_LIMIT = 25
 CRUD_ROUNDS = 10
-BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation"})
+BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager"})
 
 SKIP_BUTTON_TEXT = frozenset(
     {
@@ -47,6 +47,12 @@ SKIP_BUTTON_TEXT = frozenset(
         "Test Run",
         "Upload Picture",
         "Upload Portrait",
+        "Refresh Now",
+        "Station Information",
+        "Back to Station Manager",
+        "Save Station Information",
+        "Upload Logo",
+        "Remove Logo",
         "Validate All Paths",
         "Save All Paths",
         "Browse",
@@ -175,7 +181,10 @@ def test_page_button_commands() -> None:
             window.show_page(page_id)
             root.update_idletasks()
             page = window._pages[page_id]
-            _wait_for_idle(root, lambda p=page: _page_idle(p))
+            if page_id in BACKGROUND_REFRESH_PAGES:
+                _pump_events(root, 2.0)
+            else:
+                _wait_for_idle(root, lambda p=page: _page_idle(p))
 
             button_specs: list[tuple[str, object]] = []
             for button in _collect_buttons(page):

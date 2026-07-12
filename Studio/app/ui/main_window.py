@@ -23,6 +23,8 @@ from app.pages.reports import ReportsPage
 from app.pages.requests import RequestsPage
 from app.pages.schedule import SchedulePage
 from app.pages.settings import SettingsPage
+from app.pages.station_information import StationInformationPage
+from app.pages.station_manager import StationManagerPage
 from app.pages.voice_library import VoiceLibraryPage
 from app.ui.banner import BannerBar
 from app.ui.navigation import NavigationPanel
@@ -34,6 +36,7 @@ class MainWindow(ttk.Frame):
     """Hosts navigation, banner, page content, and status bar."""
 
     PAGE_CLASSES: dict[str, Type[BasePage]] = {
+        "station_manager": StationManagerPage,
         "dashboard": DashboardPage,
         "programming": ProgrammingPage,
         "personalities": PersonalitiesPage,
@@ -49,6 +52,7 @@ class MainWindow(ttk.Frame):
         "advanced": AdvancedPage,
         "connection": ConnectionSetupPage,
         "livedj": LiveDJPage,
+        "station_information": StationInformationPage,
     }
 
     def __init__(self, master: tk.Misc, config_manager: ConfigManager) -> None:
@@ -76,7 +80,7 @@ class MainWindow(ttk.Frame):
         self._status_bar = StatusBar(self, config_manager)
         self._status_bar.pack(fill="x", side="bottom")
 
-        self.show_page("dashboard")
+        self.show_page("station_manager")
 
     def set_status(self, message: str) -> None:
         self._status_bar.set_message(message)

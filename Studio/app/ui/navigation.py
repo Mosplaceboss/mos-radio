@@ -14,6 +14,7 @@ class NavigationPanel(ttk.Frame):
     """Vertical navigation with page selection callbacks."""
 
     NAV_ITEMS = (
+        ("station_manager", "Station Manager"),
         ("dashboard", "Dashboard"),
         ("programming", "Programming"),
         ("personalities", "Personalities"),
@@ -30,7 +31,7 @@ class NavigationPanel(ttk.Frame):
     )
 
     NAV_SECTIONS = (
-        ("", ("dashboard",)),
+        ("", ("station_manager", "dashboard")),
         ("On Air", ("programming", "personalities", "voice_library", "schedule", "requests")),
         ("Station", ("advertising", "news")),
         ("Operations", ("automation", "reports")),
@@ -40,6 +41,7 @@ class NavigationPanel(ttk.Frame):
     OFF_NAV_PARENTS = {
         "connection": "advanced",
         "livedj": "advanced",
+        "station_information": "station_manager",
     }
 
     def __init__(self, parent: tk.Misc, on_navigate: Callable[[str], None]) -> None:
@@ -47,7 +49,7 @@ class NavigationPanel(ttk.Frame):
         self.pack_propagate(False)
         self._on_navigate = on_navigate
         self._buttons: dict[str, ttk.Button] = {}
-        self._active_id = "dashboard"
+        self._active_id = "station_manager"
 
         header = ttk.Label(
             self,
