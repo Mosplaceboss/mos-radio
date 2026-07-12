@@ -68,13 +68,7 @@ def get_thumbnail(path: Path) -> Image.Image | None:
         cached = _cache.get(key)
         if cached is not None:
             return cached.copy()
-
-    ok, _error = warm_thumbnail(path)
-    if not ok:
-        return None
-    with _lock:
-        cached = _cache.get(key)
-        return cached.copy() if cached is not None else None
+    return None
 
 
 def invalidate_path(path: Path) -> None:

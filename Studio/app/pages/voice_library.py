@@ -51,11 +51,14 @@ class VoiceLibraryPage(BasePage):
         self._entry_widgets: list[ttk.Entry] = []
         self._load_generation = 0
         self._load_in_progress = False
+        self._suppress_tree_events = False
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
         self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
         self._loading_label.pack(side="left", padx=(0, 12))
+        self._error_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel", wraplength=520)
+        self._error_label.pack(side="left", fill="x", expand=True)
         ttk.Button(toolbar, text="Add Voice", bootstyle="success", command=self._add_voice).pack(side="left")
         ttk.Button(toolbar, text="Delete Voice", bootstyle="danger", command=self._delete_voice).pack(
             side="left", padx=8
@@ -199,6 +202,7 @@ class VoiceLibraryPage(BasePage):
         generation = self._load_generation
         self._load_in_progress = True
         self._show_loading(True)
+        self._show_error("")
         self._set_form_enabled(False)
 
         personalities_path = self.config_manager.path_for("personalities")
@@ -211,7 +215,14 @@ class VoiceLibraryPage(BasePage):
             if generation != self._load_generation:
                 return
             self._load_in_progress = False
-            self._apply_loaded_data(result)
+            try:
+                self._apply_loaded_data(result)
+            except Exception as exc:
+                self._show_loading(False)
+                self._show_error(f"Voice Library could not display voices: {exc}")
+                self._set_form_enabled(False)
+                self.set_status("Voice Library display failed")
+                return
             self._show_loading(False)
 
         def failed(error: Exception) -> None:
@@ -221,15 +232,23 @@ class VoiceLibraryPage(BasePage):
             self._show_loading(False)
             self._data = {"voices": []}
             self._personalities = []
-            self._refresh_tree()
+            self._selected_id = None
+            self._refresh_tree(restore_selection=False)
             self._clear_form()
             self._set_form_enabled(False)
-            self.set_status(f"Voice Library load failed: {error}")
+            self._show_error(f"Voice Library could not load: {error}")
+            self.set_status("Voice Library load failed")
 
         run_in_background(self, work, complete, on_error=failed)
 
     def _show_loading(self, active: bool) -> None:
         self._loading_label.configure(text="Loading voices…" if active else "")
+
+    def _show_error(self, message: str) -> None:
+        if message:
+            self._error_label.configure(text=message, bootstyle="danger")
+        else:
+            self._error_label.configure(text="", bootstyle="")
 
     def _apply_loaded_data(self, result: VoiceLibraryLoadResult) -> None:
         self._personalities = result.personalities
@@ -239,26 +258,39 @@ class VoiceLibraryPage(BasePage):
         }
         self.config_manager._cache["voice_library"] = result.voices_data
         self._update_personality_combo_values()
-        self._refresh_tree()
+        self._refresh_tree(restore_selection=False)
 
         if result.load_errors:
+            self._show_error("; ".join(result.load_errors))
             self.set_status("; ".join(result.load_errors))
         elif result.portrait_errors:
-            self.set_status("Voice library loaded with some portrait warnings")
+            self._show_error("Some portraits could not be loaded.")
+            self.set_status("Voice library loaded with portrait warnings")
         else:
+            self._show_error("")
             self.set_status(
                 f"Voice library loaded ({len(self._data.get('voices', []))} voices)"
             )
 
-        if self._data.get("voices"):
-            first_id = self._data["voices"][0]["id"]
-            self._tree.selection_set(first_id)
-            self._tree.focus(first_id)
-            self._load_voice(first_id)
-        else:
+        voices = self._data.get("voices", [])
+        if not voices:
             self._selected_id = None
             self._clear_form()
             self._set_form_enabled(False)
+            return
+
+        first_id = voices[0]["id"]
+        self._select_voice(first_id)
+
+    def _select_voice(self, voice_id: str) -> None:
+        self._suppress_tree_events = True
+        try:
+            if self._tree.exists(voice_id):
+                self._tree.selection_set(voice_id)
+                self._tree.focus(voice_id)
+        finally:
+            self._suppress_tree_events = False
+        self._load_voice(voice_id)
 
     def _personality_options(self) -> list[tuple[str, str]]:
         options = [("", "Unassigned")]
@@ -343,29 +375,37 @@ class VoiceLibraryPage(BasePage):
                 return voice
         return None
 
-    def _refresh_tree(self) -> None:
-        selected = self._selected_id
-        self._tree.delete(*self._tree.get_children())
-        for voice in self._data.get("voices", []):
-            self._tree.insert(
-                "",
-                "end",
-                iid=voice["id"],
-                values=(
-                    display_label(voice),
-                    voice.get("voicebox_id", ""),
-                    "Yes" if voice.get("active", True) else "No",
-                ),
-            )
-        if selected and self._tree.exists(selected):
-            self._tree.selection_set(selected)
-            self._tree.focus(selected)
+    def _refresh_tree(self, *, restore_selection: bool = True) -> None:
+        selected = self._selected_id if restore_selection else None
+        self._suppress_tree_events = True
+        try:
+            self._tree.delete(*self._tree.get_children())
+            for voice in self._data.get("voices", []):
+                self._tree.insert(
+                    "",
+                    "end",
+                    iid=voice["id"],
+                    values=(
+                        display_label(voice),
+                        voice.get("voicebox_id", ""),
+                        "Yes" if voice.get("active", True) else "No",
+                    ),
+                )
+            if selected and self._tree.exists(selected):
+                current = self._tree.selection()
+                if not current or current[0] != selected:
+                    self._tree.selection_set(selected)
+                self._tree.focus(selected)
+        finally:
+            self._suppress_tree_events = False
 
     def _on_tree_select(self, _event=None) -> None:
-        if self._loading_form:
+        if self._suppress_tree_events or self._loading_form:
             return
         selection = self._tree.selection()
         if not selection:
+            return
+        if selection[0] == self._selected_id:
             return
         self._apply_form_to_selected()
         self._load_voice(selection[0])
@@ -480,9 +520,7 @@ class VoiceLibraryPage(BasePage):
         self._data.setdefault("voices", []).append(voice)
         self.config_manager.save("voice_library", self._data)
         self._refresh_tree()
-        self._tree.selection_set(voice["id"])
-        self._tree.focus(voice["id"])
-        self._load_voice(voice["id"])
+        self._select_voice(voice["id"])
         self.set_status("Added new voice")
 
     def _delete_voice(self) -> None:
@@ -503,9 +541,7 @@ class VoiceLibraryPage(BasePage):
         self.config_manager.save("voice_library", self._data)
         self._refresh_tree()
         if self._data["voices"]:
-            next_id = self._data["voices"][0]["id"]
-            self._tree.selection_set(next_id)
-            self._load_voice(next_id)
+            self._select_voice(self._data["voices"][0]["id"])
         else:
             self._clear_form()
             self._set_form_enabled(False)

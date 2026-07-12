@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -45,18 +44,21 @@ def read_json_with_timeout(
 ) -> tuple[dict[str, Any], str | None]:
     if not path.exists():
         return default, None
+
+    started = time.perf_counter()
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_read_json_file, path, default)
-            return future.result(timeout=timeout), None
-    except FuturesTimeoutError:
-        return default, f"Timed out reading {path.name} after {timeout:.0f}s"
+        data = _read_json_file(path, default)
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("Failed to read %s: %s", path, exc)
         return default, f"Could not read {path.name}: {exc}"
     except Exception as exc:
         logger.warning("Unexpected error reading %s: %s", path, exc)
         return default, f"Could not read {path.name}: {exc}"
+
+    elapsed = time.perf_counter() - started
+    if elapsed > timeout:
+        return default, f"Timed out reading {path.name} after {timeout:.0f}s"
+    return data, None
 
 
 def warm_portraits(
@@ -120,10 +122,9 @@ def load_voice_library_page_data(
 
     result.elapsed_ms = (time.perf_counter() - started) * 1000
     logger.info(
-        "Voice Library load finished in %.0f ms (%d voices, %d portraits cached, %d errors)",
+        "Voice Library load finished in %.0f ms (%d voices, %d errors)",
         result.elapsed_ms,
         len(result.voices_data.get("voices", [])),
-        len(result.voices_data.get("voices", [])) - len(result.portrait_errors),
         len(result.load_errors) + len(result.portrait_errors),
     )
     return result
