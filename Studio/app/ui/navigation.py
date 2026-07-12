@@ -17,6 +17,7 @@ class NavigationPanel(ttk.Frame):
         ("station_manager", "Station Manager"),
         ("dashboard", "Dashboard"),
         ("programming", "Programming"),
+        ("music_manager", "Music"),
         ("personalities", "Personalities"),
         ("voice_library", "Voice Library"),
         ("schedule", "Schedule"),
@@ -32,7 +33,7 @@ class NavigationPanel(ttk.Frame):
 
     NAV_SECTIONS = (
         ("", ("station_manager", "dashboard")),
-        ("On Air", ("programming", "personalities", "voice_library", "schedule", "requests")),
+        ("On Air", ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests")),
         ("Station", ("advertising", "news")),
         ("Operations", ("automation", "reports")),
         ("", ("settings", "platform_manager", "advanced")),

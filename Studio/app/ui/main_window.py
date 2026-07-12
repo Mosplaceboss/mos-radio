@@ -15,6 +15,7 @@ from app.pages.automation import AutomationPage
 from app.pages.connection import ConnectionSetupPage
 from app.pages.dashboard import DashboardPage
 from app.pages.livedj import LiveDJPage
+from app.pages.music_manager import MusicManagerPage
 from app.pages.news import NewsPage
 from app.pages.personalities import PersonalitiesPage
 from app.pages.platform_manager import PlatformManagerPage
@@ -39,6 +40,7 @@ class MainWindow(ttk.Frame):
         "station_manager": StationManagerPage,
         "dashboard": DashboardPage,
         "programming": ProgrammingPage,
+        "music_manager": MusicManagerPage,
         "personalities": PersonalitiesPage,
         "voice_library": VoiceLibraryPage,
         "schedule": SchedulePage,

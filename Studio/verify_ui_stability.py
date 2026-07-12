@@ -63,6 +63,20 @@ SKIP_BUTTON_TEXT = frozenset(
         "Duplicate Event",
         "Disable Event",
         "Save Assignment",
+        "Save Music Data",
+        "Scan Library",
+        "Apply Format Changes",
+        "Add Format",
+        "Create Playlist",
+        "Duplicate Playlist",
+        "Archive Playlist",
+        "Delete Playlist",
+        "Apply Playlist Changes",
+        "Apply Category Changes",
+        "Save Resources",
+        "Save Settings",
+        "Use Platform Default",
+        "Run Report",
         "Upload Logo",
         "Remove Logo",
         "Validate All Paths",
@@ -122,6 +136,8 @@ def _page_idle(page) -> bool:
     if getattr(page, "_load_in_progress", False):
         return False
     if getattr(page, "_refresh_in_progress", False):
+        return False
+    if getattr(page, "_scan_in_progress", False):
         return False
     if getattr(page, "_busy", False):
         return False
