@@ -17,4 +17,8 @@ Open `Studio` and double-click `Launch_Studio.bat`.
 ## Build EXE
 Double-click `Tools\Build_Studio_EXE.bat`.
 
+## Inventory
+Mo's Place Inventory is a separate read-only utility in `Inventory/`.
+Launch with `Inventory\Launch_Inventory.bat` or build with `Tools\Build_Inventory_EXE.bat`.
+
 This build does not modify the live station.

@@ -20,3 +20,10 @@ Studio/assets/voices/*
 !Studio/assets/voices/.gitkeep
 Releases/*
 !Releases/.gitkeep
+Inventory/build/
+Inventory/dist/
+Inventory/*.spec
+Inventory/InventoryOutput/**
+!Inventory/InventoryOutput/.gitkeep
+MoPlaceStudio_Production/
+MoPlaceStudio_Production.zip
