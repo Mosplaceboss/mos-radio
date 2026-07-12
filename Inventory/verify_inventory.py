@@ -12,79 +12,110 @@ sys.path.insert(0, str(INVENTORY_ROOT))
 from app.core.compare import find_duplicate_files
 from app.core.file_scanner import FileInventoryScanner
 from app.core.models import FileRecord, ScanError
-from app.core.recommendations import build_recommendations
 from app.core.reports import write_checkpoint, write_reports
 from app.core.scan_engine import ScanEngine
 
 
 def test_settings_roundtrip() -> None:
     from app.core.settings_store import (
-        DEFAULT_OFFICE_PC,
+        DEFAULT_OFFICE_FOLDERS,
         DEFAULT_OUTPUT_FOLDER,
-        DEFAULT_RADIO_PC,
-        OFFICE_PLATFORM_PHYSICAL,
         browse_initial_dir,
         current_machine_name,
+        default_office_folders,
         load_settings,
         machine_defaults,
         save_settings,
     )
 
     defaults = machine_defaults()
-    if defaults["office_pc_path"] != DEFAULT_OFFICE_PC:
-        raise RuntimeError("Office PC default should be Office")
-    if defaults["radio_pc_path"] != DEFAULT_RADIO_PC:
-        raise RuntimeError("Radio PC default should be MosPlaceRadio")
-    if defaults["platform_folder"] != OFFICE_PLATFORM_PHYSICAL:
-        raise RuntimeError("Platform default should be D:\\MosPlaceRadioPlatform")
+    if defaults["radio_pc_folders"]:
+        raise RuntimeError("Radio PC folder list should start empty")
     if defaults["output_folder"] != DEFAULT_OUTPUT_FOLDER:
         raise RuntimeError("Output default should be the Documentation\\InventoryReports folder")
+    if default_office_folders() != list(DEFAULT_OFFICE_FOLDERS):
+        raise RuntimeError("Office defaults should include MoPlaceStudio, MosPlaceRadioPlatform, and MosNews")
 
     machine = current_machine_name()
     save_settings(
         {
-            "office_pc_path": DEFAULT_OFFICE_PC,
-            "radio_pc_path": DEFAULT_RADIO_PC,
-            "platform_folder": OFFICE_PLATFORM_PHYSICAL,
+            "office_pc_folders": [str(INVENTORY_ROOT)],
+            "radio_pc_folders": [],
             "output_folder": DEFAULT_OUTPUT_FOLDER,
         }
     )
     loaded = load_settings()
-    if loaded["platform_folder"] != OFFICE_PLATFORM_PHYSICAL:
-        raise RuntimeError("Office PC platform path was not saved correctly")
     if loaded["output_folder"] != DEFAULT_OUTPUT_FOLDER:
         raise RuntimeError("Office PC output path was not saved correctly")
+    if loaded["radio_pc_folders"]:
+        raise RuntimeError("Radio folder list should remain empty unless user adds folders")
     store_path = INVENTORY_ROOT / "inventory_settings.json"
     if store_path.exists():
         text = store_path.read_text(encoding="utf-8")
         if machine not in text:
             raise RuntimeError("Settings were not stored under the current machine profile")
 
-    if not browse_initial_dir("platform_folder"):
-        raise RuntimeError("Browse initial directory should not be empty")
-    if browse_initial_dir("radio_pc_path") != r"\\":
+    if browse_initial_dir("radio_pc_folders") != r"\\":
         raise RuntimeError("Radio PC browse should start at the network root when unset")
 
 
-def test_resolve_local_office() -> None:
-    from app.core.paths_util import is_computer_name, resolve_computer_root
+def test_legacy_settings_migration() -> None:
+    from app.core.settings_store import _migrate_legacy_settings, sanitize_folder_list
 
-    if not is_computer_name("Office"):
-        raise RuntimeError("Office should be treated as a computer name")
-    label, roots, _errors = resolve_computer_root("Office")
-    if label != "Office":
-        raise RuntimeError("Office label was not preserved")
-    if not roots:
-        raise RuntimeError("Local Office scan should resolve at least one root")
+    migrated = _migrate_legacy_settings(
+        {
+            "office_pc_path": r"\\MosPlaceRadio\C$",
+            "radio_pc_path": r"\\MosPlaceRadio\D$",
+            "platform_folder": r"D:\MosPlaceRadioPlatform",
+            "output_folder": r"D:\MosPlaceRadioPlatform\Documentation\InventoryReports",
+        }
+    )
+    office = sanitize_folder_list(migrated["office_pc_folders"])
+    radio = sanitize_folder_list(migrated["radio_pc_folders"])
+    if any("C$" in path or "D$" in path for path in office + radio):
+        raise RuntimeError("Legacy admin shares should be removed during migration")
+    if r"D:\MosPlaceRadioPlatform" not in office:
+        raise RuntimeError("Legacy platform folder should migrate into office folders")
+
+
+def test_admin_share_rejected() -> None:
+    from app.core.path_validation import validate_scan_path
+    from app.core.paths_util import is_admin_share, resolve_scan_folder, sanitize_folder_path
+
+    if not is_admin_share(r"\\MosPlaceRadio\C$"):
+        raise RuntimeError("C$ admin share should be detected")
+    if sanitize_folder_path(r"\\MosPlaceRadio\D$") is not None:
+        raise RuntimeError("D$ admin share should be sanitized away")
+    ok, message, _warning = validate_scan_path(r"\\MosPlaceRadio\D$", label="Radio PC folder")
+    if ok:
+        raise RuntimeError("Admin share should be rejected during validation")
+
+    _label, roots, errors = resolve_scan_folder(r"\\MosPlaceRadio\C$", label="Radio")
+    if roots:
+        raise RuntimeError("Admin share should not resolve to scan roots")
+    if not errors:
+        raise RuntimeError("Admin share resolution should record an error")
+
+
+def test_inaccessible_folder_continues() -> None:
+    from app.core.paths_util import resolve_scan_folder
+
+    _label, roots, errors = resolve_scan_folder(r"\\MosPlaceRadio\MissingShare", label="Radio")
+    if roots:
+        raise RuntimeError("Missing share should not resolve to scan roots")
+    if not errors:
+        raise RuntimeError("Missing share should record a resolution error")
 
 
 def test_scan_error_recording() -> None:
     scanner = FileInventoryScanner()
     errors: list[ScanError] = []
     scanner._record_error = errors.append  # type: ignore[method-assign]
-    drives, folders, files, _components = scanner.scan_roots("Test", [Path("Z:\\definitely-missing-root")])
-    if drives and not errors:
-        return
+    _drives, _folders, _files, _components = scanner.scan_roots(
+        "Test",
+        [Path("Z:\\definitely-missing-root")],
+        folder_path="Z:\\definitely-missing-root",
+    )
     if not errors:
         raise RuntimeError("Expected scan errors for a missing root")
 
@@ -113,9 +144,8 @@ def test_local_scan() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         engine = ScanEngine(on_complete=complete, on_error=failed)
         engine.start(
-            office_pc=str(INVENTORY_ROOT),
-            radio_pc=str(INVENTORY_ROOT),
-            platform_folder=str(INVENTORY_ROOT),
+            office_folders=[str(INVENTORY_ROOT)],
+            radio_folders=[],
             output_folder=tmp,
         )
         engine.join(timeout=120)
@@ -125,14 +155,37 @@ def test_local_scan() -> None:
         raise RuntimeError("Scan did not complete")
 
 
+def test_unreachable_share_scan_completes() -> None:
+    done = {"ok": False, "snapshot": None}
+
+    def complete(snapshot, _paths) -> None:
+        done["ok"] = True
+        done["snapshot"] = snapshot
+
+    with tempfile.TemporaryDirectory() as tmp:
+        engine = ScanEngine(on_complete=complete, on_error=lambda _e: None)
+        engine.start(
+            office_folders=[str(INVENTORY_ROOT)],
+            radio_folders=[r"\\MosPlaceRadio\MissingShare"],
+            output_folder=tmp,
+        )
+        engine.join(timeout=120)
+
+    if not done["ok"]:
+        raise RuntimeError("Scan should complete even when a share is unreachable")
+    snapshot = done["snapshot"]
+    if snapshot is None or not snapshot.scan_errors:
+        raise RuntimeError("Unreachable share should be recorded in scan errors")
+
+
 def test_report_generation() -> None:
     from app.core.models import InventorySnapshot
 
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = InventorySnapshot(
             scanned_at="now",
-            office_pc="Office",
-            radio_pc="MosPlaceRadio",
+            office_pc=str(INVENTORY_ROOT),
+            radio_pc="",
             platform_folder=".",
             output_folder=tmp,
             status="complete",
@@ -153,13 +206,24 @@ def test_report_generation() -> None:
             raise RuntimeError("Missing partial checkpoint report")
 
 
+def test_app_imports() -> None:
+    from app.ui.main_window import InventoryApplication
+
+    if InventoryApplication is None:
+        raise RuntimeError("Inventory UI should import cleanly")
+
+
 def main() -> int:
     test_settings_roundtrip()
-    test_resolve_local_office()
+    test_legacy_settings_migration()
+    test_admin_share_rejected()
+    test_inaccessible_folder_continues()
     test_scan_error_recording()
     test_duplicate_detection()
     test_report_generation()
     test_local_scan()
+    test_unreachable_share_scan_completes()
+    test_app_imports()
     print("Inventory verification passed.")
     return 0
 

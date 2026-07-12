@@ -33,9 +33,8 @@ def run_headless_scan() -> int:
 
     engine = ScanEngine(on_complete=complete, on_error=failed)
     engine.start(
-        office_pc=settings["office_pc_path"],
-        radio_pc=settings["radio_pc_path"],
-        platform_folder=settings["platform_folder"],
+        office_folders=settings["office_pc_folders"],
+        radio_folders=settings["radio_pc_folders"],
         output_folder=settings["output_folder"],
     )
     engine.join()

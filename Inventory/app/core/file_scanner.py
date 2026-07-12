@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.core.models import DriveRecord, FileRecord, FolderRecord, ScanError
-from app.core.paths_util import list_drives_for_target
+from app.core.paths_util import list_drives_for_folder
 from app.core.safety import assert_read_only_path
 
 CATEGORY_RULES = {
@@ -72,13 +72,15 @@ class FileInventoryScanner:
         computer: str,
         roots: list[Path],
         *,
-        target_name: str = "",
+        folder_path: str = "",
+        include_drives: bool = True,
     ) -> tuple[list[DriveRecord], list[FolderRecord], list[FileRecord], list[tuple[str, str, str]]]:
-        drive_target = target_name or computer
-        drives = [
-            DriveRecord(letter=letter, label=label, total_bytes=total, free_bytes=free, computer=computer)
-            for letter, label, total, free in list_drives_for_target(drive_target)
-        ]
+        drives: list[DriveRecord] = []
+        if include_drives:
+            drives = [
+                DriveRecord(letter=letter, label=label, total_bytes=total, free_bytes=free, computer=computer)
+                for letter, label, total, free in list_drives_for_folder(folder_path or str(roots[0]) if roots else "")
+            ]
         folders: list[FolderRecord] = []
         files: list[FileRecord] = []
         components: list[tuple[str, str, str]] = []
@@ -87,8 +89,8 @@ class FileInventoryScanner:
             self._record_error(
                 ScanError(
                     computer=computer,
-                    path=drive_target,
-                    error="No scan roots were available.",
+                    path=folder_path or computer,
+                    error="No scan folder was available.",
                     phase="file_scan",
                 )
             )
@@ -123,7 +125,7 @@ class FileInventoryScanner:
             return
         try:
             assert_read_only_path(root)
-        except OSError as exc:
+        except (OSError, PermissionError) as exc:
             self._record_error(
                 ScanError(
                     computer=computer,
@@ -144,7 +146,20 @@ class FileInventoryScanner:
                 )
             )
 
-        for dirpath, _dirnames, filenames in os.walk(root, topdown=True, onerror=onerror):
+        try:
+            walker = os.walk(root, topdown=True, onerror=onerror)
+        except (OSError, PermissionError) as exc:
+            self._record_error(
+                ScanError(
+                    computer=computer,
+                    path=str(root),
+                    error=str(exc),
+                    phase="file_scan",
+                )
+            )
+            return
+
+        for dirpath, _dirnames, filenames in walker:
             if self._cancel():
                 return
             current = Path(dirpath)
@@ -158,7 +173,7 @@ class FileInventoryScanner:
                 try:
                     assert_read_only_path(file_path)
                     stat = file_path.stat()
-                except OSError as exc:
+                except (OSError, PermissionError) as exc:
                     self._record_error(
                         ScanError(
                             computer=computer,

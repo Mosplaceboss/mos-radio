@@ -4,56 +4,155 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from app.core.models import InventorySnapshot
-from app.core.path_validation import ensure_default_output_folder, validate_output_path, validate_scan_path
+from app.core.path_validation import ensure_default_output_folder, validate_folder_list, validate_output_path
+from app.core.paths_util import is_admin_share, sanitize_folder_path
 from app.core.scan_engine import ScanEngine
 from app.core.settings_store import (
     DEFAULT_OUTPUT_FOLDER,
-    current_machine_name,
     browse_initial_dir,
+    current_machine_name,
     is_office_pc,
     load_settings,
     machine_defaults,
+    sanitize_folder_list,
     save_settings,
 )
 
 
+class FolderListPanel:
+    def __init__(
+        self,
+        parent: ttk.Frame,
+        *,
+        title: str,
+        settings_key: str,
+        required: bool,
+        initial_folders: list[str],
+        on_change,
+    ) -> None:
+        self.settings_key = settings_key
+        self.required = required
+        self._on_change = on_change
+        self.folders = sanitize_folder_list(initial_folders)
+
+        self.frame = ttk.LabelFrame(parent, text=title, padding=8)
+        self.listbox = tk.Listbox(self.frame, height=5, width=90, font=("Consolas", 10))
+        scroll = ttk.Scrollbar(self.frame, orient="vertical", command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=scroll.set)
+        self.listbox.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        scroll.grid(row=0, column=2, sticky="ns", pady=(0, 8))
+
+        buttons = ttk.Frame(self.frame)
+        buttons.grid(row=1, column=0, columnspan=3, sticky="w")
+        ttk.Button(buttons, text="Add Folder", command=self._add_local_folder).pack(side="left")
+        ttk.Button(buttons, text="Browse Network Folder", command=self._browse_network_folder).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Enter Path", command=self._enter_path).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Remove Folder", command=self._remove_folder).pack(side="left", padx=6)
+
+        self.status = ttk.Label(self.frame, text="", wraplength=900)
+        self.status.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        self.frame.columnconfigure(0, weight=1)
+        self._refresh_listbox()
+
+    def get_folders(self) -> list[str]:
+        return list(self.folders)
+
+    def _refresh_listbox(self) -> None:
+        self.listbox.delete(0, "end")
+        for folder in self.folders:
+            self.listbox.insert("end", folder)
+        self._on_change()
+
+    def _add_path(self, path: str) -> None:
+        cleaned = sanitize_folder_path(path)
+        if not cleaned:
+            if path.strip() and is_admin_share(path):
+                messagebox.showerror(
+                    "Administrative Share Not Allowed",
+                    "Administrative shares such as C$, D$, and E$ are not supported.\n"
+                    "Browse to or enter a normal shared folder instead.",
+                )
+            return
+        if cleaned not in self.folders:
+            self.folders.append(cleaned)
+            self._refresh_listbox()
+
+    def _add_local_folder(self) -> None:
+        initialdir = browse_initial_dir(self.settings_key)
+        selected = filedialog.askdirectory(
+            parent=self.frame.winfo_toplevel(),
+            title="Add Folder",
+            initialdir=initialdir,
+            mustexist=False,
+        )
+        if selected:
+            self._add_path(selected)
+
+    def _browse_network_folder(self) -> None:
+        selected = filedialog.askdirectory(
+            parent=self.frame.winfo_toplevel(),
+            title="Browse Network Folder",
+            initialdir=r"\\",
+            mustexist=False,
+        )
+        if selected:
+            self._add_path(selected)
+
+    def _enter_path(self) -> None:
+        entered = simpledialog.askstring(
+            "Enter Path",
+            "Enter the full local or UNC shared folder path:",
+            parent=self.frame.winfo_toplevel(),
+        )
+        if entered is not None:
+            self._add_path(entered.strip())
+
+    def _remove_folder(self) -> None:
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        if 0 <= index < len(self.folders):
+            del self.folders[index]
+            self._refresh_listbox()
+
+    def validate(self) -> tuple[bool, str, bool]:
+        return validate_folder_list(self.folders, label=self.frame.cget("text"), required=self.required)
+
+    def set_status(self, ok: bool, message: str, *, warning: bool = False) -> None:
+        if ok and warning:
+            self.status.configure(text=f"⚠ {message}", foreground="#8a4b08")
+        elif ok:
+            self.status.configure(text=f"✓ {message}", foreground="#0f7b0f")
+        else:
+            self.status.configure(text=f"✗ {message}", foreground="#b00020")
+
+
 class InventoryApplication:
-    BROWSE_KEYS = {"platform_folder", "output_folder"}
-
-    FIELD_SPECS = (
-        ("office_pc_path", "Local Office PC", "office_var"),
-        ("radio_pc_path", "Radio PC", "radio_var"),
-        ("platform_folder", "Platform Folder", "platform_var"),
-        ("output_folder", "Output Folder", "output_var"),
-    )
-
     def __init__(self, *, auto_scan: bool = False) -> None:
         self._auto_scan = auto_scan
         self.root = tk.Tk()
         self.root.title("Mo's Place Inventory")
-        self.root.geometry("1180x780")
-        self.root.minsize(980, 680)
+        self.root.geometry("1180x860")
+        self.root.minsize(980, 760)
 
         saved = load_settings()
         defaults = machine_defaults()
-        self.office_var = tk.StringVar(value=saved["office_pc_path"] or defaults["office_pc_path"])
-        self.radio_var = tk.StringVar(value=saved["radio_pc_path"] or defaults["radio_pc_path"])
-        self.platform_var = tk.StringVar(value=saved["platform_folder"] or defaults["platform_folder"])
         default_output = saved["output_folder"] or defaults["output_folder"] or DEFAULT_OUTPUT_FOLDER
         try:
-            ok, _ = validate_output_path(default_output)
+            ok, _, _ = validate_output_path(default_output)
             if not ok:
                 default_output = ensure_default_output_folder()
-        except OSError:
+        except (OSError, PermissionError):
             default_output = ensure_default_output_folder()
         self.output_var = tk.StringVar(value=default_output)
 
         self._snapshot: InventorySnapshot | None = None
         self._report_paths: dict[str, str] = {}
-        self._validation_labels: dict[str, ttk.Label] = {}
         self._scanning = False
         self._engine = ScanEngine(
             on_progress=self._on_progress,
@@ -62,10 +161,9 @@ class InventoryApplication:
         )
 
         self._build_read_only_banner()
-        self._build_inputs()
+        self._build_inputs(saved, defaults)
         self._build_notebook()
         self._build_status()
-        self._wire_change_handlers()
         self._refresh_validation()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         if self._auto_scan:
@@ -98,50 +196,60 @@ class InventoryApplication:
             anchor="w",
         ).pack(fill="x", pady=(4, 0))
 
-    def _build_inputs(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="Scan Inputs", padding=12)
+    def _build_inputs(self, saved: dict, defaults: dict) -> None:
+        frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill="x", padx=12, pady=12)
 
         ttk.Label(
             frame,
-            text="Office and Radio use computer names. Browse for Platform and Output folders.",
+            text="Scan only the folders you select. Administrative shares (C$, D$, E$) are never used.",
             foreground="#444444",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
+            wraplength=1050,
+        ).pack(anchor="w", pady=(0, 8))
 
-        self._path_rows: dict[str, dict] = {}
-        for row, (key, label, var_name) in enumerate(self.FIELD_SPECS, start=1):
-            variable = getattr(self, var_name)
-            ttk.Label(frame, text=label, width=28).grid(row=row, column=0, sticky="w", pady=4)
+        self.office_panel = FolderListPanel(
+            frame,
+            title="Office PC Folders to Scan",
+            settings_key="office_pc_folders",
+            required=True,
+            initial_folders=saved.get("office_pc_folders") or defaults["office_pc_folders"],
+            on_change=self._refresh_validation,
+        )
+        self.office_panel.frame.pack(fill="x", pady=(0, 10))
 
-            entry = ttk.Entry(frame, textvariable=variable, width=72)
-            if key in self.BROWSE_KEYS:
-                entry.configure(state="readonly")
-                entry.bind("<Double-Button-1>", lambda _event, k=key: self._browse_path(k))
-            entry.grid(row=row, column=1, sticky="ew", padx=8, pady=4)
+        self.radio_panel = FolderListPanel(
+            frame,
+            title="Radio PC Folders to Scan",
+            settings_key="radio_pc_folders",
+            required=False,
+            initial_folders=saved.get("radio_pc_folders") or defaults["radio_pc_folders"],
+            on_change=self._refresh_validation,
+        )
+        self.radio_panel.frame.pack(fill="x", pady=(0, 10))
 
-            actions = ttk.Frame(frame)
-            actions.grid(row=row, column=2, sticky="w", pady=4)
-            if key in self.BROWSE_KEYS:
-                ttk.Button(actions, text="Browse...", command=lambda k=key: self._browse_path(k)).pack(side="left")
+        output_frame = ttk.LabelFrame(frame, text="Output Folder", padding=8)
+        output_frame.pack(fill="x", pady=(0, 10))
 
-            status = ttk.Label(frame, text="", wraplength=420)
-            status.grid(row=row, column=3, sticky="w", padx=(8, 0), pady=4)
-            self._validation_labels[key] = status
-            self._path_rows[key] = {"entry": entry, "variable": variable, "label": label}
-
-        frame.columnconfigure(1, weight=1)
-        frame.columnconfigure(3, weight=1)
+        self.output_var.trace_add("write", lambda *_args: self._refresh_validation())
+        ttk.Entry(output_frame, textvariable=self.output_var, width=90).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        actions = ttk.Frame(output_frame)
+        actions.grid(row=0, column=1, sticky="w")
+        ttk.Button(actions, text="Browse...", command=self._browse_output).pack(side="left")
+        ttk.Button(actions, text="Enter Path", command=self._enter_output).pack(side="left", padx=6)
+        self.output_status = ttk.Label(output_frame, text="", wraplength=900)
+        self.output_status.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        output_frame.columnconfigure(0, weight=1)
 
         actions = ttk.Frame(frame)
-        actions.grid(row=len(self.FIELD_SPECS) + 1, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        actions.pack(fill="x", pady=(4, 0))
         self.scan_button = ttk.Button(actions, text="Scan", command=self._start_scan, state="disabled")
         self.scan_button.pack(side="left")
         ttk.Button(actions, text="Cancel", command=self._cancel_scan).pack(side="left", padx=8)
 
         self.progress = ttk.Progressbar(frame, maximum=100)
-        self.progress.grid(row=len(self.FIELD_SPECS) + 2, column=0, columnspan=4, sticky="ew", pady=(12, 4))
-        self.progress_label = ttk.Label(frame, text="Confirm the defaults or edit paths to enable Scan.")
-        self.progress_label.grid(row=len(self.FIELD_SPECS) + 3, column=0, columnspan=4, sticky="w")
+        self.progress.pack(fill="x", pady=(12, 4))
+        self.progress_label = ttk.Label(frame, text="Confirm folders and output path to enable Scan.")
+        self.progress_label.pack(anchor="w")
 
     def _build_notebook(self) -> None:
         self.notebook = ttk.Notebook(self.root)
@@ -177,74 +285,76 @@ class InventoryApplication:
         role = "Office PC" if is_office_pc() else "this machine"
         self.status = ttk.Label(
             self.root,
-            text=f"Mo's Place Inventory is ready on {host} ({role}). Paths are saved per machine.",
+            text=f"Mo's Place Inventory is ready on {host} ({role}). Folder lists are saved per machine.",
             anchor="w",
         )
         self.status.pack(fill="x", padx=12, pady=(0, 12))
 
-    def _wire_change_handlers(self) -> None:
-        for _key, _label, var_name in self.FIELD_SPECS:
-            getattr(self, var_name).trace_add("write", lambda *_args: self._refresh_validation())
-
-    def _current_settings(self) -> dict[str, str]:
+    def _current_settings(self) -> dict:
         return {
-            "office_pc_path": self.office_var.get().strip(),
-            "radio_pc_path": self.radio_var.get().strip(),
-            "platform_folder": self.platform_var.get().strip(),
+            "office_pc_folders": self.office_panel.get_folders(),
+            "radio_pc_folders": self.radio_panel.get_folders(),
             "output_folder": self.output_var.get().strip() or DEFAULT_OUTPUT_FOLDER,
         }
 
     def _save_settings(self) -> None:
         save_settings(self._current_settings())
 
-    def _browse_path(self, key: str) -> None:
-        row = self._path_rows[key]
-        current = row["variable"].get().strip()
-        initialdir = browse_initial_dir(key, current)
+    def _browse_output(self) -> None:
+        current = self.output_var.get().strip()
         selected = filedialog.askdirectory(
             parent=self.root,
-            title=f"Browse for {row['label']}",
-            initialdir=initialdir,
-            mustexist=key != "output_folder",
+            title="Browse for Output Folder",
+            initialdir=browse_initial_dir("output_folder", current),
+            mustexist=False,
         )
         if selected:
-            row["variable"].set(selected)
+            self.output_var.set(selected)
             self._save_settings()
 
-    def _set_validation(self, key: str, ok: bool, message: str) -> None:
-        label = self._validation_labels[key]
-        if ok:
-            label.configure(text=f"✓ {message}", foreground="#0f7b0f")
-        else:
-            label.configure(text=f"✗ {message}", foreground="#b00020")
+    def _enter_output(self) -> None:
+        entered = simpledialog.askstring(
+            "Enter Path",
+            "Enter the full output folder path:",
+            initialvalue=self.output_var.get().strip(),
+            parent=self.root,
+        )
+        if entered is not None:
+            self.output_var.set(entered.strip())
+            self._save_settings()
 
     def _refresh_validation(self) -> None:
-        settings = self._current_settings()
-        checks = [
-            ("office_pc_path", validate_scan_path(settings["office_pc_path"], label="Local Office PC")),
-            ("radio_pc_path", validate_scan_path(settings["radio_pc_path"], label="Radio PC")),
-            ("platform_folder", validate_scan_path(settings["platform_folder"], label="Platform folder")),
-            ("output_folder", validate_output_path(settings["output_folder"])),
-        ]
-        all_ok = True
-        for key, (ok, message) in checks:
-            self._set_validation(key, ok, message)
-            if not ok:
-                all_ok = False
+        try:
+            office_ok, office_msg, office_warn = self.office_panel.validate()
+            radio_ok, radio_msg, radio_warn = self.radio_panel.validate()
+            output_ok, output_msg, output_warn = validate_output_path(self.output_var.get().strip())
 
-        if self._scanning:
+            self.office_panel.set_status(office_ok, office_msg, warning=office_warn)
+            self.radio_panel.set_status(radio_ok, radio_msg, warning=radio_warn)
+            if output_ok and output_warn:
+                self.output_status.configure(text=f"⚠ {output_msg}", foreground="#8a4b08")
+            elif output_ok:
+                self.output_status.configure(text=f"✓ {output_msg}", foreground="#0f7b0f")
+            else:
+                self.output_status.configure(text=f"✗ {output_msg}", foreground="#b00020")
+
+            all_ok = office_ok and radio_ok and output_ok
+            if self._scanning:
+                self.scan_button.configure(state="disabled")
+            elif all_ok:
+                self.scan_button.configure(state="normal")
+                self.progress_label.configure(text="Folders are ready. You can start the inventory scan.")
+            else:
+                self.scan_button.configure(state="disabled")
+                self.progress_label.configure(text="Fix the items marked with ✗ before scanning.")
+        except (OSError, PermissionError, Exception) as exc:
             self.scan_button.configure(state="disabled")
-        elif all_ok:
-            self.scan_button.configure(state="normal")
-            self.progress_label.configure(text="All paths are valid. You can start the inventory scan.")
-        else:
-            self.scan_button.configure(state="disabled")
-            self.progress_label.configure(text="Fix the paths marked with ✗ before scanning.")
+            self.progress_label.configure(text=f"Validation issue: {exc}")
 
     def _start_scan(self) -> None:
         self._refresh_validation()
         if self.scan_button.cget("state") == "disabled":
-            messagebox.showwarning("Paths Required", "All paths must be valid before scanning.")
+            messagebox.showwarning("Paths Required", "Office folders and output path must be valid before scanning.")
             return
 
         settings = self._current_settings()
@@ -254,9 +364,8 @@ class InventoryApplication:
         self.progress["value"] = 0
         self.status.configure(text="Scan started...")
         self._engine.start(
-            office_pc=settings["office_pc_path"],
-            radio_pc=settings["radio_pc_path"],
-            platform_folder=settings["platform_folder"],
+            office_folders=settings["office_pc_folders"],
+            radio_folders=settings["radio_pc_folders"],
             output_folder=settings["output_folder"],
         )
 
@@ -289,8 +398,7 @@ class InventoryApplication:
     def _on_error(self, error: Exception) -> None:
         def update() -> None:
             self._scanning = False
-            self.status.configure(text=f"Scan failed: {error}")
-            messagebox.showerror("Scan Failed", str(error))
+            self.status.configure(text=f"Scan issue recorded: {error}")
             self._refresh_validation()
 
         self.root.after(0, update)
@@ -303,9 +411,9 @@ class InventoryApplication:
             "Overview",
             [
                 f"Scanned at: {snap.scanned_at}",
-                f"Office PC: {snap.office_pc}",
-                f"Radio PC: {snap.radio_pc}",
-                f"Platform Folder: {snap.platform_folder}",
+                f"Office PC folders: {snap.office_pc}",
+                f"Radio PC folders: {snap.radio_pc}",
+                f"Platform reference: {snap.platform_folder}",
                 f"Output Folder: {snap.output_folder}",
                 f"Status: {snap.status}",
                 f"Scan errors: {len(snap.scan_errors):,}",

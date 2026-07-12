@@ -1,4 +1,4 @@
-"""Collect scheduled tasks, processes, and services (read-only)."""
+"""Collect scheduled tasks, processes, and services locally (read-only)."""
 
 from __future__ import annotations
 
@@ -7,49 +7,36 @@ import io
 import subprocess
 
 from app.core.models import ProcessRecord, ScanError, ServiceRecord, TaskRecord
-from app.core.paths_util import is_computer_name, is_local_target
 
 
 def _run_read_only(command: list[str], *, timeout: float = 120.0) -> str:
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return str(exc)
     return result.stdout or ""
-
-
-def _remote_computer(computer: str) -> str | None:
-    if not computer or is_local_target(computer):
-        return None
-    if is_computer_name(computer):
-        return computer
-    if computer.startswith("\\\\"):
-        return computer.lstrip("\\").split("\\", 1)[0]
-    return None
 
 
 def collect_scheduled_tasks(computer: str) -> tuple[list[TaskRecord], list[ScanError]]:
     errors: list[ScanError] = []
-    target = _remote_computer(computer)
-    command = ["schtasks", "/Query", "/FO", "CSV", "/V"]
-    if target:
-        command.extend(["/S", target])
-    output = _run_read_only(command)
-    if not output.strip():
-        if target:
-            errors.append(
-                ScanError(
-                    computer=computer,
-                    path=target,
-                    error="Remote scheduled task query returned no data.",
-                    phase="scheduled_tasks",
-                )
+    output = _run_read_only(["schtasks", "/Query", "/FO", "CSV", "/V"])
+    if not output.strip() or output.startswith("Traceback") or "Error" in output[:80]:
+        errors.append(
+            ScanError(
+                computer=computer,
+                path=computer,
+                error="Scheduled task query returned no data.",
+                phase="scheduled_tasks",
             )
-        output = _run_read_only(["schtasks", "/Query", "/FO", "CSV", "/V"])
+        )
+        return [], errors
 
     reader = csv.DictReader(io.StringIO(output))
     tasks: list[TaskRecord] = []
@@ -70,38 +57,22 @@ def collect_scheduled_tasks(computer: str) -> tuple[list[TaskRecord], list[ScanE
 
 def collect_processes(computer: str) -> tuple[list[ProcessRecord], list[ScanError]]:
     errors: list[ScanError] = []
-    target = _remote_computer(computer)
-    if target:
-        script = (
-            f"$ErrorActionPreference='SilentlyContinue'; "
-            f"Invoke-Command -ComputerName '{target}' -ScriptBlock {{ "
-            "Get-CimInstance Win32_Process | "
-            "Select-Object Name,ExecutablePath,CommandLine | "
-            "ConvertTo-Csv -NoTypeInformation "
-            "} | Out-String"
-        )
-        output = _run_read_only(["powershell", "-NoProfile", "-Command", script])
-        if not output.strip():
-            output = _run_read_only(
-                ["wmic", fr"/node:{target}", "process", "get", "Name,ExecutablePath,CommandLine", "/format:csv"]
+    script = (
+        "Get-CimInstance Win32_Process | "
+        "Select-Object Name,ExecutablePath,CommandLine | "
+        "ConvertTo-Csv -NoTypeInformation"
+    )
+    output = _run_read_only(["powershell", "-NoProfile", "-Command", script])
+    if not output.strip():
+        errors.append(
+            ScanError(
+                computer=computer,
+                path=computer,
+                error="Process query returned no data.",
+                phase="processes",
             )
-        if not output.strip():
-            errors.append(
-                ScanError(
-                    computer=computer,
-                    path=target,
-                    error="Remote process query returned no data.",
-                    phase="processes",
-                )
-            )
-            return [], errors
-    else:
-        script = (
-            "Get-CimInstance Win32_Process | "
-            "Select-Object Name,ExecutablePath,CommandLine | "
-            "ConvertTo-Csv -NoTypeInformation"
         )
-        output = _run_read_only(["powershell", "-NoProfile", "-Command", script])
+        return [], errors
 
     reader = csv.DictReader(io.StringIO(output))
     processes: list[ProcessRecord] = []
@@ -120,17 +91,13 @@ def collect_processes(computer: str) -> tuple[list[ProcessRecord], list[ScanErro
 
 def collect_services(computer: str) -> tuple[list[ServiceRecord], list[ScanError]]:
     errors: list[ScanError] = []
-    target = _remote_computer(computer)
-    command = ["sc", "query", "type=", "service", "state=", "all"]
-    if target:
-        command = ["sc", rf"\\{target}", "query", "type=", "service", "state=", "all"]
-    output = _run_read_only(command)
-    if not output.strip() and target:
+    output = _run_read_only(["sc", "query", "type=", "service", "state=", "all"])
+    if not output.strip():
         errors.append(
             ScanError(
                 computer=computer,
-                path=target,
-                error="Remote service query returned no data.",
+                path=computer,
+                error="Service query returned no data.",
                 phase="services",
             )
         )
@@ -157,14 +124,9 @@ def collect_services(computer: str) -> tuple[list[ServiceRecord], list[ScanError
     return services, errors
 
 
-def enrich_service_details(services: list[ServiceRecord]) -> list[ScanError]:
-    errors: list[ScanError] = []
+def enrich_service_details(services: list[ServiceRecord]) -> None:
     for service in services:
-        target = _remote_computer(service.computer)
-        command = ["sc", "qc", service.name]
-        if target:
-            command = ["sc", rf"\\{target}", "qc", service.name]
-        output = _run_read_only(command, timeout=30)
+        output = _run_read_only(["sc", "qc", service.name], timeout=30)
         if not output.strip():
             continue
         for line in output.splitlines():
@@ -173,4 +135,3 @@ def enrich_service_details(services: list[ServiceRecord]) -> list[ScanError]:
                 service.startup_type = line.split(":", 1)[1].strip()
             if "BINARY_PATH_NAME" in line.upper():
                 service.executable = line.split(":", 1)[1].strip().strip('"')
-    return errors

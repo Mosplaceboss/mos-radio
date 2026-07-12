@@ -11,9 +11,10 @@ from typing import Callable
 from app.core.compare import compare_folder_sets, find_duplicate_files, find_duplicate_folders
 from app.core.file_scanner import FileInventoryScanner
 from app.core.models import ComponentHit, InventorySnapshot, ScanError
-from app.core.paths_util import resolve_computer_root
+from app.core.paths_util import resolve_scan_folder, sanitize_folder_path
 from app.core.recommendations import build_recommendations
 from app.core.reports import write_checkpoint, write_reports
+from app.core.settings_store import OFFICE_PLATFORM_PHYSICAL, sanitize_folder_list
 from app.core.system_collectors import (
     collect_processes,
     collect_scheduled_tasks,
@@ -43,9 +44,8 @@ class ScanEngine:
     def start(
         self,
         *,
-        office_pc: str,
-        radio_pc: str,
-        platform_folder: str,
+        office_folders: list[str],
+        radio_folders: list[str],
         output_folder: str,
     ) -> None:
         if self._thread and self._thread.is_alive():
@@ -54,7 +54,7 @@ class ScanEngine:
         self._started = time.perf_counter()
         self._thread = threading.Thread(
             target=self._run,
-            args=(office_pc, radio_pc, platform_folder, output_folder),
+            args=(office_folders, radio_folders, output_folder),
             daemon=True,
             name="inventory-scan",
         )
@@ -73,38 +73,111 @@ class ScanEngine:
             eta = "estimating..."
         self._on_progress(message, min(max(fraction, 0.0), 1.0), eta)
 
-    def _record_resolution_errors(self, snapshot: InventorySnapshot, computer: str, errors: list[str]) -> None:
-        for error in errors:
-            snapshot.scan_errors.append(
-                ScanError(
-                    computer=computer,
-                    path=computer,
-                    error=error,
-                    phase="resolve",
-                )
-            )
-
     def _checkpoint(self, snapshot: InventorySnapshot, message: str) -> None:
         snapshot.progress_message = message
-        write_checkpoint(snapshot)
+        try:
+            write_checkpoint(snapshot)
+        except (OSError, PermissionError) as exc:
+            snapshot.scan_errors.append(
+                ScanError(
+                    computer="Inventory",
+                    path=snapshot.output_folder,
+                    error=f"Checkpoint save failed: {exc}",
+                    phase="reports",
+                )
+            )
 
     def _finish_partial(self, snapshot: InventorySnapshot, status: str, message: str) -> dict[str, str]:
         snapshot.status = status
         snapshot.progress_message = message
-        return write_reports(snapshot, partial=True)
+        try:
+            return write_reports(snapshot, partial=True)
+        except (OSError, PermissionError) as exc:
+            snapshot.scan_errors.append(
+                ScanError(
+                    computer="Inventory",
+                    path=snapshot.output_folder,
+                    error=f"Partial report save failed: {exc}",
+                    phase="reports",
+                )
+            )
+            return {}
 
-    def _run(self, office_pc: str, radio_pc: str, platform_folder: str, output_folder: str) -> None:
+    def _scan_selected_folders(
+        self,
+        scanner: FileInventoryScanner,
+        snapshot: InventorySnapshot,
+        folders: list[str],
+        *,
+        label: str,
+        include_drives: bool,
+    ) -> list[tuple[str, str, str]]:
+        components: list[tuple[str, str, str]] = []
+        drives_added = False
+
+        for folder in folders:
+            if self._cancel.is_set():
+                break
+
+            cleaned = sanitize_folder_path(folder)
+            if not cleaned:
+                if folder.strip():
+                    snapshot.scan_errors.append(
+                        ScanError(
+                            computer=label,
+                            path=folder,
+                            error="Administrative shares are not supported.",
+                            phase="resolve",
+                        )
+                    )
+                continue
+
+            _folder_label, roots, errors = resolve_scan_folder(cleaned, label=label)
+            for error in errors:
+                snapshot.scan_errors.append(
+                    ScanError(
+                        computer=label,
+                        path=cleaned,
+                        error=error,
+                        phase="resolve",
+                    )
+                )
+
+            self._progress(f"Scanning {label}: {cleaned}", 0.0)
+            d, f, files, comps = scanner.scan_roots(
+                label,
+                roots,
+                folder_path=cleaned,
+                include_drives=include_drives and not drives_added,
+            )
+            drives_added = drives_added or bool(d)
+            snapshot.drives.extend(d)
+            snapshot.folders.extend(f)
+            snapshot.files.extend(files)
+            components.extend(comps)
+            self._checkpoint(snapshot, f"{label} indexed ({len(snapshot.files):,} files)")
+
+        return components
+
+    def _run(self, office_folders: list[str], radio_folders: list[str], output_folder: str) -> None:
+        office_list = sanitize_folder_list(office_folders)
+        radio_list = sanitize_folder_list(radio_folders)
+        platform_folder = next(
+            (folder for folder in office_list if folder.lower() == OFFICE_PLATFORM_PHYSICAL.lower()),
+            OFFICE_PLATFORM_PHYSICAL,
+        )
+
         snapshot = InventorySnapshot(
             scanned_at=datetime.now().isoformat(timespec="seconds"),
-            office_pc=office_pc,
-            radio_pc=radio_pc,
+            office_pc=" | ".join(office_list),
+            radio_pc=" | ".join(radio_list),
             platform_folder=platform_folder,
             output_folder=output_folder,
             status="running",
             progress_message="Scan started",
         )
         try:
-            self._checkpoint(snapshot, "Resolving scan targets")
+            self._checkpoint(snapshot, "Preparing selected folders")
 
             def record_error(error: ScanError) -> None:
                 snapshot.scan_errors.append(error)
@@ -116,107 +189,70 @@ class ScanEngine:
                 checkpoint_callback=lambda: self._checkpoint(snapshot, f"Indexed {len(snapshot.files):,} files"),
             )
 
-            office_label, office_roots, office_errors = resolve_computer_root(office_pc)
-            radio_label, radio_roots, radio_errors = resolve_computer_root(radio_pc)
-            self._record_resolution_errors(snapshot, office_label or office_pc, office_errors)
-            self._record_resolution_errors(snapshot, radio_label or radio_pc, radio_errors)
-
-            platform_path = Path(platform_folder) if platform_folder else None
-            platform_roots = [platform_path] if platform_path and platform_path.exists() else []
-            if platform_folder and not platform_roots:
-                snapshot.scan_errors.append(
-                    ScanError(
-                        computer="Platform",
-                        path=platform_folder,
-                        error="Platform folder does not exist or is not reachable.",
-                        phase="resolve",
-                    )
-                )
-
-            self._progress("Scanning Office PC", 0.05)
-            snapshot.progress_message = "Scanning Office PC"
-            d1, f1, files1, comps1 = scanner.scan_roots(
-                office_label or office_pc,
-                office_roots,
-                target_name=office_pc,
+            self._progress("Scanning Office PC folders", 0.05)
+            snapshot.progress_message = "Scanning Office PC folders"
+            office_components = self._scan_selected_folders(
+                scanner,
+                snapshot,
+                office_list,
+                label="Office",
+                include_drives=True,
             )
-            snapshot.drives.extend(d1)
-            snapshot.folders.extend(f1)
-            snapshot.files.extend(files1)
-            self._checkpoint(snapshot, f"Office PC indexed ({len(snapshot.files):,} files)")
 
             if self._cancel.is_set():
-                self._on_complete(snapshot, self._finish_partial(snapshot, "cancelled", "Scan cancelled after Office PC"))
+                self._on_complete(snapshot, self._finish_partial(snapshot, "cancelled", "Scan cancelled after Office folders"))
                 return
 
-            self._progress("Scanning Radio PC", 0.25)
-            snapshot.progress_message = "Scanning Radio PC"
-            d2, f2, files2, comps2 = scanner.scan_roots(
-                radio_label or radio_pc,
-                radio_roots,
-                target_name=radio_pc,
+            self._progress("Scanning Radio PC folders", 0.3)
+            snapshot.progress_message = "Scanning Radio PC folders"
+            radio_components = self._scan_selected_folders(
+                scanner,
+                snapshot,
+                radio_list,
+                label="Radio",
+                include_drives=False,
             )
-            snapshot.drives.extend(d2)
-            snapshot.folders.extend(f2)
-            snapshot.files.extend(files2)
-            self._checkpoint(snapshot, f"Radio PC indexed ({len(snapshot.files):,} files)")
 
             if self._cancel.is_set():
-                self._on_complete(snapshot, self._finish_partial(snapshot, "cancelled", "Scan cancelled after Radio PC"))
+                self._on_complete(snapshot, self._finish_partial(snapshot, "cancelled", "Scan cancelled after Radio folders"))
                 return
 
-            if platform_roots:
-                self._progress("Scanning Platform Folder", 0.4)
-                snapshot.progress_message = "Scanning Platform Folder"
-                _, f3, files3, comps3 = scanner.scan_roots("Platform", platform_roots, target_name=platform_folder)
-                snapshot.folders.extend(f3)
-                snapshot.files.extend(files3)
-                comps1 += comps3
-                self._checkpoint(snapshot, f"Platform indexed ({len(snapshot.files):,} files)")
-            else:
-                files3 = []
-                comps3 = []
-
-            for name, path, computer in comps1 + comps2 + comps3:
+            for name, path, computer in office_components + radio_components:
                 snapshot.components.append(ComponentHit(name=name, path=path, computer=computer, kind="file"))
 
-            self._progress("Collecting scheduled tasks", 0.55)
-            snapshot.progress_message = "Collecting scheduled tasks"
-            office_tasks, office_task_errors = collect_scheduled_tasks(office_label or office_pc)
-            radio_tasks, radio_task_errors = collect_scheduled_tasks(radio_label or radio_pc)
-            snapshot.tasks.extend(office_tasks)
-            snapshot.tasks.extend(radio_tasks)
-            snapshot.scan_errors.extend(office_task_errors)
-            snapshot.scan_errors.extend(radio_task_errors)
+            from app.core.settings_store import current_machine_name
+
+            host = current_machine_name()
+            self._progress("Collecting local scheduled tasks", 0.55)
+            snapshot.progress_message = "Collecting local scheduled tasks"
+            tasks, task_errors = collect_scheduled_tasks(host)
+            snapshot.tasks.extend(tasks)
+            snapshot.scan_errors.extend(task_errors)
             self._checkpoint(snapshot, "Scheduled tasks collected")
 
-            self._progress("Collecting processes and services", 0.68)
-            snapshot.progress_message = "Collecting processes and services"
-            office_processes, office_proc_errors = collect_processes(office_label or office_pc)
-            radio_processes, radio_proc_errors = collect_processes(radio_label or radio_pc)
-            office_services, office_svc_errors = collect_services(office_label or office_pc)
-            radio_services, radio_svc_errors = collect_services(radio_label or radio_pc)
-            snapshot.processes.extend(office_processes)
-            snapshot.processes.extend(radio_processes)
-            snapshot.services.extend(office_services)
-            snapshot.services.extend(radio_services)
-            snapshot.scan_errors.extend(office_proc_errors)
-            snapshot.scan_errors.extend(radio_proc_errors)
-            snapshot.scan_errors.extend(office_svc_errors)
-            snapshot.scan_errors.extend(radio_svc_errors)
+            self._progress("Collecting local processes and services", 0.68)
+            snapshot.progress_message = "Collecting local processes and services"
+            processes, proc_errors = collect_processes(host)
+            services, svc_errors = collect_services(host)
+            snapshot.processes.extend(processes)
+            snapshot.services.extend(services)
+            snapshot.scan_errors.extend(proc_errors)
+            snapshot.scan_errors.extend(svc_errors)
             enrich_service_details(snapshot.services)
             self._checkpoint(snapshot, "Processes and services collected")
 
             self._progress("Comparing folders and duplicates", 0.78)
             snapshot.progress_message = "Comparing folders and duplicates"
-            office_files = [f for f in snapshot.files if f.computer in {office_label, office_pc, "Office"}]
-            radio_files = [f for f in snapshot.files if f.computer in {radio_label, radio_pc, "Radio", "MosPlaceRadio"}]
-            platform_files = [f for f in snapshot.files if f.computer == "Platform"]
+            office_files = [f for f in snapshot.files if f.computer == "Office"]
+            radio_files = [f for f in snapshot.files if f.computer == "Radio"]
+            platform_files = [
+                f for f in office_files if OFFICE_PLATFORM_PHYSICAL.lower() in f.path.lower()
+            ]
             snapshot.duplicates.extend(find_duplicate_files(snapshot.files))
             snapshot.duplicates.extend(find_duplicate_folders([f.path for f in snapshot.folders]))
             snapshot.comparisons = compare_folder_sets(
-                str(office_roots[0]) if office_roots else office_pc,
-                str(radio_roots[0]) if radio_roots else radio_pc,
+                office_list[0] if office_list else "",
+                radio_list[0] if radio_list else "",
                 platform_folder,
                 office_files,
                 radio_files,
@@ -239,7 +275,7 @@ class ScanEngine:
             self._progress("Scan complete", 1.0)
             snapshot.progress_message = "Scan complete"
             self._on_complete(snapshot, report_paths)
-        except Exception as exc:
+        except (OSError, PermissionError, Exception) as exc:
             snapshot.status = "failed"
             snapshot.progress_message = str(exc)
             snapshot.scan_errors.append(
@@ -250,8 +286,5 @@ class ScanEngine:
                     phase="scan_engine",
                 )
             )
-            try:
-                self._finish_partial(snapshot, "failed", str(exc))
-            except OSError:
-                pass
-            self._on_error(exc)
+            report_paths = self._finish_partial(snapshot, "failed", str(exc))
+            self._on_complete(snapshot, report_paths)
