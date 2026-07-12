@@ -12,6 +12,7 @@ from typing import Any
 
 from app.core.automation_model import MODULE_DEFINITIONS, _collect_activity_log
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
+from app.core.live_connector import now_playing_path
 from app.core.paths import automation_logs_dir, automation_root, logs_dir, studio_root
 from app.core.personality_model import display_label as personality_label, normalize_personalities_data
 from app.core.requests_model import normalize_requests_data, request_mode_label
@@ -168,11 +169,18 @@ def _last_matching_log(keywords: tuple[str, ...], sources: list[Path]) -> str:
     return matches[0]
 
 
-def _read_now_playing() -> str:
-    candidates = (
-        studio_root().parent / "nowplaying-live.txt",
-        studio_root() / "nowplaying-live.txt",
-        logs_dir() / "nowplaying.txt",
+def _read_now_playing(settings: dict[str, Any] | None = None) -> str:
+    candidates: list[Path] = []
+    if settings:
+        configured = now_playing_path(settings)
+        if configured:
+            candidates.append(configured)
+    candidates.extend(
+        (
+            studio_root().parent / "nowplaying-live.txt",
+            studio_root() / "nowplaying-live.txt",
+            logs_dir() / "nowplaying.txt",
+        )
     )
     for path in candidates:
         if not path.exists():
@@ -221,7 +229,7 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
     settings = config_manager.load("settings", {})
     live_status = build_live_system_status(settings)
 
-    now_playing = _read_now_playing()
+    now_playing = _read_now_playing(settings)
     if now_playing == "—" and current_slot:
         now_playing = f"{current_event.show_name} · {current_event.personality}"
 

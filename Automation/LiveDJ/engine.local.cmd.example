@@ -1,0 +1,5 @@
+@echo off
+REM Copy to engine.local.cmd and point at your real LiveDJ watcher script.
+REM Example:
+REM   python "D:\MoPlaceStudio\your-live-utilities\livedj_watcher.py"
+exit /b 0

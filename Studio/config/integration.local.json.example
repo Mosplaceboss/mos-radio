@@ -1,0 +1,26 @@
+{
+  "enabled": false,
+  "now_playing_file": "",
+  "live_paths": {
+    "livedj": {
+      "personalities": "",
+      "schedule": "",
+      "voice_library": ""
+    },
+    "requests": {
+      "config": ""
+    },
+    "news": {
+      "config": ""
+    }
+  },
+  "engine_scripts": {
+    "livedj_start": "",
+    "livedj_restart": "",
+    "requests_start": "",
+    "requests_restart": "",
+    "news_start": "",
+    "news_restart": "",
+    "news_run_now": ""
+  }
+}

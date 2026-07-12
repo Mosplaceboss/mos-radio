@@ -1,5 +1,9 @@
 @echo off
-REM Launcher stub — replace with your existing LiveDJ restart script.
+setlocal
+if exist "%~dp0engine.local.cmd" (
+  call "%~dp0engine.local.cmd"
+  exit /b %ERRORLEVEL%
+)
 echo %DATE% %TIME% restart >> "%~dp0livedj.log"
 echo. > "%~dp0.running"
 exit /b 0

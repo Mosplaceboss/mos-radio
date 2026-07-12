@@ -13,6 +13,7 @@ if str(STUDIO_ROOT) not in sys.path:
     sys.path.insert(0, str(STUDIO_ROOT))
 
 from app.core.config_manager import ConfigManager
+from app.core.live_connector import ensure_local_integration_template
 from app.core.logger import setup_logging
 from app.core.paths import ensure_default_configs
 from app.ui.main_window import MainWindow
@@ -24,6 +25,7 @@ class StudioApplication:
 
     def __init__(self) -> None:
         ensure_default_configs()
+        ensure_local_integration_template()
         self.config_manager = ConfigManager()
         settings = self.config_manager.load("settings")
         log_level = settings.get("log_level", "INFO")

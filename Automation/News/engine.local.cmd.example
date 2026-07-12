@@ -1,0 +1,3 @@
+@echo off
+REM Copy to engine.local.cmd and point at your real News runner script.
+exit /b 0

@@ -8,10 +8,12 @@ Studio/logs/automation/*
 !Studio/logs/automation/.gitkeep
 Studio/backups/**
 !Studio/backups/.gitkeep
+Studio/config/integration.local.json
 Automation/**
 !Automation/**/
 !Automation/**/.gitkeep
 !Automation/**/*.bat
+!Automation/**/*.example
 Studio/assets/personalities/*
 !Studio/assets/personalities/.gitkeep
 Studio/assets/voices/*

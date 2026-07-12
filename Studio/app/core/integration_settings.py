@@ -6,7 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from app.core.paths import automation_root, repo_root, studio_root
+from app.core.paths import repo_root, studio_root
 
 DEFAULT_INTEGRATION: dict[str, Any] = {
     "radiodj_process": "RadioDJ.exe",
@@ -41,7 +41,7 @@ DEFAULT_INTEGRATION: dict[str, Any] = {
 }
 
 
-def normalize_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
+def base_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
     integration = deepcopy(DEFAULT_INTEGRATION)
     raw = settings.get("integration", {})
     if isinstance(raw, dict):
@@ -53,6 +53,12 @@ def normalize_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
             else:
                 integration[key] = value
     return integration
+
+
+def normalize_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    from app.core.live_connector import merge_integration_settings
+
+    return merge_integration_settings(settings)
 
 
 def operation_mode(settings: dict[str, Any]) -> str:
@@ -101,16 +107,6 @@ def news_live_paths(integration: dict[str, Any]) -> dict[str, Path]:
         "restart_script": resolve_integration_path(paths["restart_script"]),
         "run_now_script": resolve_integration_path(paths["run_now_script"]),
     }
-
-
-def dev_config_names(target: str) -> tuple[str, ...]:
-    if target == "livedj":
-        return ("personalities", "schedule", "voice_library")
-    if target == "requests":
-        return ("requests",)
-    if target == "news":
-        return ("news",)
-    return ()
 
 
 def studio_config_path(name: str) -> Path:

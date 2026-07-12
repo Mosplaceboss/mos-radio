@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.core.automation_model import append_automation_log
 from app.core.integration_settings import livedj_live_paths, news_live_paths, requests_live_paths
+from app.core.live_connector import resolve_engine_script
 from app.core.system_status import build_live_system_status
 
 logger = logging.getLogger("moplace.studio.operations")
@@ -31,27 +32,32 @@ def _run_script(script_path: Path, action: str) -> tuple[bool, str]:
 
 def start_request_watcher(integration: dict) -> tuple[bool, str]:
     paths = requests_live_paths(integration)
-    return _run_script(paths["start_script"], "Request Watcher")
+    script = resolve_engine_script(integration, "requests_start", paths["start_script"])
+    return _run_script(script, "Request Watcher")
 
 
 def restart_request_watcher(integration: dict) -> tuple[bool, str]:
     paths = requests_live_paths(integration)
-    return _run_script(paths["restart_script"], "Request Watcher restart")
+    script = resolve_engine_script(integration, "requests_restart", paths["restart_script"])
+    return _run_script(script, "Request Watcher restart")
 
 
 def start_livedj_watcher(integration: dict) -> tuple[bool, str]:
     paths = livedj_live_paths(integration)
-    return _run_script(paths["start_script"], "LiveDJ Watcher")
+    script = resolve_engine_script(integration, "livedj_start", paths["start_script"])
+    return _run_script(script, "LiveDJ Watcher")
 
 
 def restart_livedj_watcher(integration: dict) -> tuple[bool, str]:
     paths = livedj_live_paths(integration)
-    return _run_script(paths["restart_script"], "LiveDJ Watcher restart")
+    script = resolve_engine_script(integration, "livedj_restart", paths["restart_script"])
+    return _run_script(script, "LiveDJ Watcher restart")
 
 
 def run_news_now(integration: dict) -> tuple[bool, str]:
     paths = news_live_paths(integration)
-    return _run_script(paths["run_now_script"], "News run now")
+    script = resolve_engine_script(integration, "news_run_now", paths["run_now_script"])
+    return _run_script(script, "News run now")
 
 
 def refresh_all_statuses(settings: dict) -> tuple[bool, str]:
