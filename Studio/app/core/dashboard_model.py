@@ -10,12 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.core.automation_model import MODULE_DEFINITIONS, _collect_activity_log, build_automation_snapshot
+from app.core.automation_model import MODULE_DEFINITIONS, _collect_activity_log
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.core.paths import automation_logs_dir, automation_root, logs_dir, studio_root
 from app.core.personality_model import display_label as personality_label, normalize_personalities_data
 from app.core.requests_model import normalize_requests_data, request_mode_label
 from app.core.schedule_model import DAYS, normalize_schedule_data, time_to_minutes
+from app.core.system_status import build_live_system_status, service_lookup
 from app.core.voice_model import normalize_voice_library_data
 
 logger = logging.getLogger("moplace.studio.dashboard")
@@ -192,11 +193,11 @@ def _system_health_lookup(system_health: list[Any], name: str) -> tuple[str, str
     return HEALTH_WARN, "Not monitored"
 
 
-def _module_lookup(modules: list[Any], module_id: str) -> tuple[str, str]:
-    for module in modules:
-        if module.module_id == module_id:
-            return module.status, module.detail
-    return HEALTH_WARN, "Not monitored"
+def _service_light(live_status, service_name: str, display_name: str) -> StatusLight:
+    service = service_lookup(live_status, service_name)
+    if not service:
+        return StatusLight(display_name, HEALTH_WARN, "Not monitored")
+    return StatusLight(display_name, service.status, service.detail)
 
 
 def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
@@ -217,13 +218,8 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
     upcoming_slots = _find_upcoming_slots(slots, day, minutes, limit=5)
     upcoming_events = [_event_view(slot, personalities) for slot in upcoming_slots]
 
-    automation = build_automation_snapshot(config_manager)
-    livedj_status, livedj_detail = _module_lookup(automation.modules, "livedj")
-    news_status, news_detail = _module_lookup(automation.modules, "news")
-    requests_status, requests_detail = _module_lookup(automation.modules, "requests")
-    voicebox_status, voicebox_detail = _system_health_lookup(automation.system_health, "Voicebox Connected")
-    radiodj_status, radiodj_detail = _system_health_lookup(automation.system_health, "RadioDJ Connected")
-    internet_status, internet_detail = _system_health_lookup(automation.system_health, "Internet Connected")
+    settings = config_manager.load("settings", {})
+    live_status = build_live_system_status(settings)
 
     now_playing = _read_now_playing()
     if now_playing == "—" and current_slot:
@@ -237,12 +233,12 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
         now_playing_detail = "No scheduled event on air"
 
     station_lights = [
-        StatusLight("LiveDJ", livedj_status, livedj_detail),
-        StatusLight("News", news_status, news_detail),
-        StatusLight("Requests", requests_status, requests_detail),
-        StatusLight("Voicebox", voicebox_status, voicebox_detail),
-        StatusLight("RadioDJ", radiodj_status, radiodj_detail),
-        StatusLight("Internet", internet_status, internet_detail),
+        _service_light(live_status, "LiveDJ Watcher", "LiveDJ"),
+        _service_light(live_status, "News Tasks", "News"),
+        _service_light(live_status, "Request Watcher", "Requests"),
+        _service_light(live_status, "Voicebox", "Voicebox"),
+        _service_light(live_status, "RadioDJ", "RadioDJ"),
+        _service_light(live_status, "Internet", "Internet"),
         StatusLight("Now Playing", now_playing_status, now_playing_detail),
     ]
 

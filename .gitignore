@@ -6,6 +6,12 @@ Studio/*.spec
 Studio/logs/*.log
 Studio/logs/automation/*
 !Studio/logs/automation/.gitkeep
+Studio/backups/**
+!Studio/backups/.gitkeep
+Automation/**
+!Automation/**/
+!Automation/**/.gitkeep
+!Automation/**/*.bat
 Studio/assets/personalities/*
 !Studio/assets/personalities/.gitkeep
 Studio/assets/voices/*

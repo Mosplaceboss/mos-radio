@@ -20,7 +20,9 @@ from app.core.requests_model import (
     validate_requests_settings,
 )
 from app.core.schedule_model import TIME_OPTIONS, normalize_schedule_data
+from app.core.publish_manager import import_requests_from_live, integration_bundle, publish_requests, restore_requests_backup
 from app.pages.base_page import BasePage
+from app.ui.confirm_dialog import confirm_action
 from app.ui.theme import StudioTheme
 
 
@@ -37,9 +39,16 @@ class RequestsPage(BasePage):
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
-        ttk.Button(toolbar, text="Test Settings", bootstyle="info", command=self._test_settings).pack(side="left")
+        ttk.Button(toolbar, text="Import from Request System", bootstyle="secondary", command=self._import_live).pack(
+            side="left"
+        )
+        ttk.Button(toolbar, text="Test Settings", bootstyle="info", command=self._test_settings).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Reload", bootstyle="secondary", command=self._load).pack(side="left", padx=8)
-        ttk.Button(toolbar, text="Save Now", bootstyle="primary", command=self._save_now).pack(side="right")
+        ttk.Button(toolbar, text="Restore Last Backup", bootstyle="warning", command=self._restore_live).pack(side="right")
+        ttk.Button(toolbar, text="Publish to Request System", bootstyle="primary", command=self._publish_live).pack(
+            side="right", padx=8
+        )
+        ttk.Button(toolbar, text="Save Now", bootstyle="secondary", command=self._save_now).pack(side="right", padx=8)
 
         scroll = ScrolledFrame(self._body, autohide=True, bootstyle="secondary")
         scroll.pack(fill="both", expand=True)
@@ -429,3 +438,65 @@ class RequestsPage(BasePage):
         else:
             Messagebox.show_info("\n".join(lines), "Test Settings")
             self.set_status("Request settings test passed")
+
+    def _settings(self) -> dict:
+        return self.config_manager.load("settings", {})
+
+    def _integration(self) -> dict:
+        return integration_bundle(self._settings())
+
+    def _import_live(self) -> None:
+        if not confirm_action(
+            "Import from Request System",
+            "Import live request settings into Studio development config?",
+            self._settings(),
+        ):
+            return
+        ok, message = import_requests_from_live(self._integration())
+        if ok:
+            self.config_manager._cache.pop("requests", None)
+            self._load()
+            Messagebox.show_info(message, "Import Requests")
+        else:
+            Messagebox.show_warning(message, "Import Requests")
+        self.set_status(message)
+
+    def _publish_live(self) -> None:
+        data = self._collect_data()
+        errors, warnings = validate_requests_settings(data)
+        if errors:
+            Messagebox.show_error("\n".join(errors), "Cannot Publish")
+            return
+        if warnings and not confirm_action(
+            "Publish with Warnings",
+            "Validation warnings were found.\nPublish anyway?\n\n" + "\n".join(warnings[:6]),
+            self._settings(),
+        ):
+            return
+        if not confirm_action(
+            "Publish to Request System",
+            "Publish request settings to the live request path?\n"
+            "A timestamped backup will be created first.",
+            self._settings(),
+        ):
+            return
+        ok, message = publish_requests(self.config_manager, self._integration())
+        if ok:
+            Messagebox.show_info(message, "Publish Requests")
+        else:
+            Messagebox.show_error(message, "Publish Requests")
+        self.set_status(message)
+
+    def _restore_live(self) -> None:
+        if not confirm_action(
+            "Restore Last Backup",
+            "Restore the most recent request backup to the live request path?",
+            self._settings(),
+        ):
+            return
+        ok, message = restore_requests_backup(self._integration())
+        if ok:
+            Messagebox.show_info(message, "Restore Requests Backup")
+        else:
+            Messagebox.show_warning(message, "Restore Requests Backup")
+        self.set_status(message)

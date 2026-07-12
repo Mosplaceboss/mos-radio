@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "rss_feeds": [
+    {
+      "id": "feed-mos-news",
+      "name": "Mo's Place Headlines",
+      "url": "https://example.com/rss/mos-place-news",
+      "enabled": true
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-hourly-news",
+      "name": "Hourly News Update",
+      "schedule": "hourly",
+      "enabled": true
+    }
+  ],
+  "last_successful_run": "",
+  "updated": "2026-07-12T00:00:00"
+}

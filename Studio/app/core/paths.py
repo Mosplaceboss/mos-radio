@@ -14,6 +14,11 @@ def studio_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
+def repo_root() -> Path:
+    """Return the repository root (parent of Studio/)."""
+    return studio_root().parent
+
+
 def resource_root() -> Path:
     """Return read-only bundled resources (assets, default config)."""
     if getattr(sys, "frozen", False):
@@ -69,6 +74,20 @@ def automation_root() -> Path:
 def automation_logs_dir() -> Path:
     """Return Studio-side automation monitoring logs."""
     path = logs_dir() / "automation"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def backups_dir() -> Path:
+    """Return timestamped configuration backup storage."""
+    path = studio_root() / "backups"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def dev_config_dir() -> Path:
+    """Return development configuration workspace copies."""
+    path = studio_root() / "config" / "dev"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

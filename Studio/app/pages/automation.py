@@ -12,6 +12,16 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
+from app.core.operations import (
+    refresh_all_statuses,
+    restart_livedj_watcher,
+    restart_request_watcher,
+    run_news_now,
+    start_livedj_watcher,
+    start_request_watcher,
+)
+from app.core.publish_manager import integration_bundle
+from app.core.system_status import build_live_system_status
 from app.core.automation_model import (
     AutomationModuleStatus,
     AutomationSnapshot,
@@ -20,26 +30,38 @@ from app.core.automation_model import (
 )
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.pages.base_page import BasePage
+from app.ui.confirm_dialog import confirm_action
 from app.ui.theme import StudioTheme
 
 REFRESH_INTERVAL_MS = 5000
-READ_ONLY_MESSAGE = (
-    "Studio is in read-only monitoring mode. "
-    "Start, Stop, Restart, and Test Run controls will be enabled in a future integration phase. "
-    "LiveDJ and News engines are not modified by Studio."
-)
 
 
 class AutomationPage(BasePage):
     page_id = "automation"
     page_title = "Automation Manager"
-    page_subtitle = "Control center for all automation engines — read-only monitoring"
+    page_subtitle = "Control center for automation engines, live status, and confirmed operations"
 
     def build(self) -> None:
         self._refresh_job: str | None = None
         self._selected_module_id: str | None = None
         self._snapshot: AutomationSnapshot | None = None
         self._detail_labels: dict[str, ttk.Label] = {}
+
+        ops = ttk.Labelframe(self._body, text="Operations", style="StudioCard.TLabelframe", padding=12)
+        ops.pack(fill="x", pady=(0, 12))
+        ops_specs = (
+            ("Start Request Watcher", self._op_start_requests),
+            ("Restart Request Watcher", self._op_restart_requests),
+            ("Start LiveDJ Watcher", self._op_start_livedj),
+            ("Restart LiveDJ Watcher", self._op_restart_livedj),
+            ("Run News Now", self._op_run_news),
+            ("Refresh All Statuses", self._op_refresh_status),
+        )
+        for index, (label, command) in enumerate(ops_specs):
+            ttk.Button(ops, text=label, bootstyle="primary", command=command).grid(
+                row=index // 3, column=index % 3, sticky="ew", padx=6, pady=4
+            )
+            ops.columnconfigure(index % 3, weight=1)
 
         header = ttk.Frame(self._body, style="Studio.TFrame")
         header.pack(fill="x", pady=(0, 12))
@@ -268,37 +290,114 @@ class AutomationPage(BasePage):
             return None
         return self._module_by_id(self._selected_module_id)
 
-    def _read_only_notice(self, action: str) -> None:
-        append_automation_log(f"{action} requested (read-only mode)")
-        Messagebox.show_info(READ_ONLY_MESSAGE, action)
+    def _settings(self) -> dict:
+        return self.config_manager.load("settings", {})
+
+    def _integration(self) -> dict:
+        return integration_bundle(self._settings())
+
+    def _run_operation(self, title: str, message: str, callback) -> None:
+        if not confirm_action(title, message, self._settings()):
+            return
+        ok, result = callback()
+        if ok:
+            Messagebox.show_info(result, title)
+        else:
+            Messagebox.show_warning(result, title)
+        self.set_status(result)
+        self.refresh(quiet=True)
+
+    def _op_start_requests(self) -> None:
+        self._run_operation(
+            "Start Request Watcher",
+            "Start the Request Watcher using the configured launcher script?",
+            lambda: start_request_watcher(self._integration()),
+        )
+
+    def _op_restart_requests(self) -> None:
+        self._run_operation(
+            "Restart Request Watcher",
+            "Restart the Request Watcher using the configured launcher script?",
+            lambda: restart_request_watcher(self._integration()),
+        )
+
+    def _op_start_livedj(self) -> None:
+        self._run_operation(
+            "Start LiveDJ Watcher",
+            "Start the LiveDJ Watcher using the configured launcher script?",
+            lambda: start_livedj_watcher(self._integration()),
+        )
+
+    def _op_restart_livedj(self) -> None:
+        self._run_operation(
+            "Restart LiveDJ Watcher",
+            "Restart the LiveDJ Watcher using the configured launcher script?",
+            lambda: restart_livedj_watcher(self._integration()),
+        )
+
+    def _op_run_news(self) -> None:
+        self._run_operation(
+            "Run News Now",
+            "Trigger an immediate news run using the configured launcher script?",
+            lambda: run_news_now(self._integration()),
+        )
+
+    def _op_refresh_status(self) -> None:
+        self._run_operation(
+            "Refresh All Statuses",
+            "Refresh live system status for Dashboard and Automation monitoring?",
+            lambda: refresh_all_statuses(self._settings()),
+        )
 
     def _action_start(self) -> None:
         module = self._selected_module()
         if not module:
             Messagebox.show_info("Select an automation module first.", "Automation")
             return
-        self._read_only_notice(f"Start {module.name}")
+        if module.module_id == "requests":
+            self._op_start_requests()
+        elif module.module_id == "livedj":
+            self._op_start_livedj()
+        else:
+            append_automation_log(f"Start {module.name} requested — no launcher configured")
+            Messagebox.show_info(f"No start launcher configured for {module.name}.", "Start")
 
     def _action_stop(self) -> None:
         module = self._selected_module()
         if not module:
             Messagebox.show_info("Select an automation module first.", "Automation")
             return
-        self._read_only_notice(f"Stop {module.name}")
+        if not confirm_action("Stop", f"Stop {module.name}?\nStudio does not stop engines directly.", self._settings()):
+            return
+        append_automation_log(f"Stop {module.name} requested — use engine launcher")
+        Messagebox.show_info(
+            f"Studio does not stop {module.name} directly.\nUse the engine's own stop script or task manager.",
+            "Stop",
+        )
 
     def _action_restart(self) -> None:
         module = self._selected_module()
         if not module:
             Messagebox.show_info("Select an automation module first.", "Automation")
             return
-        self._read_only_notice(f"Restart {module.name}")
+        if module.module_id == "requests":
+            self._op_restart_requests()
+        elif module.module_id == "livedj":
+            self._op_restart_livedj()
+        else:
+            append_automation_log(f"Restart {module.name} requested — no launcher configured")
+            Messagebox.show_info(f"No restart launcher configured for {module.name}.", "Restart")
 
     def _action_test_run(self) -> None:
         module = self._selected_module()
         if not module:
             Messagebox.show_info("Select an automation module first.", "Automation")
             return
-        self._read_only_notice(f"Test Run {module.name}")
+        if module.module_id == "news":
+            self._op_run_news()
+        else:
+            append_automation_log(f"Test run requested for {module.name}")
+            Messagebox.show_info(f"Test run is not configured for {module.name}.", "Test Run")
 
     def _open_path(self, path: Path) -> None:
         try:
@@ -354,7 +453,7 @@ class AutomationPage(BasePage):
             "",
             module.detail,
             "",
-            "Read-only monitoring — external engines are not controlled by Studio.",
+            "Studio controls launchers and configuration publish only — engines are not rewritten.",
         ]
         append_automation_log(f"Health check run for {module.name}: {module.status}")
         if module.status == HEALTH_ERROR:

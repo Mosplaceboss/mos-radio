@@ -6,12 +6,16 @@ import subprocess
 import sys
 from typing import Any
 
+from app.core.integration_settings import operation_mode
 from app.core.paths import studio_root
 
 APP_VERSION = "1.0.0"
 
 
-def environment_mode() -> str:
+def environment_mode(settings: dict[str, Any] | None = None) -> str:
+    if settings:
+        mode = operation_mode(settings)
+        return "Production" if mode == "production" else "Development"
     return "Production" if getattr(sys, "frozen", False) else "Development"
 
 
