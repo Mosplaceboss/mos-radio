@@ -9,7 +9,7 @@ import ttkbootstrap as ttk
 
 from app.core.config_manager import ConfigManager
 from app.pages.base_page import BasePage
-from app.pages.integration import IntegrationPage
+from app.pages.connection import ConnectionSetupPage
 from app.pages.automation import AutomationPage
 from app.pages.dashboard import DashboardPage
 from app.pages.livedj import LiveDJPage
@@ -30,7 +30,7 @@ class MainWindow(ttk.Frame):
 
     PAGE_CLASSES: dict[str, Type[BasePage]] = {
         "dashboard": DashboardPage,
-        "integration": IntegrationPage,
+        "connection": ConnectionSetupPage,
         "automation": AutomationPage,
         "personalities": PersonalitiesPage,
         "voice_library": VoiceLibraryPage,

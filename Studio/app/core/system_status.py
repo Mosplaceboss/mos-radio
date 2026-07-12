@@ -136,10 +136,24 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
     news_paths = news_live_paths(integration)
     process_lines = list_windows_process_lines(force_refresh=True)
 
-    radiodj_running, radiodj_detail = _process_running(
-        integration["radiodj_process"], process_lines=process_lines
-    )
-    radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
+    radiodj_executable = integration.get("radiodj_executable", "").strip()
+    if radiodj_executable:
+        exe_path = Path(radiodj_executable)
+        if exe_path.exists():
+            process_name = exe_path.name
+            radiodj_running, radiodj_detail = _process_running(process_name, process_lines=process_lines)
+            radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
+            if not radiodj_running:
+                radiodj_detail = f"Executable found but {process_name} is not running"
+        else:
+            radiodj_running = False
+            radiodj_status = HEALTH_ERROR
+            radiodj_detail = f"Executable not found: {radiodj_executable}"
+    else:
+        radiodj_running, radiodj_detail = _process_running(
+            integration["radiodj_process"], process_lines=process_lines
+        )
+        radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
 
     voicebox_status, voicebox_detail, voicebox_running = _voicebox_api_ok(
         integration["voicebox_api_url"],

@@ -1,5 +1,13 @@
 {
   "enabled": false,
+  "station": {
+    "radio_pc": "",
+    "livedj_folder": "",
+    "news_folder": "",
+    "requests_folder": "",
+    "radiodj_executable": "",
+    "voicebox_api_url": "http://127.0.0.1:7860"
+  },
   "now_playing_file": "",
   "live_paths": {
     "livedj": {
