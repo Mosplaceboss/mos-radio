@@ -12,16 +12,23 @@ from PIL import Image, ImageTk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from app.core.paths import studio_root, voice_portraits_dir, writable_assets_dir
-from app.core.personality_model import display_label as personality_label, normalize_personalities_data
+from app.core.background_tasks import run_in_background
+from app.core.paths import voice_portraits_dir, writable_assets_dir
+from app.core.personality_model import display_label as personality_label
+from app.core.voice_library_loader import VoiceLibraryLoadResult, load_voice_library_page_data
 from app.core.voice_model import (
     display_label,
     new_voice_id,
     normalize_voice,
-    normalize_voice_library_data,
     specialties_from_string,
     specialties_to_string,
     validate_voice,
+)
+from app.core.voice_portrait_cache import (
+    get_thumbnail,
+    invalidate_path,
+    resolve_voice_portrait_path,
+    warm_thumbnail,
 )
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
@@ -42,9 +49,13 @@ class VoiceLibraryPage(BasePage):
         self._field_vars: dict[str, tk.Variable] = {}
         self._text_widgets: dict[str, tk.Text] = {}
         self._entry_widgets: list[ttk.Entry] = []
+        self._load_generation = 0
+        self._load_in_progress = False
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
+        self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
+        self._loading_label.pack(side="left", padx=(0, 12))
         ttk.Button(toolbar, text="Add Voice", bootstyle="success", command=self._add_voice).pack(side="left")
         ttk.Button(toolbar, text="Delete Voice", bootstyle="danger", command=self._delete_voice).pack(
             side="left", padx=8
@@ -176,16 +187,70 @@ class VoiceLibraryPage(BasePage):
         self._set_form_enabled(False)
 
     def on_show(self) -> None:
-        personalities_data = normalize_personalities_data(
-            self.config_manager.load("personalities", {"personalities": []})
-        )
-        self._personalities = personalities_data.get("personalities", [])
-        self._update_personality_combo_values()
+        self._begin_background_load()
 
-        loaded = self.config_manager.load("voice_library", {"voices": []})
-        self._data = normalize_voice_library_data(loaded)
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._show_loading(False)
+
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        self._show_loading(True)
+        self._set_form_enabled(False)
+
+        personalities_path = self.config_manager.path_for("personalities")
+        voice_library_path = self.config_manager.path_for("voice_library")
+
+        def work() -> VoiceLibraryLoadResult:
+            return load_voice_library_page_data(personalities_path, voice_library_path)
+
+        def complete(result: VoiceLibraryLoadResult) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._apply_loaded_data(result)
+            self._show_loading(False)
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._show_loading(False)
+            self._data = {"voices": []}
+            self._personalities = []
+            self._refresh_tree()
+            self._clear_form()
+            self._set_form_enabled(False)
+            self.set_status(f"Voice Library load failed: {error}")
+
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _show_loading(self, active: bool) -> None:
+        self._loading_label.configure(text="Loading voices…" if active else "")
+
+    def _apply_loaded_data(self, result: VoiceLibraryLoadResult) -> None:
+        self._personalities = result.personalities
+        self._data = result.voices_data
+        self.config_manager._cache["personalities"] = {
+            "personalities": result.personalities,
+        }
+        self.config_manager._cache["voice_library"] = result.voices_data
+        self._update_personality_combo_values()
         self._refresh_tree()
-        if self._data["voices"]:
+
+        if result.load_errors:
+            self.set_status("; ".join(result.load_errors))
+        elif result.portrait_errors:
+            self.set_status("Voice library loaded with some portrait warnings")
+        else:
+            self.set_status(
+                f"Voice library loaded ({len(self._data.get('voices', []))} voices)"
+            )
+
+        if self._data.get("voices"):
             first_id = self._data["voices"][0]["id"]
             self._tree.selection_set(first_id)
             self._tree.focus(first_id)
@@ -447,12 +512,7 @@ class VoiceLibraryPage(BasePage):
         self.set_status(f"Deleted voice '{display_label(voice)}'")
 
     def _resolve_portrait_path(self, portrait: str) -> Path | None:
-        if not portrait:
-            return None
-        path = Path(portrait)
-        if path.is_absolute():
-            return path
-        return studio_root() / "assets" / portrait
+        return resolve_voice_portrait_path(portrait)
 
     def _portrait_relative_path(self, absolute_path: Path) -> str:
         assets_root = writable_assets_dir()
@@ -461,18 +521,55 @@ class VoiceLibraryPage(BasePage):
         except ValueError:
             return str(absolute_path)
 
+    def _apply_portrait_image(self, portrait: str, thumb: Image.Image) -> None:
+        self._photo_image = ImageTk.PhotoImage(thumb)
+        self._portrait_label.configure(image=self._photo_image, text="")
+        self._portrait_path_label.configure(text=portrait.replace("\\", "/"))
+
     def _update_portrait_preview(self, portrait: str) -> None:
         self._photo_image = None
-        path = self._resolve_portrait_path(portrait)
-        if path and path.exists():
-            image = Image.open(path)
-            image.thumbnail((112, 112), Image.Resampling.LANCZOS)
-            self._photo_image = ImageTk.PhotoImage(image)
-            self._portrait_label.configure(image=self._photo_image, text="")
-            self._portrait_path_label.configure(text=portrait.replace("\\", "/"))
-        else:
+        if not portrait:
             self._portrait_label.configure(image="", text="No Portrait")
             self._portrait_path_label.configure(text="")
+            return
+
+        path = self._resolve_portrait_path(portrait)
+        if path is None or not path.exists():
+            self._portrait_label.configure(image="", text="No Portrait")
+            self._portrait_path_label.configure(text=portrait.replace("\\", "/"))
+            return
+
+        thumb = get_thumbnail(path)
+        if thumb is not None:
+            self._apply_portrait_image(portrait, thumb)
+            return
+
+        self._portrait_label.configure(image="", text="Loading…")
+        self._portrait_path_label.configure(text=portrait.replace("\\", "/"))
+        generation = self._load_generation
+
+        def work() -> tuple[str, Path]:
+            warm_thumbnail(path)
+            return portrait, path
+
+        def complete(payload: tuple[str, Path]) -> None:
+            if generation != self._load_generation:
+                return
+            current = self._selected_voice()
+            if not current or current.get("portrait", "") != payload[0]:
+                return
+            cached = get_thumbnail(payload[1])
+            if cached is not None:
+                self._apply_portrait_image(payload[0], cached)
+            else:
+                self._portrait_label.configure(image="", text="No Portrait")
+
+        def failed(_error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._portrait_label.configure(image="", text="No Portrait")
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _upload_portrait(self) -> None:
         voice = self._selected_voice()
@@ -494,6 +591,7 @@ class VoiceLibraryPage(BasePage):
         suffix = source_path.suffix.lower() or ".png"
         destination = voice_portraits_dir() / f"{voice['id']}{suffix}"
         shutil.copy2(source_path, destination)
+        invalidate_path(destination)
 
         voice["portrait"] = self._portrait_relative_path(destination)
         self._update_portrait_preview(voice["portrait"])
@@ -507,6 +605,7 @@ class VoiceLibraryPage(BasePage):
         path = self._resolve_portrait_path(voice.get("portrait", ""))
         if path and path.exists():
             path.unlink(missing_ok=True)
+            invalidate_path(path)
         voice["portrait"] = ""
         self._update_portrait_preview("")
         self.config_manager.save("voice_library", self._data)
