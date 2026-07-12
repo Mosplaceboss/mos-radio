@@ -19,6 +19,7 @@ from app.core.paths import ensure_default_configs
 from app.core.platform_manager import ensure_default_platform_config
 from app.core.music_model import ensure_music_data
 from app.core.news_content_model import ensure_news_content_data
+from app.core.operations_manager_model import ensure_operations_data
 from app.core.programming_model import ensure_programming_data
 from app.core.station_data import ensure_station_data
 from app.ui.main_window import MainWindow
@@ -37,6 +38,7 @@ class StudioApplication:
         ensure_programming_data(self.config_manager)
         ensure_music_data(self.config_manager)
         ensure_news_content_data(self.config_manager)
+        ensure_operations_data(self.config_manager)
         settings = self.config_manager.load("settings")
         log_level = settings.get("log_level", "INFO")
         self.logger = setup_logging(log_level)

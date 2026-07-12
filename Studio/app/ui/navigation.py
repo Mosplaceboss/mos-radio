@@ -24,7 +24,7 @@ class NavigationPanel(ttk.Frame):
         ("requests", "Requests"),
         ("advertising", "Advertising"),
         ("news_content_manager", "News & Content"),
-        ("automation", "Automation"),
+        ("operations_manager", "Operations"),
         ("reports", "Reports"),
         ("settings", "Settings"),
         ("platform_manager", "Platform Manager"),
@@ -35,7 +35,7 @@ class NavigationPanel(ttk.Frame):
         ("", ("station_manager", "dashboard")),
         ("On Air", ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests")),
         ("Station", ("advertising", "news_content_manager")),
-        ("Operations", ("automation", "reports")),
+        ("Operations", ("operations_manager", "reports")),
         ("", ("settings", "platform_manager", "advanced")),
     )
 
@@ -44,6 +44,7 @@ class NavigationPanel(ttk.Frame):
         "livedj": "advanced",
         "station_information": "station_manager",
         "news": "news_content_manager",
+        "automation": "operations_manager",
     }
 
     def __init__(self, parent: tk.Misc, on_navigate: Callable[[str], None]) -> None:

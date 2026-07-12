@@ -41,7 +41,7 @@ QUICK_ACTIONS = (
     ("_inventory", "Inventory"),
     ("reports", "Reports"),
     ("settings", "Settings"),
-    ("automation", "Operations"),
+    ("operations_manager", "Operations"),
 )
 
 

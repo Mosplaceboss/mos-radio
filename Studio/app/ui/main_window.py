@@ -18,6 +18,7 @@ from app.pages.livedj import LiveDJPage
 from app.pages.music_manager import MusicManagerPage
 from app.pages.news_content_manager import NewsContentManagerPage
 from app.pages.news import NewsPage
+from app.pages.operations_manager import OperationsManagerPage
 from app.pages.personalities import PersonalitiesPage
 from app.pages.platform_manager import PlatformManagerPage
 from app.pages.programming_manager import ProgrammingManagerPage as ProgrammingPage
@@ -49,6 +50,7 @@ class MainWindow(ttk.Frame):
         "advertising": AdvertisingPage,
         "news_content_manager": NewsContentManagerPage,
         "news": NewsPage,
+        "operations_manager": OperationsManagerPage,
         "automation": AutomationPage,
         "reports": ReportsPage,
         "settings": SettingsPage,

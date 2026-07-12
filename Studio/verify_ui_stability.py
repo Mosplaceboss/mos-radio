@@ -25,7 +25,7 @@ FIRST_BUILD_MS = 500
 LOAD_WAIT_S = 5.0
 STATUS_CALL_LIMIT = 25
 CRUD_ROUNDS = 10
-BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager"})
+BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager", "operations_manager"})
 
 SKIP_BUTTON_TEXT = frozenset(
     {
@@ -78,6 +78,17 @@ SKIP_BUTTON_TEXT = frozenset(
         "Use Platform Default",
         "Run Report",
         "Save News Data",
+        "Save Operations Data",
+        "Refresh Status",
+        "Create Backup",
+        "Restore Last Backup",
+        "Validate Deployment",
+        "Create Deployment Package",
+        "Roll Back",
+        "Copy Module",
+        "Verify Copy",
+        "Mark Testing",
+        "Mark Ready",
         "Add Personality",
         "Delete Personality",
         "Apply Personality Changes",

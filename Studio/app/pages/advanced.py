@@ -15,7 +15,7 @@ class AdvancedPage(HubPage):
         ("platform_manager", "Platform Manager", "Set and test every production folder path used by Studio."),
         ("connection", "Connection Setup", "Link Studio to station computers and import live settings."),
         ("livedj", "LiveDJ Tools", "Import, validate, and publish LiveDJ configuration."),
-        ("automation", "Automation Manager", "Start services, review logs, and run health checks."),
+        ("automation", "Automation Manager", "Legacy automation controls, service health, and module logs."),
         ("news", "Live News Integration", "Import, publish, and restore the live news automation configuration."),
         ("settings", "Settings", "Station preferences, themes, and operation mode."),
     )
