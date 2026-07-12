@@ -13,16 +13,23 @@ from PIL import Image, ImageTk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from app.core.paths import personality_images_dir, studio_root, writable_assets_dir
+from app.core.background_tasks import run_in_background
+from app.core.paths import personality_images_dir, writable_assets_dir
 from app.core.personality_model import (
     display_label,
     formats_from_string,
     formats_to_string,
     new_personality_id,
-    normalize_personalities_data,
     normalize_personality,
     validate_personality,
 )
+from app.core.personality_picture_cache import (
+    get_thumbnail,
+    invalidate_path,
+    resolve_personality_picture_path,
+    warm_thumbnail,
+)
+from app.core.personalities_loader import PersonalitiesLoadResult, load_personalities_page_data
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -41,9 +48,16 @@ class PersonalitiesPage(BasePage):
         self._field_vars: dict[str, tk.Variable] = {}
         self._text_widgets: dict[str, tk.Text] = {}
         self._entry_widgets: list[ttk.Entry] = []
+        self._load_generation = 0
+        self._load_in_progress = False
+        self._suppress_tree_events = False
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
+        self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
+        self._loading_label.pack(side="left", padx=(0, 12))
+        self._error_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel", wraplength=520)
+        self._error_label.pack(side="left", fill="x", expand=True)
         ttk.Button(toolbar, text="Add Personality", bootstyle="success", command=self._add_personality).pack(
             side="left"
         )
@@ -173,18 +187,99 @@ class PersonalitiesPage(BasePage):
         self._set_form_enabled(False)
 
     def on_show(self) -> None:
-        loaded = self.config_manager.load("personalities", {"personalities": []})
-        self._data = normalize_personalities_data(loaded)
-        self._refresh_tree()
-        if self._data["personalities"]:
-            first_id = self._data["personalities"][0]["id"]
-            self._tree.selection_set(first_id)
-            self._tree.focus(first_id)
-            self._load_personality(first_id)
+        self._begin_background_load()
+
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._show_loading(False)
+
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        self._show_loading(True)
+        self._show_error("")
+        self._set_form_enabled(False)
+
+        personalities_path = self.config_manager.path_for("personalities")
+
+        def work() -> PersonalitiesLoadResult:
+            return load_personalities_page_data(personalities_path)
+
+        def complete(result: PersonalitiesLoadResult) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            try:
+                self._apply_loaded_data(result)
+            except Exception as exc:
+                self._show_loading(False)
+                self._show_error(f"Personalities could not display records: {exc}")
+                self._set_form_enabled(False)
+                self.set_status("Personalities display failed")
+                return
+            self._show_loading(False)
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._show_loading(False)
+            self._data = {"personalities": []}
+            self._selected_id = None
+            self._refresh_tree(restore_selection=False)
+            self._clear_form()
+            self._set_form_enabled(False)
+            self._show_error(f"Personalities could not load: {error}")
+            self.set_status("Personalities load failed")
+
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _show_loading(self, active: bool) -> None:
+        self._loading_label.configure(text="Loading personalities…" if active else "")
+
+    def _show_error(self, message: str) -> None:
+        if message:
+            self._error_label.configure(text=message, bootstyle="danger")
         else:
+            self._error_label.configure(text="", bootstyle="")
+
+    def _apply_loaded_data(self, result: PersonalitiesLoadResult) -> None:
+        self._data = result.personalities_data
+        self.config_manager._cache["personalities"] = result.personalities_data
+        self._refresh_tree(restore_selection=False)
+
+        if result.load_errors:
+            self._show_error("; ".join(result.load_errors))
+            self.set_status("; ".join(result.load_errors))
+        elif result.picture_errors:
+            self._show_error("Some pictures could not be loaded.")
+            self.set_status("Personalities loaded with picture warnings")
+        else:
+            self._show_error("")
+            self.set_status(
+                f"Personalities loaded ({len(self._data.get('personalities', []))} profiles)"
+            )
+
+        personalities = self._data.get("personalities", [])
+        if not personalities:
             self._selected_id = None
             self._clear_form()
             self._set_form_enabled(False)
+            return
+
+        self._select_personality(personalities[0]["id"])
+
+    def _select_personality(self, personality_id: str) -> None:
+        self._suppress_tree_events = True
+        try:
+            if self._tree.exists(personality_id):
+                self._tree.selection_set(personality_id)
+                self._tree.focus(personality_id)
+        finally:
+            self._suppress_tree_events = False
+        self._load_personality(personality_id)
 
     def _add_entry_row(
         self,
@@ -272,29 +367,37 @@ class PersonalitiesPage(BasePage):
                 return personality
         return None
 
-    def _refresh_tree(self) -> None:
-        selected = self._selected_id
-        self._tree.delete(*self._tree.get_children())
-        for personality in self._data.get("personalities", []):
-            self._tree.insert(
-                "",
-                "end",
-                iid=personality["id"],
-                values=(
-                    display_label(personality),
-                    personality.get("show_name", ""),
-                    "Yes" if personality.get("active", True) else "No",
-                ),
-            )
-        if selected and self._tree.exists(selected):
-            self._tree.selection_set(selected)
-            self._tree.focus(selected)
+    def _refresh_tree(self, *, restore_selection: bool = True) -> None:
+        selected = self._selected_id if restore_selection else None
+        self._suppress_tree_events = True
+        try:
+            self._tree.delete(*self._tree.get_children())
+            for personality in self._data.get("personalities", []):
+                self._tree.insert(
+                    "",
+                    "end",
+                    iid=personality["id"],
+                    values=(
+                        display_label(personality),
+                        personality.get("show_name", ""),
+                        "Yes" if personality.get("active", True) else "No",
+                    ),
+                )
+            if selected and self._tree.exists(selected):
+                current = self._tree.selection()
+                if not current or current[0] != selected:
+                    self._tree.selection_set(selected)
+                self._tree.focus(selected)
+        finally:
+            self._suppress_tree_events = False
 
     def _on_tree_select(self, _event=None) -> None:
-        if self._loading_form:
+        if self._suppress_tree_events or self._loading_form:
             return
         selection = self._tree.selection()
         if not selection:
+            return
+        if selection[0] == self._selected_id:
             return
         self._apply_form_to_selected()
         self._load_personality(selection[0])
@@ -420,9 +523,7 @@ class PersonalitiesPage(BasePage):
         self._data.setdefault("personalities", []).append(personality)
         self.config_manager.save("personalities", self._data)
         self._refresh_tree()
-        self._tree.selection_set(personality["id"])
-        self._tree.focus(personality["id"])
-        self._load_personality(personality["id"])
+        self._select_personality(personality["id"])
         self.set_status("Added new personality")
 
     def _delete_personality(self) -> None:
@@ -448,21 +549,14 @@ class PersonalitiesPage(BasePage):
         self.config_manager.save("personalities", self._data)
         self._refresh_tree()
         if self._data["personalities"]:
-            next_id = self._data["personalities"][0]["id"]
-            self._tree.selection_set(next_id)
-            self._load_personality(next_id)
+            self._select_personality(self._data["personalities"][0]["id"])
         else:
             self._clear_form()
             self._set_form_enabled(False)
         self.set_status(f"Deleted personality '{display_label(personality)}'")
 
     def _resolve_picture_path(self, picture: str) -> Path | None:
-        if not picture:
-            return None
-        path = Path(picture)
-        if path.is_absolute():
-            return path
-        return studio_root() / "assets" / picture
+        return resolve_personality_picture_path(picture)
 
     def _picture_relative_path(self, absolute_path: Path) -> str:
         assets_root = writable_assets_dir()
@@ -471,19 +565,55 @@ class PersonalitiesPage(BasePage):
         except ValueError:
             return str(absolute_path)
 
+    def _apply_picture_image(self, picture: str, thumb: Image.Image) -> None:
+        self._photo_image = ImageTk.PhotoImage(thumb)
+        self._picture_label.configure(image=self._photo_image, text="")
+        self._picture_path_label.configure(text=picture.replace("\\", "/"))
+
     def _update_picture_preview(self, picture: str) -> None:
         self._photo_image = None
-        path = self._resolve_picture_path(picture)
-        if path and path.exists():
-            image = Image.open(path)
-            image.thumbnail((112, 112), Image.Resampling.LANCZOS)
-            self._photo_image = ImageTk.PhotoImage(image)
-            self._picture_label.configure(image=self._photo_image, text="")
-            display_path = picture.replace("\\", "/")
-            self._picture_path_label.configure(text=display_path)
-        else:
+        if not picture:
             self._picture_label.configure(image="", text="No Photo")
             self._picture_path_label.configure(text="")
+            return
+
+        path = self._resolve_picture_path(picture)
+        if path is None or not path.exists():
+            self._picture_label.configure(image="", text="No Photo")
+            self._picture_path_label.configure(text=picture.replace("\\", "/"))
+            return
+
+        thumb = get_thumbnail(path)
+        if thumb is not None:
+            self._apply_picture_image(picture, thumb)
+            return
+
+        self._picture_label.configure(image="", text="Loading…")
+        self._picture_path_label.configure(text=picture.replace("\\", "/"))
+        generation = self._load_generation
+
+        def work() -> tuple[str, Path]:
+            warm_thumbnail(path)
+            return picture, path
+
+        def complete(payload: tuple[str, Path]) -> None:
+            if generation != self._load_generation:
+                return
+            current = self._selected_personality()
+            if not current or current.get("picture", "") != payload[0]:
+                return
+            cached = get_thumbnail(payload[1])
+            if cached is not None:
+                self._apply_picture_image(payload[0], cached)
+            else:
+                self._picture_label.configure(image="", text="No Photo")
+
+        def failed(_error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._picture_label.configure(image="", text="No Photo")
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _upload_picture(self) -> None:
         personality = self._selected_personality()
@@ -505,6 +635,7 @@ class PersonalitiesPage(BasePage):
         suffix = source_path.suffix.lower() or ".png"
         destination = personality_images_dir() / f"{personality['id']}{suffix}"
         shutil.copy2(source_path, destination)
+        invalidate_path(destination)
 
         personality["picture"] = self._picture_relative_path(destination)
         personality["updated"] = datetime.now().isoformat(timespec="seconds")
@@ -519,6 +650,7 @@ class PersonalitiesPage(BasePage):
         path = self._resolve_picture_path(personality.get("picture", ""))
         if path and path.exists():
             path.unlink(missing_ok=True)
+            invalidate_path(path)
         personality["picture"] = ""
         personality["updated"] = datetime.now().isoformat(timespec="seconds")
         self._update_picture_preview("")
