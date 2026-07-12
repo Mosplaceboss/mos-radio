@@ -37,7 +37,8 @@ from app.ui.theme import StudioTheme
 class PersonalitiesPage(BasePage):
     page_id = "personalities"
     page_title = "Personalities"
-    page_subtitle = "Manage on-air personality profiles for Studio configuration"
+    page_subtitle = "Create and edit your on-air host profiles"
+    page_help = "Each personality represents a host or DJ. Assign them to schedule slots and voice announcements."
 
     def build(self) -> None:
         self._data: dict = {"personalities": []}

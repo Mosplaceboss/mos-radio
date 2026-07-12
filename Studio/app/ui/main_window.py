@@ -9,12 +9,16 @@ import ttkbootstrap as ttk
 
 from app.core.config_manager import ConfigManager
 from app.pages.base_page import BasePage
-from app.pages.connection import ConnectionSetupPage
+from app.pages.advanced import AdvancedPage
+from app.pages.advertising import AdvertisingPage
 from app.pages.automation import AutomationPage
+from app.pages.connection import ConnectionSetupPage
 from app.pages.dashboard import DashboardPage
 from app.pages.livedj import LiveDJPage
 from app.pages.news import NewsPage
 from app.pages.personalities import PersonalitiesPage
+from app.pages.programming import ProgrammingPage
+from app.pages.reports import ReportsPage
 from app.pages.requests import RequestsPage
 from app.pages.schedule import SchedulePage
 from app.pages.settings import SettingsPage
@@ -30,15 +34,19 @@ class MainWindow(ttk.Frame):
 
     PAGE_CLASSES: dict[str, Type[BasePage]] = {
         "dashboard": DashboardPage,
-        "connection": ConnectionSetupPage,
-        "automation": AutomationPage,
+        "programming": ProgrammingPage,
         "personalities": PersonalitiesPage,
         "voice_library": VoiceLibraryPage,
         "schedule": SchedulePage,
         "requests": RequestsPage,
+        "advertising": AdvertisingPage,
         "news": NewsPage,
-        "livedj": LiveDJPage,
+        "automation": AutomationPage,
+        "reports": ReportsPage,
         "settings": SettingsPage,
+        "advanced": AdvancedPage,
+        "connection": ConnectionSetupPage,
+        "livedj": LiveDJPage,
     }
 
     def __init__(self, master: tk.Misc, config_manager: ConfigManager) -> None:
@@ -50,7 +58,7 @@ class MainWindow(ttk.Frame):
         settings = config_manager.load("settings")
         station_name = settings.get("station_name", "Mo's Place Radio")
 
-        self._banner = BannerBar(self, station_name=station_name)
+        self._banner = BannerBar(self, station_name=station_name, settings=settings)
         self._banner.pack(fill="x", side="top")
 
         body = ttk.Frame(self, style="Studio.TFrame")
@@ -95,4 +103,4 @@ class MainWindow(ttk.Frame):
         page.on_show()
         self._current_page_id = page_id
         self._navigation.select(page_id, notify=False)
-        self.set_status(f"Viewing {page.page_title}")
+        self.set_status(f"Ready — {page.page_title}")

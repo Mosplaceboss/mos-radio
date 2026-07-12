@@ -23,6 +23,7 @@ class BasePage(ttk.Frame, ABC):
     page_id: str = "base"
     page_title: str = "Page"
     page_subtitle: str = ""
+    page_help: str = ""
 
     def __init__(
         self,
@@ -52,6 +53,14 @@ class BasePage(ttk.Frame, ABC):
                 text=self.page_subtitle,
                 style="StudioSubheading.TLabel",
             ).pack(anchor="w", pady=(4, 0))
+        if self.page_help:
+            ttk.Label(
+                self._header,
+                text=self.page_help,
+                style="StudioHelp.TLabel",
+                wraplength=900,
+                justify="left",
+            ).pack(anchor="w", pady=(8, 0))
         self._body = ttk.Frame(self, style="Studio.TFrame")
         self._body.pack(fill="both", expand=True, padx=24, pady=(0, 20))
         self.build()

@@ -5,11 +5,13 @@ from __future__ import annotations
 import tkinter as tk
 
 import ttkbootstrap as ttk
+from PIL import Image, ImageTk
 from ttkbootstrap.scrolled import ScrolledText
 
 from app.core.background_tasks import run_in_background
 from app.core.dashboard_model import DashboardSnapshot, StatusLight, build_dashboard_snapshot
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
+from app.core.paths import assets_dir
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -21,11 +23,17 @@ LIGHT_COLORS = {
     HEALTH_ERROR: StudioTheme.DANGER,
 }
 
+SERVICE_LIGHTS = ("RadioDJ", "Voicebox", "LiveDJ", "News", "Requests", "Internet")
+
 
 class DashboardPage(BasePage):
     page_id = "dashboard"
     page_title = "Dashboard"
-    page_subtitle = "Station home screen — read-only monitoring, health, and quick navigation"
+    page_subtitle = "Your station command center"
+    page_help = (
+        "Green means a service is healthy, yellow means it needs attention, "
+        "and red means it needs help. This screen updates automatically every few seconds."
+    )
 
     def build(self) -> None:
         self._refresh_job: str | None = None
@@ -39,40 +47,57 @@ class DashboardPage(BasePage):
         self._refresh_cancelled = False
         self._refresh_generation = 0
 
+        hero = ttk.Frame(self._body, style="Studio.TFrame")
+        hero.pack(fill="x", pady=(0, 16))
+
+        logo_path = assets_dir() / "logo.png"
+        if logo_path.exists():
+            image = Image.open(logo_path)
+            image.thumbnail((72, 72), Image.Resampling.LANCZOS)
+            self._logo_image = ImageTk.PhotoImage(image)
+            ttk.Label(hero, image=self._logo_image, style="StudioHero.TLabel").pack(side="left", padx=(0, 16))
+
+        hero_text = ttk.Frame(hero, style="Studio.TFrame")
+        hero_text.pack(side="left", fill="x", expand=True)
+        ttk.Label(hero_text, text="Mo's Place Radio", style="StudioHero.TLabel").pack(anchor="w")
+        self._station_status_label = ttk.Label(
+            hero_text,
+            text="Checking station status…",
+            style="StudioSubheading.TLabel",
+        )
+        self._station_status_label.pack(anchor="w", pady=(4, 0))
+
         station = ttk.Labelframe(
             self._body,
-            text="Station Status",
+            text="Service Status",
             style="StudioCard.TLabelframe",
             padding=16,
         )
         station.pack(fill="x", pady=(0, 12))
         lights_row = ttk.Frame(station, style="StudioPanel.TFrame")
         lights_row.pack(fill="x")
-        for index, name in enumerate(
-            ("LiveDJ", "News", "Requests", "Voicebox", "RadioDJ", "Internet", "Now Playing")
-        ):
+        for index, name in enumerate(SERVICE_LIGHTS):
             cell = ttk.Frame(lights_row, style="StudioPanel.TFrame")
             cell.pack(side="left", expand=True, fill="x", padx=6)
             canvas = tk.Canvas(
                 cell,
-                width=56,
-                height=56,
+                width=64,
+                height=64,
                 bg=StudioTheme.BG_PANEL,
                 highlightthickness=0,
             )
             canvas.pack()
-            canvas.create_oval(8, 8, 48, 48, fill=StudioTheme.TEXT_MUTED, outline=StudioTheme.BORDER, width=2)
-            title = ttk.Label(cell, text=name, style="StudioCard.TLabel", anchor="center")
-            title.pack(pady=(6, 0))
+            canvas.create_oval(10, 10, 54, 54, fill=StudioTheme.TEXT_MUTED, outline=StudioTheme.BORDER, width=2)
+            ttk.Label(cell, text=name, style="StudioCard.TLabel", anchor="center").pack(pady=(8, 0))
             detail = ttk.Label(
                 cell,
-                text="—",
+                text="Checking…",
                 style="StudioMuted.TLabel",
                 anchor="center",
-                wraplength=120,
+                wraplength=130,
                 justify="center",
             )
-            detail.pack(pady=(2, 0))
+            detail.pack(pady=(4, 0))
             self._status_lights[name] = (canvas, detail)
             lights_row.columnconfigure(index, weight=1)
 
@@ -86,22 +111,30 @@ class DashboardPage(BasePage):
             padding=16,
         )
         on_air.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        self._add_metric_row(on_air, "personality", "Current Personality")
+        self._add_metric_row(on_air, "personality", "Current Host")
         self._add_metric_row(on_air, "format", "Current Format")
-        self._add_metric_row(on_air, "current_show", "Current Scheduled Event")
-        self._add_metric_row(on_air, "request_mode", "Current Request Mode")
         self._add_metric_row(on_air, "now_playing", "Now Playing")
+        self._add_metric_row(on_air, "current_show", "Current Show")
+        self._add_metric_row(on_air, "request_mode", "Request Mode")
 
         up_next = ttk.Labelframe(
             middle,
-            text="Up Next",
+            text="Next Events",
             style="StudioCard.TLabelframe",
             padding=16,
         )
         up_next.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        self._next_event_label = ttk.Label(
+            up_next,
+            text="Next event: —",
+            style="StudioMetric.TLabel",
+            wraplength=420,
+            justify="left",
+        )
+        self._next_event_label.pack(anchor="w", pady=(0, 12))
         ttk.Label(
             up_next,
-            text="Next 5 scheduled events",
+            text="Upcoming schedule",
             style="StudioMuted.TLabel",
         ).pack(anchor="w", pady=(0, 8))
         for index in range(5):
@@ -120,28 +153,28 @@ class DashboardPage(BasePage):
 
         health = ttk.Labelframe(
             lower,
-            text="Today's Health",
+            text="Recent Activity",
             style="StudioCard.TLabelframe",
             padding=16,
         )
         health.pack(side="left", fill="both", expand=True, padx=(0, 8))
         for key, title in (
-            ("last_news", "Last News Run"),
-            ("last_livedj", "Last LiveDJ Run"),
-            ("last_request", "Last Request"),
-            ("last_voice", "Last Voice Generation"),
-            ("last_rss", "Last RSS Update"),
+            ("last_news", "Last News"),
+            ("last_livedj", "Last Live Show Update"),
+            ("last_request", "Last Listener Request"),
+            ("last_voice", "Last Voice Announcement"),
+            ("last_rss", "Last News Feed Update"),
         ):
             row = ttk.Frame(health, style="StudioPanel.TFrame")
             row.pack(fill="x", pady=4)
-            ttk.Label(row, text=title, style="StudioMuted.TLabel", width=22).pack(side="left")
+            ttk.Label(row, text=title, style="StudioMuted.TLabel", width=24).pack(side="left")
             value = ttk.Label(row, text="—", style="StudioCard.TLabel", wraplength=360, justify="left")
             value.pack(side="left", fill="x", expand=True)
             self._health_labels[key] = value
 
         activity = ttk.Labelframe(
             lower,
-            text="Recent Activity",
+            text="Station Log",
             style="StudioCard.TLabelframe",
             padding=16,
         )
@@ -151,7 +184,7 @@ class DashboardPage(BasePage):
             height=10,
             autohide=True,
             bootstyle="secondary",
-            font=("Consolas", 9),
+            font=(StudioTheme.FONT_FAMILY, 10),
             state="disabled",
             wrap="word",
         )
@@ -165,20 +198,21 @@ class DashboardPage(BasePage):
         )
         quick.pack(fill="x", pady=(12, 0))
         quick_specs = (
-            ("personalities", "Personalities"),
+            ("programming", "Programming"),
             ("schedule", "Schedule"),
+            ("personalities", "Personalities"),
             ("requests", "Requests"),
             ("voice_library", "Voice Library"),
             ("news", "News"),
-            ("livedj", "LiveDJ"),
         )
         for index, (page_id, label) in enumerate(quick_specs):
             ttk.Button(
                 quick,
                 text=label,
+                style="StudioAction.TButton",
                 bootstyle="primary",
                 command=lambda pid=page_id: self._open_page(pid),
-            ).grid(row=index // 3, column=index % 3, sticky="ew", padx=8, pady=6)
+            ).grid(row=index // 3, column=index % 3, sticky="ew", padx=8, pady=8)
             quick.columnconfigure(index % 3, weight=1)
 
         footer = ttk.Frame(self._body, style="Studio.TFrame")
@@ -187,15 +221,15 @@ class DashboardPage(BasePage):
         self._last_refresh_label.pack(side="left")
         ttk.Label(
             footer,
-            text="Auto-refresh every 5 seconds · read-only",
+            text="Updates automatically every 5 seconds",
             style="StudioMuted.TLabel",
         ).pack(side="right")
 
     def _add_metric_row(self, parent: ttk.Labelframe, key: str, title: str) -> None:
         row = ttk.Frame(parent, style="StudioPanel.TFrame")
-        row.pack(fill="x", pady=4)
-        ttk.Label(row, text=title, style="StudioMuted.TLabel", width=24).pack(side="left")
-        value = ttk.Label(row, text="—", style="StudioCard.TLabel", wraplength=420, justify="left")
+        row.pack(fill="x", pady=6)
+        ttk.Label(row, text=title, style="StudioMetricTitle.TLabel", width=18).pack(side="left")
+        value = ttk.Label(row, text="—", style="StudioMetric.TLabel", wraplength=420, justify="left")
         value.pack(side="left", fill="x", expand=True)
         self._value_labels[key] = value
 
@@ -238,7 +272,7 @@ class DashboardPage(BasePage):
         generation = self._refresh_generation
         if not quiet:
             self._show_busy_cursor(True)
-            self.set_status("Refreshing dashboard…")
+            self.set_status("Updating dashboard…")
 
         def work() -> DashboardSnapshot:
             return build_dashboard_snapshot(self.config_manager)
@@ -253,7 +287,7 @@ class DashboardPage(BasePage):
                 return
             self._apply_snapshot(snapshot)
             if not quiet:
-                self.set_status("Dashboard refreshed")
+                self.set_status("Dashboard updated")
 
         def failed(error: Exception) -> None:
             if not quiet:
@@ -262,21 +296,22 @@ class DashboardPage(BasePage):
                 return
             self._refresh_in_progress = False
             if not quiet:
-                self._show_error_dialog("Dashboard Refresh", str(error))
+                self._show_error_dialog("Dashboard Update", str(error))
             elif not self._refresh_cancelled:
-                self.set_status("Dashboard refresh failed")
+                self.set_status("Dashboard update failed")
 
         run_in_background(self, work, complete, on_error=failed)
 
     def _apply_snapshot(self, snapshot: DashboardSnapshot) -> None:
         for light in snapshot.station_lights:
-            self._set_status_light(light)
+            if light.name in self._status_lights:
+                self._set_status_light(light)
 
         current = snapshot.current_event
         current_text = (
             f"{current.show_name} · {current.day} {current.start_time}–{current.end_time}"
             if current.show_name != "—"
-            else "No scheduled event airing"
+            else "No show scheduled right now"
         )
 
         self._value_labels["personality"].configure(text=snapshot.on_air_personality)
@@ -284,6 +319,17 @@ class DashboardPage(BasePage):
         self._value_labels["current_show"].configure(text=current_text)
         self._value_labels["request_mode"].configure(text=snapshot.request_mode)
         self._value_labels["now_playing"].configure(text=snapshot.now_playing)
+
+        if snapshot.upcoming_events:
+            next_event = snapshot.upcoming_events[0]
+            self._next_event_label.configure(
+                text=(
+                    f"Next event: {next_event.show_name} with {next_event.personality} · "
+                    f"{next_event.day} {next_event.start_time}–{next_event.end_time}"
+                )
+            )
+        else:
+            self._next_event_label.configure(text="Next event: Nothing scheduled ahead")
 
         for index, label in enumerate(self._up_next_labels):
             if index < len(snapshot.upcoming_events):
@@ -304,7 +350,18 @@ class DashboardPage(BasePage):
         self._health_labels["last_rss"].configure(text=snapshot.last_rss_update)
 
         self._update_activity_log(snapshot.activity_log)
-        self._last_refresh_label.configure(text=f"Last refreshed: {snapshot.clock} · {snapshot.clock_date}")
+        self._last_refresh_label.configure(text=f"Last updated: {snapshot.clock} · {snapshot.clock_date}")
+        self._station_status_label.configure(text=self._station_summary(snapshot))
+
+    def _station_summary(self, snapshot: DashboardSnapshot) -> str:
+        service_lights = [light for light in snapshot.station_lights if light.name in SERVICE_LIGHTS]
+        if any(light.status == HEALTH_ERROR for light in service_lights):
+            return "Station status: One or more services need attention"
+        if any(light.status == HEALTH_WARN for light in service_lights):
+            return "Station status: All services running with minor warnings"
+        if service_lights:
+            return "Station status: All services healthy"
+        return "Station status: Checking services…"
 
     def _set_status_light(self, light: StatusLight) -> None:
         widgets = self._status_lights.get(light.name)
@@ -313,7 +370,7 @@ class DashboardPage(BasePage):
         canvas, detail_label = widgets
         color = LIGHT_COLORS.get(light.status, StudioTheme.TEXT_MUTED)
         canvas.delete("all")
-        canvas.create_oval(8, 8, 48, 48, fill=color, outline=StudioTheme.BORDER, width=2)
+        canvas.create_oval(10, 10, 54, 54, fill=color, outline=StudioTheme.BORDER, width=2)
         detail_label.configure(text=light.detail[:80])
 
     def _update_activity_log(self, lines: list[str]) -> None:
@@ -329,6 +386,6 @@ class DashboardPage(BasePage):
         if lines:
             self._activity_text.insert("end", "\n".join(lines))
         else:
-            self._activity_text.insert("end", "No recent activity logged yet.")
+            self._activity_text.insert("end", "No recent station activity yet.")
         self._activity_text.text.configure(state="disabled")
         self._activity_text.text.yview_moveto(1.0)

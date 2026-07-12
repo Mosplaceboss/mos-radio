@@ -43,7 +43,8 @@ def _text_color_for_background(hex_color: str) -> str:
 class SchedulePage(BasePage):
     page_id = "schedule"
     page_title = "Schedule"
-    page_subtitle = "Weekly programming calendar — drag personalities onto the grid"
+    page_subtitle = "Build your weekly show grid and music formats"
+    page_help = "Drag personalities onto time slots to plan who is on air and what format plays."
 
     def build(self) -> None:
         self._data: dict[str, Any] = {"timezone": "America/New_York", "slots": []}

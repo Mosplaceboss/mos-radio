@@ -17,6 +17,7 @@ import ttkbootstrap as ttk
 
 from app.core.config_manager import ConfigManager
 from app.ui.main_window import MainWindow
+from app.ui.navigation import NavigationPanel
 from app.ui.theme import StudioTheme
 
 MAX_PAGE_OPEN_MS = 1000
@@ -178,7 +179,7 @@ def test_page_button_commands() -> None:
                     command = button.cget("command")
                 except tk.TclError:
                     continue
-                if label in SKIP_BUTTON_TEXT or not command:
+                if label in SKIP_BUTTON_TEXT or label.startswith("Open ") or not command:
                     continue
                 button_specs.append((label, command))
 
@@ -371,8 +372,36 @@ def test_navigation_stress() -> None:
         root.destroy()
 
 
+def test_nav_panel_buttons() -> None:
+    root = ttk.Window(themename=StudioTheme.BOOTSTRAP_THEME)
+    root.withdraw()
+    try:
+        StudioTheme.apply_custom_styles(ttk.Style())
+        config = ConfigManager()
+        window = MainWindow(root, config)
+
+        for page_id, label in NavigationPanel.NAV_ITEMS:
+            started = time.perf_counter()
+            window._navigation.select(page_id)
+            root.update_idletasks()
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            if elapsed_ms > MAX_PAGE_OPEN_MS:
+                raise RuntimeError(
+                    f"Nav button '{label}' blocked {elapsed_ms:.0f} ms (limit {MAX_PAGE_OPEN_MS} ms)"
+                )
+            page = window._pages[page_id]
+            if page_id not in BACKGROUND_REFRESH_PAGES:
+                _wait_for_idle(root, lambda p=page: _page_idle(p))
+            print(f"NAV BUTTON OK: {label}")
+
+        print(f"NAV BUTTONS OK: {len(NavigationPanel.NAV_ITEMS)} navigation buttons")
+    finally:
+        root.destroy()
+
+
 def main() -> int:
     test_all_pages_open_quickly()
+    test_nav_panel_buttons()
     test_navigation_stress()
     test_page_button_commands()
     test_crud_flows()

@@ -13,6 +13,7 @@ import ttkbootstrap as ttk
 
 from app.core.config_manager import ConfigManager
 from app.ui.main_window import MainWindow
+from app.ui.navigation import NavigationPanel
 from app.ui.theme import StudioTheme
 
 
@@ -37,6 +38,16 @@ def main() -> int:
             except Exception as exc:
                 errors.append(f"{page_id}: {exc}")
                 print(f"PAGE FAIL: {page_id}: {exc}")
+                traceback.print_exc()
+
+        for page_id, label in NavigationPanel.NAV_ITEMS:
+            try:
+                window._navigation.select(page_id)
+                root.update_idletasks()
+                print(f"NAV OK: {label}")
+            except Exception as exc:
+                errors.append(f"nav/{page_id}: {exc}")
+                print(f"NAV FAIL: {label}: {exc}")
                 traceback.print_exc()
 
     finally:

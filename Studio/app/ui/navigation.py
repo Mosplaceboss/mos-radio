@@ -15,16 +15,31 @@ class NavigationPanel(ttk.Frame):
 
     NAV_ITEMS = (
         ("dashboard", "Dashboard"),
-        ("connection", "Connection Setup"),
-        ("automation", "Automation"),
+        ("programming", "Programming"),
         ("personalities", "Personalities"),
         ("voice_library", "Voice Library"),
         ("schedule", "Schedule"),
         ("requests", "Requests"),
+        ("advertising", "Advertising"),
         ("news", "News"),
-        ("livedj", "LiveDJ"),
+        ("automation", "Automation"),
+        ("reports", "Reports"),
         ("settings", "Settings"),
+        ("advanced", "Advanced"),
     )
+
+    NAV_SECTIONS = (
+        ("", ("dashboard",)),
+        ("On Air", ("programming", "personalities", "voice_library", "schedule", "requests")),
+        ("Station", ("advertising", "news")),
+        ("Operations", ("automation", "reports")),
+        ("", ("settings", "advanced")),
+    )
+
+    OFF_NAV_PARENTS = {
+        "connection": "advanced",
+        "livedj": "advanced",
+    }
 
     def __init__(self, parent: tk.Misc, on_navigate: Callable[[str], None]) -> None:
         super().__init__(parent, style="StudioNav.TFrame", width=StudioTheme.NAV_WIDTH)
@@ -35,30 +50,40 @@ class NavigationPanel(ttk.Frame):
 
         header = ttk.Label(
             self,
-            text="Navigation",
-            font=("Segoe UI", 9, "bold"),
-            foreground=StudioTheme.TEXT_MUTED,
+            text="Mo's Place Studio",
+            font=(StudioTheme.FONT_FAMILY, 10, "bold"),
+            foreground=StudioTheme.TEXT_PRIMARY,
             background=StudioTheme.BG_NAV,
         )
-        header.pack(anchor="w", padx=16, pady=(16, 8))
+        header.pack(anchor="w", padx=16, pady=(16, 10))
 
-        for page_id, label in self.NAV_ITEMS:
-            button = ttk.Button(
-                self,
-                text=label,
-                style="StudioNav.TButton",
-                bootstyle="secondary",
-                command=lambda pid=page_id: self.select(pid),
-            )
-            button.pack(fill="x", padx=12, pady=2)
-            self._buttons[page_id] = button
+        labels = {page_id: label for page_id, label in self.NAV_ITEMS}
+        for section_title, page_ids in self.NAV_SECTIONS:
+            if section_title:
+                ttk.Label(
+                    self,
+                    text=section_title.upper(),
+                    style="StudioNavSection.TLabel",
+                ).pack(anchor="w", padx=16, pady=(10, 4))
+            for page_id in page_ids:
+                label = labels[page_id]
+                button = ttk.Button(
+                    self,
+                    text=label,
+                    style="StudioNav.TButton",
+                    bootstyle="secondary",
+                    command=lambda pid=page_id: self.select(pid),
+                )
+                button.pack(fill="x", padx=12, pady=2)
+                self._buttons[page_id] = button
 
     def select(self, page_id: str, *, notify: bool = True) -> None:
-        if page_id not in self._buttons:
+        highlight_id = self.OFF_NAV_PARENTS.get(page_id, page_id)
+        if highlight_id not in self._buttons:
             return
-        self._active_id = page_id
+        self._active_id = highlight_id
         for pid, button in self._buttons.items():
-            if pid == page_id:
+            if pid == highlight_id:
                 button.configure(style="StudioNavActive.TButton", bootstyle="primary")
             else:
                 button.configure(style="StudioNav.TButton", bootstyle="secondary")

@@ -37,7 +37,8 @@ from app.ui.theme import StudioTheme
 class VoiceLibraryPage(BasePage):
     page_id = "voice_library"
     page_title = "Voice Library"
-    page_subtitle = "Manage Voicebox voices and station voice assignments"
+    page_subtitle = "Assign voices for announcements, liners, and station imaging"
+    page_help = "Each voice can be linked to personalities and used by your automation services."
 
     def build(self) -> None:
         self._data: dict = {"voices": []}

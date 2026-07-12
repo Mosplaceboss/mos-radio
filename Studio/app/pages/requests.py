@@ -31,7 +31,8 @@ from app.ui.theme import StudioTheme
 class RequestsPage(BasePage):
     page_id = "requests"
     page_title = "Requests"
-    page_subtitle = "Configure listener request rules for the Requests automation engine"
+    page_subtitle = "Control when listeners can request songs"
+    page_help = "Choose whether requests follow your schedule, stay open all day, or stay closed."
 
     def build(self) -> None:
         self._data: dict = {}

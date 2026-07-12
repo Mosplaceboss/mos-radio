@@ -20,7 +20,8 @@ from app.ui.confirm_dialog import confirm_action
 class LiveDJPage(BasePage):
     page_id = "livedj"
     page_title = "LiveDJ"
-    page_subtitle = "Import, edit in Studio, validate, and publish LiveDJ configuration safely"
+    page_subtitle = "Import and publish LiveDJ settings safely"
+    page_help = "Advanced screen for technical operators. Most daily work happens on Programming and Schedule."
 
     def build(self) -> None:
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")

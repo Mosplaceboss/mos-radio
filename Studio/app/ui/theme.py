@@ -24,9 +24,10 @@ class StudioTheme:
     WARNING = "#f0ad4e"
     DANGER = "#e74c3c"
 
-    NAV_WIDTH = 220
-    BANNER_HEIGHT = 72
-    STATUS_HEIGHT = 28
+    NAV_WIDTH = 240
+    BANNER_HEIGHT = 80
+    STATUS_HEIGHT = 30
+    FONT_FAMILY = "Segoe UI"
 
     @classmethod
     def apply_custom_styles(cls, style: ttk.Style) -> None:
@@ -115,5 +116,58 @@ class StudioTheme:
             "StudioStatus.TLabel",
             background=cls.BG_NAV,
             foreground=cls.TEXT_MUTED,
-            font=("Segoe UI", 9),
+            font=(cls.FONT_FAMILY, 9),
+        )
+        style.configure(
+            "StudioHelp.TLabel",
+            background=cls.BG_DARK,
+            foreground=cls.TEXT_MUTED,
+            font=(cls.FONT_FAMILY, 10),
+        )
+        style.configure(
+            "StudioHero.TLabel",
+            background=cls.BG_DARK,
+            foreground=cls.TEXT_PRIMARY,
+            font=(cls.FONT_FAMILY, 20, "bold"),
+        )
+        style.configure(
+            "StudioMetric.TLabel",
+            background=cls.BG_PANEL,
+            foreground=cls.TEXT_PRIMARY,
+            font=(cls.FONT_FAMILY, 12),
+        )
+        style.configure(
+            "StudioMetricTitle.TLabel",
+            background=cls.BG_PANEL,
+            foreground=cls.TEXT_MUTED,
+            font=(cls.FONT_FAMILY, 10),
+        )
+        style.configure(
+            "StudioStatusOk.TLabel",
+            background=cls.BG_PANEL,
+            foreground=cls.SUCCESS,
+            font=(cls.FONT_FAMILY, 10, "bold"),
+        )
+        style.configure(
+            "StudioStatusWarn.TLabel",
+            background=cls.BG_PANEL,
+            foreground=cls.WARNING,
+            font=(cls.FONT_FAMILY, 10, "bold"),
+        )
+        style.configure(
+            "StudioStatusError.TLabel",
+            background=cls.BG_PANEL,
+            foreground=cls.DANGER,
+            font=(cls.FONT_FAMILY, 10, "bold"),
+        )
+        style.configure(
+            "StudioAction.TButton",
+            font=(cls.FONT_FAMILY, 11),
+            padding=(18, 12),
+        )
+        style.configure(
+            "StudioNavSection.TLabel",
+            background=cls.BG_NAV,
+            foreground=cls.TEXT_MUTED,
+            font=(cls.FONT_FAMILY, 8, "bold"),
         )

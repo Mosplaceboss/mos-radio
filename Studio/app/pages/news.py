@@ -21,7 +21,8 @@ from app.ui.confirm_dialog import confirm_action
 class NewsPage(BasePage):
     page_id = "news"
     page_title = "News"
-    page_subtitle = "Read and edit news configuration — publish safely without rewriting the news engine"
+    page_subtitle = "Configure news headlines and broadcast timing"
+    page_help = "Set when news runs and review the current news configuration for your station."
 
     def build(self) -> None:
         self._data: dict = {}

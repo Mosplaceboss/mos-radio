@@ -28,9 +28,21 @@ def current_profile(settings: dict[str, Any] | None = None) -> str:
     return data.get("station_name", "Mo's Place Radio")
 
 
+def environment_badge(settings: dict[str, Any] | None = None) -> tuple[str, str]:
+    mode = environment_mode(settings)
+    if mode == "Production":
+        return "On Air", "success"
+    return "Setup Mode", "warning"
+
+
 def status_bar_summary(settings: dict[str, Any] | None = None) -> str:
     profile = current_profile(settings)
+    if getattr(sys, "frozen", False):
+        return f"Mo's Place Studio v{APP_VERSION}  ·  {profile}"
+    mode = environment_mode(settings)
+    if mode == "Production":
+        return f"Mo's Place Studio v{APP_VERSION}  ·  {profile}  ·  On Air"
     return (
-        f"Mo's Place Studio v{APP_VERSION}  ·  Git {git_commit_short()}  ·  "
-        f"Profile: {profile}  ·  {environment_mode(settings)} Mode"
+        f"Mo's Place Studio v{APP_VERSION}  ·  {profile}  ·  "
+        f"Setup  ·  Git {git_commit_short()}"
     )

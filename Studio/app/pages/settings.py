@@ -15,7 +15,8 @@ from app.pages.base_page import BasePage
 class SettingsPage(BasePage):
     page_id = "settings"
     page_title = "Settings"
-    page_subtitle = "Studio preferences, operation mode, and integration paths"
+    page_subtitle = "Station name, appearance, and operating preferences"
+    page_help = "Changes here affect how Studio looks and behaves on this computer."
 
     def build(self) -> None:
         self._load_generation = 0

@@ -39,8 +39,9 @@ REFRESH_INTERVAL_MS = 5000
 
 class AutomationPage(BasePage):
     page_id = "automation"
-    page_title = "Automation Manager"
-    page_subtitle = "Control center for automation engines, live status, and confirmed operations"
+    page_title = "Automation"
+    page_subtitle = "Start, stop, and monitor your station automation services"
+    page_help = "Use this screen to check service health and run confirmed station operations."
 
     def build(self) -> None:
         self._refresh_job: str | None = None

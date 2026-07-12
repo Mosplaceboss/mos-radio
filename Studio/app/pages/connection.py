@@ -35,7 +35,8 @@ STATUS_STYLES = {
 class ConnectionSetupPage(BasePage):
     page_id = "connection"
     page_title = "Connection Setup"
-    page_subtitle = "Enter your live station paths, test connections, and import read-only copies into Studio"
+    page_subtitle = "Link Studio to your station computers and import live settings"
+    page_help = "Advanced screen. Connect paths, test access, and bring in read-only copies of live data."
 
     def build(self) -> None:
         self._fields: dict[str, tk.StringVar] = {}

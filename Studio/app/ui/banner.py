@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import tkinter as tk
-from pathlib import Path
+from typing import Any
 
 import ttkbootstrap as ttk
 from PIL import Image, ImageTk
 
 from app.core.paths import assets_dir
+from app.core.studio_info import environment_badge
 from app.ui.theme import StudioTheme
 
 
 class BannerBar(ttk.Frame):
     """Header banner displaying the station logo and application title."""
 
-    def __init__(self, parent: tk.Misc, station_name: str) -> None:
+    def __init__(self, parent: tk.Misc, station_name: str, settings: dict[str, Any] | None = None) -> None:
         super().__init__(parent, style="StudioBanner.TFrame", height=StudioTheme.BANNER_HEIGHT)
         self.pack_propagate(False)
 
@@ -38,12 +39,20 @@ class BannerBar(ttk.Frame):
         ).pack(anchor="w")
         ttk.Label(
             text_frame,
-            text="Studio Management",
+            text="Broadcast Control",
             style="StudioSubtitle.TLabel",
         ).pack(anchor="w")
 
-        ttk.Label(
+        badge_text, badge_style = environment_badge(settings)
+        self._badge = ttk.Label(
             self,
-            text="Development",
-            bootstyle="info",
-        ).pack(side="right", padx=20)
+            text=badge_text,
+            bootstyle=badge_style,
+            font=(StudioTheme.FONT_FAMILY, 10, "bold"),
+            padding=(12, 6),
+        )
+        self._badge.pack(side="right", padx=20)
+
+    def refresh(self, settings: dict[str, Any] | None = None) -> None:
+        badge_text, badge_style = environment_badge(settings)
+        self._badge.configure(text=badge_text, bootstyle=badge_style)
