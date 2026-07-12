@@ -17,6 +17,28 @@ from app.core.reports import write_reports
 from app.core.scan_engine import ScanEngine
 
 
+def test_settings_roundtrip() -> None:
+    from app.core.settings_store import current_machine_name, load_settings, save_settings
+
+    machine = current_machine_name()
+    save_settings(
+        {
+            "office_pc_path": r"\\OFFICE-PC\D$\MosPlaceRadioPlatform",
+            "radio_pc_path": r"V:\\",
+            "platform_folder": r"V:\\",
+            "output_folder": r"V:\Documentation\InventoryReports",
+        }
+    )
+    loaded = load_settings()
+    if loaded["platform_folder"] != r"V:\\":
+        raise RuntimeError("Machine-specific platform path was not saved correctly")
+    store_path = INVENTORY_ROOT / "inventory_settings.json"
+    if store_path.exists():
+        text = store_path.read_text(encoding="utf-8")
+        if machine not in text:
+            raise RuntimeError("Settings were not stored under the current machine profile")
+
+
 def test_duplicate_detection() -> None:
     files = [
         FileRecord("a.txt", "a.txt", ".txt", 10, "", "", "Office"),
@@ -79,6 +101,7 @@ def test_report_generation() -> None:
 
 
 def main() -> int:
+    test_settings_roundtrip()
     test_duplicate_detection()
     test_report_generation()
     test_local_scan()

@@ -25,5 +25,6 @@ Inventory/dist/
 Inventory/*.spec
 Inventory/InventoryOutput/**
 !Inventory/InventoryOutput/.gitkeep
+Inventory/inventory_settings.json
 MoPlaceStudio_Production/
 MoPlaceStudio_Production.zip
