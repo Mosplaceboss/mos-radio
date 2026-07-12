@@ -17,6 +17,7 @@ from app.core.live_connector import ensure_local_integration_template
 from app.core.logger import setup_logging
 from app.core.paths import ensure_default_configs
 from app.core.platform_manager import ensure_default_platform_config
+from app.core.programming_model import ensure_programming_data
 from app.core.station_data import ensure_station_data
 from app.ui.main_window import MainWindow
 from app.ui.theme import StudioTheme
@@ -31,6 +32,7 @@ class StudioApplication:
         ensure_station_data()
         ensure_local_integration_template()
         self.config_manager = ConfigManager()
+        ensure_programming_data(self.config_manager)
         settings = self.config_manager.load("settings")
         log_level = settings.get("log_level", "INFO")
         self.logger = setup_logging(log_level)

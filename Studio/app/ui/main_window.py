@@ -18,7 +18,7 @@ from app.pages.livedj import LiveDJPage
 from app.pages.news import NewsPage
 from app.pages.personalities import PersonalitiesPage
 from app.pages.platform_manager import PlatformManagerPage
-from app.pages.programming import ProgrammingPage
+from app.pages.programming_manager import ProgrammingManagerPage as ProgrammingPage
 from app.pages.reports import ReportsPage
 from app.pages.requests import RequestsPage
 from app.pages.schedule import SchedulePage
