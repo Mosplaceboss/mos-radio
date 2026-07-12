@@ -16,5 +16,6 @@ class AdvancedPage(HubPage):
         ("connection", "Connection Setup", "Link Studio to station computers and import live settings."),
         ("livedj", "LiveDJ Tools", "Import, validate, and publish LiveDJ configuration."),
         ("automation", "Automation Manager", "Start services, review logs, and run health checks."),
+        ("news", "Live News Integration", "Import, publish, and restore the live news automation configuration."),
         ("settings", "Settings", "Station preferences, themes, and operation mode."),
     )

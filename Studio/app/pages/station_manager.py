@@ -32,7 +32,7 @@ STATUS_LABELS = {
 QUICK_ACTIONS = (
     ("programming", "Programming"),
     ("advertising", "Advertising"),
-    ("news", "News"),
+    ("news_content_manager", "News"),
     ("requests", "Requests"),
     ("_website", "Website"),
     ("personalities", "Personalities"),
