@@ -16,6 +16,7 @@ from app.core.config_manager import ConfigManager
 from app.core.live_connector import ensure_local_integration_template
 from app.core.logger import setup_logging
 from app.core.paths import ensure_default_configs
+from app.core.platform_manager import ensure_default_platform_config
 from app.ui.main_window import MainWindow
 from app.ui.theme import StudioTheme
 
@@ -25,6 +26,7 @@ class StudioApplication:
 
     def __init__(self) -> None:
         ensure_default_configs()
+        ensure_default_platform_config()
         ensure_local_integration_template()
         self.config_manager = ConfigManager()
         settings = self.config_manager.load("settings")

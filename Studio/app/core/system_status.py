@@ -24,7 +24,7 @@ from app.core.integration_settings import (
     requests_live_paths,
     resolve_integration_path,
 )
-from app.core.paths import automation_root
+from app.core.platform_manager import automation_module_dir
 
 logger = logging.getLogger("moplace.studio.system_status")
 
@@ -78,7 +78,7 @@ def _process_running(
 
 
 def _lock_file_running(folder_name: str) -> bool:
-    folder = automation_root() / folder_name
+    folder = automation_module_dir(folder_name)
     if not folder.exists():
         return False
     for marker in ("running.lock", "engine.pid", ".running"):
@@ -259,4 +259,4 @@ def last_run_for_module(folder: str, log_name: str) -> str:
     definition = next((item for item in MODULE_DEFINITIONS if item["folder"] == folder), None)
     if definition:
         return _last_log_timestamp(_module_log_path(definition))
-    return _last_log_timestamp(resolve_integration_path(f"Automation/{folder}/{log_name}"))
+    return _last_log_timestamp(automation_module_dir(folder) / log_name)

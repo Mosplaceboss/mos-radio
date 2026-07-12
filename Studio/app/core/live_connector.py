@@ -20,7 +20,8 @@ from app.core.integration_settings import (
     resolve_integration_path,
     studio_config_path,
 )
-from app.core.paths import automation_root, config_dir, repo_root, studio_root
+from app.core.platform_manager import platform_path
+from app.core.paths import config_dir, studio_root
 from app.core.system_status import _internet_connected, _voicebox_api_ok
 
 logger = logging.getLogger("moplace.studio.live_connector")
@@ -90,7 +91,7 @@ def _folder_path(value: str) -> Path:
         return Path()
     path = Path(text)
     if not path.is_absolute():
-        return repo_root() / path
+        return platform_path("platform_root") / path
     return path
 
 
@@ -153,10 +154,10 @@ def ensure_local_integration_template() -> Path:
         shutil.copy2(example, path)
     station = {
         "radio_pc": "",
-        "livedj_folder": str(automation_root() / "LiveDJ"),
-        "news_folder": str(automation_root() / "News"),
-        "requests_folder": str(automation_root() / "Requests"),
-        "radiodj_executable": "",
+        "livedj_folder": str(platform_path("automation_livedj")),
+        "news_folder": str(platform_path("automation_news")),
+        "requests_folder": str(platform_path("automation_requests")),
+        "radiodj_executable": str(platform_path("radiodj")),
         "voicebox_api_url": "http://127.0.0.1:7860",
     }
     save_local_integration(build_local_from_station(station, enabled=True))

@@ -12,6 +12,7 @@ class AdvancedPage(HubPage):
     page_help = "These screens are for station operators and technical staff. Day-to-day programming does not require them."
 
     hub_links = (
+        ("platform_manager", "Platform Manager", "Set and test every production folder path used by Studio."),
         ("connection", "Connection Setup", "Link Studio to station computers and import live settings."),
         ("livedj", "LiveDJ Tools", "Import, validate, and publish LiveDJ configuration."),
         ("automation", "Automation Manager", "Start services, review logs, and run health checks."),

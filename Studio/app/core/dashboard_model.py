@@ -13,7 +13,8 @@ from typing import Any
 from app.core.automation_model import MODULE_DEFINITIONS, _collect_activity_log
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.core.live_connector import now_playing_path
-from app.core.paths import automation_logs_dir, automation_root, logs_dir, studio_root
+from app.core.platform_manager import automation_module_dir
+from app.core.paths import automation_logs_dir, logs_dir, studio_root
 from app.core.personality_model import display_label as personality_label, normalize_personalities_data
 from app.core.requests_model import normalize_requests_data, request_mode_label
 from app.core.schedule_model import DAYS, normalize_schedule_data, time_to_minutes
@@ -129,7 +130,7 @@ def _module_log_path(folder_name: str, log_name: str) -> Path:
     studio_log = automation_logs_dir() / log_name
     if studio_log.exists():
         return studio_log
-    engine_log = automation_root() / folder_name / log_name
+    engine_log = automation_module_dir(folder_name) / log_name
     if engine_log.exists():
         return engine_log
     return studio_log

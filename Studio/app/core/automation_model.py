@@ -13,7 +13,8 @@ from typing import Any
 
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.core.hidden_process import NETWORK_TIMEOUT
-from app.core.paths import automation_logs_dir, automation_root, config_dir, logs_dir, studio_root
+from app.core.platform_manager import automation_module_dir
+from app.core.paths import automation_logs_dir, config_dir, logs_dir, studio_root
 from app.core.personality_model import normalize_personalities_data
 from app.core.requests_model import normalize_requests_data
 from app.core.schedule_model import DAYS, normalize_schedule_data, time_to_minutes
@@ -115,7 +116,7 @@ def normalize_automation_data(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _module_log_path(definition: dict[str, Any]) -> Path:
-    engine_log = automation_root() / definition["folder"] / definition["log_name"]
+    engine_log = automation_module_dir(definition["folder"]) / definition["log_name"]
     if engine_log.exists():
         return engine_log
     return automation_logs_dir() / definition["log_name"]
@@ -187,7 +188,7 @@ def _module_health(
     enabled: bool,
     config_paths: list[Path],
 ) -> tuple[str, str]:
-    folder = automation_root() / definition["folder"]
+    folder = automation_module_dir(definition["folder"])
     if not enabled:
         return HEALTH_WARN, "Disabled in Studio automation registry"
     if definition["id"] in {"future_modules", "casey", "sunday_morning_blues"}:
@@ -212,7 +213,7 @@ def build_module_status(
     version = settings.get("version", "unknown")
     config_paths = [config_dir() / name for name in definition["config_files"]]
     log_path = _module_log_path(definition)
-    folder = automation_root() / definition["folder"]
+    folder = automation_module_dir(definition["folder"])
     status, detail = _module_health(definition, enabled, config_paths)
     running = _module_running(folder)
     if enabled and not running:

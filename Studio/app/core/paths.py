@@ -67,8 +67,10 @@ def logs_dir() -> Path:
 
 
 def automation_root() -> Path:
-    """Return the external Automation engines directory."""
-    return studio_root().parent / "Automation"
+    """Return the platform Automation directory."""
+    from app.core.platform_manager import automation_root as platform_automation_root
+
+    return platform_automation_root()
 
 
 def automation_logs_dir() -> Path:
@@ -80,7 +82,9 @@ def automation_logs_dir() -> Path:
 
 def backups_dir() -> Path:
     """Return timestamped configuration backup storage."""
-    path = studio_root() / "backups"
+    from app.core.platform_manager import platform_backups_dir
+
+    path = platform_backups_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

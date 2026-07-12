@@ -21,7 +21,7 @@ from app.core.live_connector import (
     save_local_integration,
     test_connection_setup,
 )
-from app.core.paths import automation_root
+from app.core.platform_manager import platform_path
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
 
@@ -141,10 +141,10 @@ class ConnectionSetupPage(BasePage):
         self.set_status("Connection settings saved")
 
     def _use_local_defaults(self) -> None:
-        root = automation_root()
-        self._fields["livedj_folder"].set(str(root / "LiveDJ"))
-        self._fields["news_folder"].set(str(root / "News"))
-        self._fields["requests_folder"].set(str(root / "Requests"))
+        self._fields["livedj_folder"].set(str(platform_path("automation_livedj")))
+        self._fields["news_folder"].set(str(platform_path("automation_news")))
+        self._fields["requests_folder"].set(str(platform_path("automation_requests")))
+        self._fields["radiodj_executable"].set(str(platform_path("radiodj")))
         self._save_settings()
 
     def _apply_results(self, results: list[ConnectionResult]) -> None:

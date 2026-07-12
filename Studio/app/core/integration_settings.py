@@ -42,7 +42,14 @@ DEFAULT_INTEGRATION: dict[str, Any] = {
 
 
 def base_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    from app.core.platform_manager import integration_paths_from_platform
+
     integration = deepcopy(DEFAULT_INTEGRATION)
+    platform_paths = integration_paths_from_platform()
+    for target, paths in platform_paths.items():
+        if target in integration["live_paths"] and isinstance(paths, dict):
+            integration["live_paths"][target].update(paths)
+
     raw = settings.get("integration", {})
     if isinstance(raw, dict):
         for key, value in raw.items():
@@ -76,7 +83,10 @@ def resolve_integration_path(relative_path: str) -> Path:
     path = Path(relative_path)
     if path.is_absolute():
         return path
-    return repo_root() / path
+    from app.core.platform_manager import platform_path
+
+    platform_root = platform_path("platform_root")
+    return platform_root / path
 
 
 def livedj_live_paths(integration: dict[str, Any]) -> dict[str, Path]:

@@ -25,6 +25,7 @@ class NavigationPanel(ttk.Frame):
         ("automation", "Automation"),
         ("reports", "Reports"),
         ("settings", "Settings"),
+        ("platform_manager", "Platform Manager"),
         ("advanced", "Advanced"),
     )
 
@@ -33,7 +34,7 @@ class NavigationPanel(ttk.Frame):
         ("On Air", ("programming", "personalities", "voice_library", "schedule", "requests")),
         ("Station", ("advertising", "news")),
         ("Operations", ("automation", "reports")),
-        ("", ("settings", "advanced")),
+        ("", ("settings", "platform_manager", "advanced")),
     )
 
     OFF_NAV_PARENTS = {

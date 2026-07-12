@@ -17,6 +17,7 @@ from app.pages.dashboard import DashboardPage
 from app.pages.livedj import LiveDJPage
 from app.pages.news import NewsPage
 from app.pages.personalities import PersonalitiesPage
+from app.pages.platform_manager import PlatformManagerPage
 from app.pages.programming import ProgrammingPage
 from app.pages.reports import ReportsPage
 from app.pages.requests import RequestsPage
@@ -44,6 +45,7 @@ class MainWindow(ttk.Frame):
         "automation": AutomationPage,
         "reports": ReportsPage,
         "settings": SettingsPage,
+        "platform_manager": PlatformManagerPage,
         "advanced": AdvancedPage,
         "connection": ConnectionSetupPage,
         "livedj": LiveDJPage,

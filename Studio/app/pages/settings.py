@@ -8,6 +8,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
 from app.core.background_tasks import run_in_background
+from app.core.platform_manager import integration_paths_from_platform
 from app.core.voice_library_loader import read_json_with_timeout
 from app.pages.base_page import BasePage
 
@@ -146,11 +147,16 @@ class SettingsPage(BasePage):
         self._theme.set(data.get("theme", "darkly"))
         self._radiodj_process.set(integration.get("radiodj_process", "RadioDJ.exe"))
         self._voicebox_url.set(integration.get("voicebox_api_url", "http://127.0.0.1:7860"))
+        platform_paths = integration_paths_from_platform(self.config_manager)
+        livedj_defaults = platform_paths["livedj"]
+        requests_defaults = platform_paths["requests"]
+        news_defaults = platform_paths["news"]
+
         self._livedj_personalities.set(
-            livedj_paths.get("personalities", "Automation/LiveDJ/personalities.json")
+            livedj_paths.get("personalities", livedj_defaults["personalities"])
         )
-        self._requests_config.set(requests_paths.get("config", "Automation/Requests/requests.json"))
-        self._news_config.set(news_paths.get("config", "Automation/News/news.json"))
+        self._requests_config.set(requests_paths.get("config", requests_defaults["config"]))
+        self._news_config.set(news_paths.get("config", news_defaults["config"]))
 
     def _load(self) -> None:
         self._begin_background_load()
