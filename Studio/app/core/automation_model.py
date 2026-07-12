@@ -243,8 +243,7 @@ def build_module_status(
 
 def _internet_connected() -> tuple[str, str]:
     try:
-        socket.getaddrinfo("example.com", 443)
-        with urllib.request.urlopen("https://example.com", timeout=NETWORK_TIMEOUT) as response:
+        with urllib.request.urlopen("https://example.com", timeout=1.0) as response:
             if 200 <= response.status < 500:
                 return HEALTH_OK, "Internet reachable"
     except (OSError, urllib.error.URLError, TimeoutError):

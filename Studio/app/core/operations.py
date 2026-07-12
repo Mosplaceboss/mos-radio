@@ -10,7 +10,7 @@ from app.core.automation_model import append_automation_log
 from app.core.hidden_process import popen_hidden
 from app.core.integration_settings import livedj_live_paths, news_live_paths, requests_live_paths
 from app.core.live_connector import resolve_engine_script
-from app.core.system_status import build_live_system_status
+from app.core.system_status import build_live_system_status, clear_system_status_cache
 
 logger = logging.getLogger("moplace.studio.operations")
 
@@ -61,7 +61,8 @@ def run_news_now(integration: dict) -> tuple[bool, str]:
 
 
 def refresh_all_statuses(settings: dict) -> tuple[bool, str]:
-    status = build_live_system_status(settings)
+    clear_system_status_cache()
+    status = build_live_system_status(settings, force_refresh=True)
     running = sum(1 for service in status.services if service.running)
     append_automation_log(f"Status refresh: {running}/{len(status.services)} services running")
     return True, f"Refreshed at {status.last_refreshed} · {running} service(s) running"

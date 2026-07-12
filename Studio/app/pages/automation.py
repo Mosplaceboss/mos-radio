@@ -49,6 +49,8 @@ class AutomationPage(BasePage):
         self._detail_labels: dict[str, ttk.Label] = {}
         self._refresh_in_progress = False
         self._refresh_cancelled = False
+        self._suppress_tree_events = False
+        self._refresh_generation = 0
 
         ops = ttk.Labelframe(self._body, text="Operations", style="StudioCard.TLabelframe", padding=12)
         ops.pack(fill="x", pady=(0, 12))
@@ -177,6 +179,9 @@ class AutomationPage(BasePage):
 
     def on_hide(self) -> None:
         self._refresh_cancelled = True
+        self._refresh_generation += 1
+        self._refresh_in_progress = False
+        self._reset_busy_cursor()
         if self._refresh_job:
             self.after_cancel(self._refresh_job)
             self._refresh_job = None
@@ -199,11 +204,19 @@ class AutomationPage(BasePage):
         if self._refresh_in_progress:
             return
         self._refresh_in_progress = True
+        generation = self._refresh_generation
+        if not quiet:
+            self._show_busy_cursor(True)
+            self.set_status("Refreshing automation manager…")
 
         def work() -> AutomationSnapshot:
             return build_automation_snapshot(self.config_manager)
 
         def complete(snapshot: AutomationSnapshot) -> None:
+            if not quiet:
+                self._show_busy_cursor(False)
+            if generation != self._refresh_generation:
+                return
             self._refresh_in_progress = False
             if self._refresh_cancelled:
                 return
@@ -212,9 +225,15 @@ class AutomationPage(BasePage):
             if not quiet:
                 self.set_status("Automation manager refreshed")
 
-        def failed(_error: Exception) -> None:
+        def failed(error: Exception) -> None:
+            if not quiet:
+                self._show_busy_cursor(False)
+            if generation != self._refresh_generation:
+                return
             self._refresh_in_progress = False
             if not quiet:
+                self._show_error_dialog("Automation Refresh", str(error))
+            elif not self._refresh_cancelled:
                 self.set_status("Automation refresh failed")
 
         run_in_background(self, work, complete, on_error=failed)
@@ -246,27 +265,31 @@ class AutomationPage(BasePage):
             ).grid(row=1, column=index, padx=8, pady=2)
 
         selected = self._selected_module_id
-        self._tree.delete(*self._tree.get_children())
-        for module in snapshot.modules:
-            self._tree.insert(
-                "",
-                "end",
-                iid=module.module_id,
-                values=(
-                    module.name,
-                    "Yes" if module.enabled else "No",
-                    "Running" if module.running else "Stopped",
-                    module.status.upper(),
-                ),
-            )
-        if selected and self._tree.exists(selected):
-            self._tree.selection_set(selected)
-            self._tree.focus(selected)
-            self._show_module_details(self._module_by_id(selected))
-        elif snapshot.modules:
-            first_id = snapshot.modules[0].module_id
-            self._tree.selection_set(first_id)
-            self._show_module_details(snapshot.modules[0])
+        self._suppress_tree_events = True
+        try:
+            self._tree.delete(*self._tree.get_children())
+            for module in snapshot.modules:
+                self._tree.insert(
+                    "",
+                    "end",
+                    iid=module.module_id,
+                    values=(
+                        module.name,
+                        "Yes" if module.enabled else "No",
+                        "Running" if module.running else "Stopped",
+                        module.status.upper(),
+                    ),
+                )
+            if selected and self._tree.exists(selected):
+                self._tree.selection_set(selected)
+                self._tree.focus(selected)
+                self._show_module_details(self._module_by_id(selected))
+            elif snapshot.modules:
+                first_id = snapshot.modules[0].module_id
+                self._tree.selection_set(first_id)
+                self._show_module_details(snapshot.modules[0])
+        finally:
+            self._suppress_tree_events = False
 
         for child in self._activity_container.winfo_children():
             child.destroy()
@@ -288,6 +311,8 @@ class AutomationPage(BasePage):
         return None
 
     def _on_module_select(self, _event=None) -> None:
+        if self._suppress_tree_events:
+            return
         selection = self._tree.selection()
         if not selection:
             return
@@ -322,13 +347,27 @@ class AutomationPage(BasePage):
     def _run_operation(self, title: str, message: str, callback) -> None:
         if not confirm_action(title, message, self._settings()):
             return
-        ok, result = callback()
-        if ok:
-            Messagebox.show_info(result, title)
-        else:
-            Messagebox.show_warning(result, title)
-        self.set_status(result)
-        self.refresh(quiet=True)
+        self._show_busy_cursor(True)
+        self.set_status(f"{title}…")
+
+        def work():
+            return callback()
+
+        def complete(result: tuple[bool, str]) -> None:
+            self._show_busy_cursor(False)
+            ok, result_message = result
+            if ok:
+                Messagebox.show_info(result_message, title)
+            else:
+                Messagebox.show_warning(result_message, title)
+            self.set_status(result_message)
+            self.refresh(quiet=True)
+
+        def failed(error: Exception) -> None:
+            self._show_busy_cursor(False)
+            self._show_error_dialog(title, str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _op_start_requests(self) -> None:
         self._run_operation(
@@ -377,6 +416,7 @@ class AutomationPage(BasePage):
             return refresh_all_statuses(self._settings())
 
         def complete(result: tuple[bool, str]) -> None:
+            self._show_busy_cursor(False)
             ok, message = result
             if ok:
                 Messagebox.show_info(message, "Refresh All Statuses")
@@ -385,7 +425,13 @@ class AutomationPage(BasePage):
             self.set_status(message)
             self.refresh(quiet=True)
 
-        run_in_background(self, work, complete)
+        def failed(error: Exception) -> None:
+            self._show_busy_cursor(False)
+            self._show_error_dialog("Refresh All Statuses", str(error))
+
+        self._show_busy_cursor(True)
+        self.set_status("Refreshing all statuses…")
+        run_in_background(self, work, complete, on_error=failed)
 
     def _action_start(self) -> None:
         module = self._selected_module()

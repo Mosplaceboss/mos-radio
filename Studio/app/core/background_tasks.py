@@ -60,8 +60,12 @@ def _start_poller(root: tk.Misc) -> None:
                     on_complete(payload)
                 elif kind == "err" and on_error is not None:
                     on_error(payload)
-            except Exception:
-                continue
+            except Exception as exc:
+                if on_error is not None:
+                    try:
+                        on_error(exc)
+                    except Exception:
+                        pass
 
         if _widget_alive(root_widget):
             root_widget.after(50, _poll)

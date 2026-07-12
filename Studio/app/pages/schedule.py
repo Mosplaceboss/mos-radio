@@ -9,7 +9,9 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from app.core.personality_model import display_label, normalize_personalities_data
+from app.core.background_tasks import run_in_background
+from app.core.personality_model import display_label
+from app.core.schedule_loader import ScheduleLoadResult, load_schedule_page_data
 from app.core.schedule_model import (
     DAYS,
     DEFAULT_SLOT_DURATION_MINUTES,
@@ -53,9 +55,15 @@ class SchedulePage(BasePage):
         self._autosave_job: str | None = None
         self._drag_state: dict[str, Any] | None = None
         self._highlighted_cell: tuple[str, int] | None = None
+        self._load_in_progress = False
+        self._load_generation = 0
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
+        self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
+        self._loading_label.pack(side="left", padx=(0, 12))
+        self._error_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel", wraplength=520)
+        self._error_label.pack(side="left", fill="x", expand=True)
         ttk.Button(toolbar, text="Add Event", bootstyle="success", command=self._add_event).pack(side="left")
         ttk.Button(toolbar, text="Delete Event", bootstyle="danger", command=self._delete_selected_event).pack(
             side="left", padx=8
@@ -111,17 +119,68 @@ class SchedulePage(BasePage):
         self.bind_all("<B1-Motion>", self._on_global_motion, add="+")
 
     def on_show(self) -> None:
-        personalities_data = normalize_personalities_data(
-            self.config_manager.load("personalities", {"personalities": []})
-        )
-        self._personalities = personalities_data.get("personalities", [])
-        personality_ids = [item["id"] for item in self._personalities]
-        loaded = self.config_manager.load("schedule", {"timezone": "America/New_York", "slots": []})
-        self._data = normalize_schedule_data(loaded, personality_ids)
+        self._begin_background_load()
+
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._loading_label.configure(text="")
+        self._show_busy_cursor(False)
+
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        self._loading_label.configure(text="Loading schedule…")
+        self._error_label.configure(text="")
+        self._show_busy_cursor(True)
+
+        personalities_path = self.config_manager.path_for("personalities")
+        schedule_path = self.config_manager.path_for("schedule")
+
+        def work() -> ScheduleLoadResult:
+            return load_schedule_page_data(personalities_path, schedule_path)
+
+        def complete(result: ScheduleLoadResult) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            try:
+                self._apply_loaded_data(result)
+            except Exception as exc:
+                self._loading_label.configure(text="")
+                self._show_busy_cursor(False)
+                self._error_label.configure(text=str(exc))
+                self._show_error_dialog("Schedule", str(exc))
+                return
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+            self._error_label.configure(text=str(error))
+            self._show_error_dialog("Schedule", str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _apply_loaded_data(self, result: ScheduleLoadResult) -> None:
+        self._personalities = result.personalities
+        self._data = result.schedule_data
+        self.config_manager._cache["personalities"] = {"personalities": result.personalities}
+        self.config_manager._cache["schedule"] = result.schedule_data
+        if result.load_errors:
+            self._error_label.configure(text="; ".join(result.load_errors))
+            self.set_status("; ".join(result.load_errors))
+        else:
+            self._error_label.configure(text="")
+            self.set_status(f"Schedule loaded ({len(self._data.get('slots', []))} events)")
         self._build_personality_colors()
         self._render_palette()
         self._render_calendar()
-        self.set_status("Schedule loaded")
 
     def _build_personality_colors(self) -> None:
         personality_ids = [item["id"] for item in self._personalities]
@@ -660,9 +719,17 @@ class SchedulePage(BasePage):
 
     def _autosave_now(self) -> None:
         self._autosave_job = None
-        self.config_manager.save("schedule", self._data)
-        self.set_status("Schedule saved automatically")
+        self._persist_config_async(
+            "schedule",
+            self._data,
+            status_message="Schedule saved automatically",
+            error_title="Save Schedule",
+        )
 
     def _save_now(self) -> None:
-        self.config_manager.save("schedule", self._data)
-        self.set_status("Schedule saved")
+        self._persist_config_async(
+            "schedule",
+            self._data,
+            status_message="Schedule saved",
+            error_title="Save Schedule",
+        )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import time
 import urllib.error
 import urllib.request
 from app.core.hidden_process import NETWORK_TIMEOUT, clear_process_cache, list_windows_process_lines
@@ -26,6 +27,17 @@ from app.core.integration_settings import (
 from app.core.paths import automation_root
 
 logger = logging.getLogger("moplace.studio.system_status")
+
+_STATUS_CACHE: LiveSystemStatus | None = None
+_STATUS_CACHE_MONO: float = 0.0
+STATUS_CACHE_TTL_SECONDS = 30.0
+FAST_NETWORK_TIMEOUT = 1.0
+
+
+def clear_system_status_cache() -> None:
+    global _STATUS_CACHE, _STATUS_CACHE_MONO
+    _STATUS_CACHE = None
+    _STATUS_CACHE_MONO = 0.0
 
 
 @dataclass
@@ -75,13 +87,21 @@ def _lock_file_running(folder_name: str) -> bool:
     return False
 
 
-def _voicebox_api_ok(api_url: str, health_path: str) -> tuple[str, str, bool]:
+def _voicebox_api_ok(
+    api_url: str,
+    health_path: str,
+    *,
+    timeout: float = NETWORK_TIMEOUT,
+    max_candidates: int | None = None,
+) -> tuple[str, str, bool]:
     base = api_url.rstrip("/")
     path = health_path if health_path.startswith("/") else f"/{health_path}"
     candidates = (f"{base}{path}", base, f"{base}/health", f"{base}/v1/health")
+    if max_candidates is not None:
+        candidates = candidates[:max_candidates]
     for url in candidates:
         try:
-            with urllib.request.urlopen(url, timeout=NETWORK_TIMEOUT) as response:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
                 if 200 <= response.status < 500:
                     return HEALTH_OK, f"API responding ({response.status})", True
         except (OSError, urllib.error.URLError, TimeoutError):
@@ -89,16 +109,16 @@ def _voicebox_api_ok(api_url: str, health_path: str) -> tuple[str, str, bool]:
     try:
         host = urlparse(base).hostname or "127.0.0.1"
         port = urlparse(base).port or (7860 if "7860" in base else 80)
-        with socket.create_connection((host, port), timeout=NETWORK_TIMEOUT):
+        with socket.create_connection((host, port), timeout=timeout):
             return HEALTH_WARN, "Port open but API health endpoint not verified", True
     except OSError:
         pass
     return HEALTH_WARN, "Voicebox API not responding", False
 
 
-def _internet_connected() -> tuple[str, str]:
+def _internet_connected(*, timeout: float = NETWORK_TIMEOUT) -> tuple[str, str]:
     try:
-        with urllib.request.urlopen("https://example.com", timeout=NETWORK_TIMEOUT) as response:
+        with urllib.request.urlopen("https://example.com", timeout=timeout) as response:
             if 200 <= response.status < 500:
                 return HEALTH_OK, "Internet reachable"
     except (OSError, urllib.error.URLError, TimeoutError):
@@ -128,13 +148,27 @@ def _news_task_status(news_config_path: Path) -> tuple[str, str, bool]:
         return HEALTH_ERROR, f"News config error: {exc}", False
 
 
-def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
-    clear_process_cache()
+def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = False) -> LiveSystemStatus:
+    global _STATUS_CACHE, _STATUS_CACHE_MONO
+
+    now = time.monotonic()
+    if not force_refresh and _STATUS_CACHE is not None and (now - _STATUS_CACHE_MONO) < STATUS_CACHE_TTL_SECONDS:
+        return _STATUS_CACHE
+
+    if force_refresh:
+        clear_process_cache()
+        process_lines = list_windows_process_lines(force_refresh=True)
+        network_timeout = NETWORK_TIMEOUT
+        voicebox_candidates = None
+    else:
+        process_lines = list_windows_process_lines(force_refresh=False)
+        network_timeout = FAST_NETWORK_TIMEOUT
+        voicebox_candidates = 2
+
     integration = normalize_integration_settings(settings)
     livedj_paths = livedj_live_paths(integration)
     request_paths = requests_live_paths(integration)
     news_paths = news_live_paths(integration)
-    process_lines = list_windows_process_lines(force_refresh=True)
 
     radiodj_executable = integration.get("radiodj_executable", "").strip()
     if radiodj_executable:
@@ -158,6 +192,8 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
     voicebox_status, voicebox_detail, voicebox_running = _voicebox_api_ok(
         integration["voicebox_api_url"],
         integration["voicebox_health_path"],
+        timeout=network_timeout,
+        max_candidates=voicebox_candidates,
     )
 
     livedj_lock = _lock_file_running("LiveDJ")
@@ -195,7 +231,7 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
         request_detail = "Watcher not detected"
 
     news_status, news_detail, news_running = _news_task_status(news_paths["config"])
-    internet_status, internet_detail = _internet_connected()
+    internet_status, internet_detail = _internet_connected(timeout=network_timeout)
 
     services = [
         ServiceStatus("RadioDJ", radiodj_status, radiodj_detail, radiodj_running),
@@ -206,7 +242,10 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
         ServiceStatus("Internet", internet_status, internet_detail, internet_status == HEALTH_OK),
     ]
 
-    return LiveSystemStatus(services=services, last_refreshed=datetime.now().strftime("%I:%M:%S %p"))
+    result = LiveSystemStatus(services=services, last_refreshed=datetime.now().strftime("%I:%M:%S %p"))
+    _STATUS_CACHE = result
+    _STATUS_CACHE_MONO = time.monotonic()
+    return result
 
 
 def service_lookup(status: LiveSystemStatus, name: str) -> ServiceStatus | None:

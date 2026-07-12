@@ -209,6 +209,7 @@ class PersonalitiesPage(BasePage):
 
         def complete(result: PersonalitiesLoadResult) -> None:
             if generation != self._load_generation:
+                self._load_in_progress = False
                 return
             self._load_in_progress = False
             try:
@@ -223,6 +224,7 @@ class PersonalitiesPage(BasePage):
 
         def failed(error: Exception) -> None:
             if generation != self._load_generation:
+                self._load_in_progress = False
                 return
             self._load_in_progress = False
             self._show_loading(False)
@@ -483,6 +485,20 @@ class PersonalitiesPage(BasePage):
             self.after_cancel(self._autosave_job)
         self._autosave_job = self.after(700, self._autosave_now)
 
+    def _persist_personalities(
+        self,
+        *,
+        status_message: str = "",
+        use_busy_cursor: bool = True,
+    ) -> None:
+        self._persist_config_async(
+            "personalities",
+            self._data,
+            status_message=status_message,
+            error_title="Personalities",
+            use_busy_cursor=use_busy_cursor,
+        )
+
     def _autosave_now(self) -> None:
         self._autosave_job = None
         personality = self._selected_personality()
@@ -491,8 +507,10 @@ class PersonalitiesPage(BasePage):
         errors = validate_personality(personality)
         if errors:
             return
-        self.config_manager.save("personalities", self._data)
-        self.set_status("Personalities saved automatically")
+        self._persist_personalities(
+            status_message="Personalities saved automatically",
+            use_busy_cursor=False,
+        )
 
     def _save_now(self) -> None:
         if self._selected_id and not self._apply_form_to_selected():
@@ -504,8 +522,7 @@ class PersonalitiesPage(BasePage):
                 if errors:
                     Messagebox.show_warning("\n".join(errors), "Validation")
                     return
-        self.config_manager.save("personalities", self._data)
-        self.set_status("Personalities saved")
+        self._persist_personalities(status_message="Personalities saved")
 
     def _add_personality(self) -> None:
         self._apply_form_to_selected()
@@ -521,7 +538,7 @@ class PersonalitiesPage(BasePage):
             }
         )
         self._data.setdefault("personalities", []).append(personality)
-        self.config_manager.save("personalities", self._data)
+        self._persist_personalities(use_busy_cursor=False)
         self._refresh_tree()
         self._select_personality(personality["id"])
         self.set_status("Added new personality")
@@ -546,7 +563,7 @@ class PersonalitiesPage(BasePage):
             item for item in self._data.get("personalities", []) if item["id"] != personality["id"]
         ]
         self._selected_id = None
-        self.config_manager.save("personalities", self._data)
+        self._persist_personalities(use_busy_cursor=False)
         self._refresh_tree()
         if self._data["personalities"]:
             self._select_personality(self._data["personalities"][0]["id"])
@@ -634,14 +651,30 @@ class PersonalitiesPage(BasePage):
         source_path = Path(source)
         suffix = source_path.suffix.lower() or ".png"
         destination = personality_images_dir() / f"{personality['id']}{suffix}"
-        shutil.copy2(source_path, destination)
-        invalidate_path(destination)
+        personality_id = personality["id"]
+        self._show_busy_cursor(True)
+        self.set_status("Copying personality picture…")
 
-        personality["picture"] = self._picture_relative_path(destination)
-        personality["updated"] = datetime.now().isoformat(timespec="seconds")
-        self._update_picture_preview(personality["picture"])
-        self.config_manager.save("personalities", self._data)
-        self.set_status("Personality picture updated")
+        def work() -> Path:
+            shutil.copy2(source_path, destination)
+            invalidate_path(destination)
+            return destination
+
+        def complete(dest: Path) -> None:
+            self._show_busy_cursor(False)
+            current = self._selected_personality()
+            if not current or current["id"] != personality_id:
+                return
+            current["picture"] = self._picture_relative_path(dest)
+            current["updated"] = datetime.now().isoformat(timespec="seconds")
+            self._update_picture_preview(current["picture"])
+            self._persist_personalities(status_message="Personality picture updated")
+
+        def failed(error: Exception) -> None:
+            self._show_busy_cursor(False)
+            self._show_error_dialog("Upload Picture", str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _remove_picture(self) -> None:
         personality = self._selected_personality()
@@ -654,8 +687,7 @@ class PersonalitiesPage(BasePage):
         personality["picture"] = ""
         personality["updated"] = datetime.now().isoformat(timespec="seconds")
         self._update_picture_preview("")
-        self.config_manager.save("personalities", self._data)
-        self.set_status("Personality picture removed")
+        self._persist_personalities(status_message="Personality picture removed")
 
     def _browse_path(self, key: str, *, file_mode: bool, directory: bool = False) -> None:
         if directory:

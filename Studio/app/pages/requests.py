@@ -8,7 +8,9 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from app.core.personality_model import normalize_personalities_data
+from app.core.background_tasks import run_in_background
+from app.core.personality_model import display_label
+from app.core.requests_loader import RequestsLoadResult, load_requests_page_data
 from app.core.requests_model import (
     COOLDOWN_PRESETS,
     REQUEST_MODES,
@@ -19,7 +21,7 @@ from app.core.requests_model import (
     specialty_shows_from_schedule,
     validate_requests_settings,
 )
-from app.core.schedule_model import TIME_OPTIONS, normalize_schedule_data
+from app.core.schedule_model import TIME_OPTIONS
 from app.core.publish_manager import import_requests_from_live, integration_bundle, publish_requests, restore_requests_backup
 from app.pages.base_page import BasePage
 from app.ui.confirm_dialog import confirm_action
@@ -35,10 +37,18 @@ class RequestsPage(BasePage):
         self._data: dict = {}
         self._autosave_job: str | None = None
         self._loading_form = False
+        self._load_in_progress = False
+        self._load_generation = 0
+        self._personalities: list[dict] = []
+        self._schedule_slots: list[dict] = []
         self._format_vars: dict[str, tk.BooleanVar] = {}
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
+        self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
+        self._loading_label.pack(side="left", padx=(0, 12))
+        self._error_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel", wraplength=520)
+        self._error_label.pack(side="left", fill="x", expand=True)
         ttk.Button(toolbar, text="Import from Request System", bootstyle="secondary", command=self._import_live).pack(
             side="left"
         )
@@ -217,15 +227,70 @@ class RequestsPage(BasePage):
         ).pack(anchor="w")
 
     def on_show(self) -> None:
-        self._load()
+        self._begin_background_load()
 
-    def _load(self) -> None:
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._loading_label.configure(text="")
+        self._show_busy_cursor(False)
+
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        self._loading_label.configure(text="Loading request settings…")
+        self._error_label.configure(text="")
+        self._show_busy_cursor(True)
+
+        def work() -> RequestsLoadResult:
+            return load_requests_page_data(
+                self.config_manager.path_for("requests"),
+                self.config_manager.path_for("personalities"),
+                self.config_manager.path_for("schedule"),
+            )
+
+        def complete(result: RequestsLoadResult) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            try:
+                self._apply_loaded_data(result)
+            except Exception as exc:
+                self._loading_label.configure(text="")
+                self._show_busy_cursor(False)
+                self._show_error_dialog("Requests", str(exc))
+                return
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+            self._show_error_dialog("Requests", str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _apply_loaded_data(self, result: RequestsLoadResult) -> None:
+        self._personalities = result.personalities
+        self._schedule_slots = result.schedule_slots
+        self._data = result.requests_data
+        self.config_manager._cache["requests"] = result.requests_data
         self._loading_form = True
-        loaded = self.config_manager.load("requests", {})
-        self._data = normalize_requests_data(loaded)
         self._populate_form(self._data)
         self._loading_form = False
-        self.set_status("Request settings loaded")
+        if result.load_errors:
+            self._error_label.configure(text="; ".join(result.load_errors))
+            self.set_status("; ".join(result.load_errors))
+        else:
+            self._error_label.configure(text="")
+            self.set_status("Request settings loaded")
+
+    def _load(self) -> None:
+        self._begin_background_load()
 
     def _populate_form(self, data: dict) -> None:
         self._request_mode.set(data.get("request_mode", "by_schedule"))
@@ -281,13 +346,8 @@ class RequestsPage(BasePage):
             child.destroy()
         self._format_vars.clear()
 
-        personalities = normalize_personalities_data(
-            self.config_manager.load("personalities", {"personalities": []})
-        ).get("personalities", [])
-        schedule = normalize_schedule_data(
-            self.config_manager.load("schedule", {"slots": []}),
-            [item["id"] for item in personalities],
-        ).get("slots", [])
+        personalities = self._personalities
+        schedule = self._schedule_slots
         available = collect_available_formats(personalities, schedule)
 
         if not available:
@@ -310,14 +370,7 @@ class RequestsPage(BasePage):
             ).grid(row=index // 3, column=index % 3, sticky="w", padx=(0, 20), pady=4)
 
     def _render_specialty_shows(self) -> None:
-        personalities = normalize_personalities_data(
-            self.config_manager.load("personalities", {"personalities": []})
-        ).get("personalities", [])
-        schedule = normalize_schedule_data(
-            self.config_manager.load("schedule", {"slots": []}),
-            [item["id"] for item in personalities],
-        ).get("slots", [])
-        blocked = specialty_shows_from_schedule(schedule)
+        blocked = specialty_shows_from_schedule(self._schedule_slots)
         if not blocked:
             self._specialty_list.configure(text="No specialty show blocks are currently marked Requests Off in Schedule.")
             return
@@ -377,9 +430,13 @@ class RequestsPage(BasePage):
         errors, _warnings = validate_requests_settings(data)
         if errors:
             return
-        self.config_manager.save("requests", data)
         self._data = data
-        self.set_status("Request settings saved automatically")
+        self._persist_config_async(
+            "requests",
+            data,
+            status_message="Request settings saved automatically",
+            error_title="Save Requests",
+        )
 
     def _save_now(self) -> None:
         data = self._collect_data()
@@ -387,9 +444,13 @@ class RequestsPage(BasePage):
         if errors:
             Messagebox.show_warning("\n".join(errors), "Validation")
             return
-        self.config_manager.save("requests", data)
         self._data = data
-        self.set_status("Request settings saved")
+        self._persist_config_async(
+            "requests",
+            data,
+            status_message="Request settings saved",
+            error_title="Save Requests",
+        )
 
     def _test_settings(self) -> None:
         data = self._collect_data()
@@ -452,14 +513,21 @@ class RequestsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = import_requests_from_live(self._integration())
-        if ok:
-            self.config_manager._cache.pop("requests", None)
-            self._load()
-            Messagebox.show_info(message, "Import Requests")
-        else:
-            Messagebox.show_warning(message, "Import Requests")
-        self.set_status(message)
+
+        def work():
+            return import_requests_from_live(self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                self.config_manager._cache.pop("requests", None)
+                self._begin_background_load()
+                Messagebox.show_info(message, "Import Requests")
+            else:
+                Messagebox.show_warning(message, "Import Requests")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Importing request settings…", error_title="Import Requests")
 
     def _publish_live(self) -> None:
         data = self._collect_data()
@@ -480,12 +548,19 @@ class RequestsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = publish_requests(self.config_manager, self._integration())
-        if ok:
-            Messagebox.show_info(message, "Publish Requests")
-        else:
-            Messagebox.show_error(message, "Publish Requests")
-        self.set_status(message)
+
+        def work():
+            return publish_requests(self.config_manager, self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Publish Requests")
+            else:
+                Messagebox.show_error(message, "Publish Requests")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Publishing request settings…", error_title="Publish Requests")
 
     def _restore_live(self) -> None:
         if not confirm_action(
@@ -494,9 +569,16 @@ class RequestsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = restore_requests_backup(self._integration())
-        if ok:
-            Messagebox.show_info(message, "Restore Requests Backup")
-        else:
-            Messagebox.show_warning(message, "Restore Requests Backup")
-        self.set_status(message)
+
+        def work():
+            return restore_requests_backup(self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Restore Requests Backup")
+            else:
+                Messagebox.show_warning(message, "Restore Requests Backup")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Restoring request backup…", error_title="Restore Requests")

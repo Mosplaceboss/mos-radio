@@ -8,6 +8,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledText
 
+from app.core.background_tasks import run_in_background
 from app.core.integration_settings import livedj_live_paths
 from app.core.livedj_integration import import_livedj_from_live, validate_livedj_bundle
 from app.core.publish_manager import integration_bundle, publish_livedj, restore_livedj_backup
@@ -69,6 +70,10 @@ class LiveDJPage(BasePage):
         self._refresh_paths()
         self._validate(quiet=True)
 
+    def on_hide(self) -> None:
+        self._task_generation += 1
+        self._show_busy_cursor(False)
+
     def _settings(self) -> dict:
         return self.config_manager.load("settings", {})
 
@@ -99,50 +104,79 @@ class LiveDJPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message, _imported = import_livedj_from_live(self._integration())
-        if ok:
-            self.config_manager._cache.pop("personalities", None)
-            self.config_manager._cache.pop("schedule", None)
-            self.config_manager._cache.pop("voice_library", None)
-            Messagebox.show_info(message, "Import from LiveDJ")
-            self.set_status(message)
-            self._validate(quiet=True)
-        else:
-            Messagebox.show_warning(message, "Import from LiveDJ")
-            self.set_status(message)
+
+        def work():
+            return import_livedj_from_live(self._integration())
+
+        def complete(result: tuple[bool, str, list]) -> None:
+            ok, message, _imported = result
+            if ok:
+                for key in ("personalities", "schedule", "voice_library"):
+                    self.config_manager._cache.pop(key, None)
+                Messagebox.show_info(message, "Import from LiveDJ")
+                self.set_status(message)
+                self._validate(quiet=True)
+            else:
+                Messagebox.show_warning(message, "Import from LiveDJ")
+                self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Importing from LiveDJ…", error_title="Import LiveDJ")
 
     def _validate(self, *, quiet: bool = False) -> None:
-        errors = validate_livedj_bundle(self.config_manager)
-        self._validation_box.delete("1.0", "end")
-        if errors:
-            self._validation_box.insert("end", "\n".join(errors))
-            if not quiet:
-                Messagebox.show_warning(f"{len(errors)} issue(s) found.", "LiveDJ Validation")
-                self.set_status("LiveDJ validation found issues")
-        else:
-            self._validation_box.insert("end", "LiveDJ configuration is valid and ready to publish.")
-            if not quiet:
-                Messagebox.show_info("LiveDJ configuration is valid.", "LiveDJ Validation")
-                self.set_status("LiveDJ validation passed")
+        def work():
+            return validate_livedj_bundle(self.config_manager)
+
+        def complete(errors: list[str]) -> None:
+            self._validation_box.delete("1.0", "end")
+            if errors:
+                self._validation_box.insert("end", "\n".join(errors))
+                if not quiet:
+                    Messagebox.show_warning(f"{len(errors)} issue(s) found.", "LiveDJ Validation")
+                    self.set_status("LiveDJ validation found issues")
+            else:
+                self._validation_box.insert("end", "LiveDJ configuration is valid and ready to publish.")
+                if not quiet:
+                    Messagebox.show_info("LiveDJ configuration is valid.", "LiveDJ Validation")
+                    self.set_status("LiveDJ validation passed")
+
+        self._run_async_task(
+            work,
+            complete,
+            loading_message="Validating LiveDJ configuration…",
+            error_title="LiveDJ Validation",
+            use_busy_cursor=not quiet,
+        )
 
     def _publish(self) -> None:
-        errors = validate_livedj_bundle(self.config_manager)
-        if errors:
-            Messagebox.show_error("\n".join(errors[:10]), "Cannot Publish")
-            return
-        if not confirm_action(
-            "Publish to LiveDJ",
-            "Publish Studio development config to live LiveDJ paths?\n"
-            "A timestamped backup of the current live files will be created first.",
-            self._settings(),
-        ):
-            return
-        ok, message = publish_livedj(self.config_manager, self._integration())
-        if ok:
-            Messagebox.show_info(message, "Publish to LiveDJ")
-        else:
-            Messagebox.show_error(message, "Publish to LiveDJ")
-        self.set_status(message)
+        def validate_work():
+            return validate_livedj_bundle(self.config_manager)
+
+        def validate_complete(errors: list[str]) -> None:
+            if errors:
+                Messagebox.show_error("\n".join(errors[:10]), "Cannot Publish")
+                return
+            if not confirm_action(
+                "Publish to LiveDJ",
+                "Publish Studio development config to live LiveDJ paths?\n"
+                "A timestamped backup of the current live files will be created first.",
+                self._settings(),
+            ):
+                return
+
+            def work():
+                return publish_livedj(self.config_manager, self._integration())
+
+            def complete(result: tuple[bool, str]) -> None:
+                ok, message = result
+                if ok:
+                    Messagebox.show_info(message, "Publish to LiveDJ")
+                else:
+                    Messagebox.show_error(message, "Publish to LiveDJ")
+                self.set_status(message)
+
+            self._run_async_task(work, complete, loading_message="Publishing to LiveDJ…", error_title="Publish LiveDJ")
+
+        self._run_async_task(validate_work, validate_complete, loading_message="Validating before publish…", error_title="LiveDJ Validation")
 
     def _restore(self) -> None:
         if not confirm_action(
@@ -151,9 +185,16 @@ class LiveDJPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = restore_livedj_backup(self._integration())
-        if ok:
-            Messagebox.show_info(message, "Restore LiveDJ Backup")
-        else:
-            Messagebox.show_warning(message, "Restore LiveDJ Backup")
-        self.set_status(message)
+
+        def work():
+            return restore_livedj_backup(self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Restore LiveDJ Backup")
+            else:
+                Messagebox.show_warning(message, "Restore LiveDJ Backup")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Restoring LiveDJ backup…", error_title="Restore LiveDJ")

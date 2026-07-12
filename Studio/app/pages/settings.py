@@ -7,6 +7,8 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
+from app.core.background_tasks import run_in_background
+from app.core.voice_library_loader import read_json_with_timeout
 from app.pages.base_page import BasePage
 
 
@@ -16,6 +18,9 @@ class SettingsPage(BasePage):
     page_subtitle = "Studio preferences, operation mode, and integration paths"
 
     def build(self) -> None:
+        self._load_generation = 0
+        self._load_in_progress = False
+
         form = ttk.Labelframe(
             self._body,
             text="General",
@@ -85,10 +90,47 @@ class SettingsPage(BasePage):
         ttk.Button(actions, text="Save Settings", bootstyle="primary", command=self._save).pack(side="left", padx=8)
 
     def on_show(self) -> None:
-        self._load()
+        self._begin_background_load()
 
-    def _load(self) -> None:
-        data = self.config_manager.load("settings", {})
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._show_busy_cursor(False)
+
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        path = self.config_manager.path_for("settings")
+
+        def work():
+            return read_json_with_timeout(path, {}, timeout=5.0)
+
+        def complete(result: tuple[dict, str | None]) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._show_busy_cursor(False)
+            data, error = result
+            if error:
+                self._show_error_dialog("Settings", error)
+                return
+            self.config_manager._cache["settings"] = data
+            self._apply_settings(data)
+            self.set_status("Application settings loaded")
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._show_busy_cursor(False)
+            self._show_error_dialog("Settings", str(error))
+
+        self._show_busy_cursor(True)
+        self.set_status("Loading settings…")
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _apply_settings(self, data: dict) -> None:
         integration = data.get("integration", {})
         live_paths = integration.get("live_paths", {})
         livedj_paths = live_paths.get("livedj", {})
@@ -108,10 +150,12 @@ class SettingsPage(BasePage):
         )
         self._requests_config.set(requests_paths.get("config", "Automation/Requests/requests.json"))
         self._news_config.set(news_paths.get("config", "Automation/News/news.json"))
-        self.set_status("Application settings loaded")
+
+    def _load(self) -> None:
+        self._begin_background_load()
 
     def _save(self) -> None:
-        existing = self.config_manager.load("settings", {})
+        existing = self.config_manager._cache.get("settings") or self.config_manager.load("settings", {})
         integration = existing.get("integration", {})
         live_paths = integration.get("live_paths", {})
         livedj_paths = live_paths.get("livedj", {})
@@ -141,5 +185,9 @@ class SettingsPage(BasePage):
             "theme": self._theme.get(),
             "integration": integration,
         }
-        self.config_manager.save("settings", data)
-        self.set_status("Application settings saved — production mode requires extra publish confirmation")
+        self._persist_config_async(
+            "settings",
+            data,
+            status_message="Application settings saved — production mode requires extra publish confirmation",
+            error_title="Save Settings",
+        )

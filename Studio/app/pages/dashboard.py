@@ -37,6 +37,7 @@ class DashboardPage(BasePage):
         self._last_activity_signature: tuple[str, ...] = ()
         self._refresh_in_progress = False
         self._refresh_cancelled = False
+        self._refresh_generation = 0
 
         station = ttk.Labelframe(
             self._body,
@@ -205,6 +206,9 @@ class DashboardPage(BasePage):
 
     def on_hide(self) -> None:
         self._refresh_cancelled = True
+        self._refresh_generation += 1
+        self._refresh_in_progress = False
+        self._reset_busy_cursor()
         if self._refresh_job:
             self.after_cancel(self._refresh_job)
             self._refresh_job = None
@@ -231,11 +235,19 @@ class DashboardPage(BasePage):
         if self._refresh_in_progress:
             return
         self._refresh_in_progress = True
+        generation = self._refresh_generation
+        if not quiet:
+            self._show_busy_cursor(True)
+            self.set_status("Refreshing dashboard…")
 
         def work() -> DashboardSnapshot:
             return build_dashboard_snapshot(self.config_manager)
 
         def complete(snapshot: DashboardSnapshot) -> None:
+            if not quiet:
+                self._show_busy_cursor(False)
+            if generation != self._refresh_generation:
+                return
             self._refresh_in_progress = False
             if self._refresh_cancelled:
                 return
@@ -243,9 +255,15 @@ class DashboardPage(BasePage):
             if not quiet:
                 self.set_status("Dashboard refreshed")
 
-        def failed(_error: Exception) -> None:
+        def failed(error: Exception) -> None:
+            if not quiet:
+                self._show_busy_cursor(False)
+            if generation != self._refresh_generation:
+                return
             self._refresh_in_progress = False
             if not quiet:
+                self._show_error_dialog("Dashboard Refresh", str(error))
+            elif not self._refresh_cancelled:
                 self.set_status("Dashboard refresh failed")
 
         run_in_background(self, work, complete, on_error=failed)

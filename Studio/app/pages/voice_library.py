@@ -484,6 +484,20 @@ class VoiceLibraryPage(BasePage):
             self.after_cancel(self._autosave_job)
         self._autosave_job = self.after(700, self._autosave_now)
 
+    def _persist_voice_library(
+        self,
+        *,
+        status_message: str = "",
+        use_busy_cursor: bool = True,
+    ) -> None:
+        self._persist_config_async(
+            "voice_library",
+            self._data,
+            status_message=status_message,
+            error_title="Voice Library",
+            use_busy_cursor=use_busy_cursor,
+        )
+
     def _autosave_now(self) -> None:
         self._autosave_job = None
         voice = self._selected_voice()
@@ -492,8 +506,10 @@ class VoiceLibraryPage(BasePage):
         errors = validate_voice(voice)
         if errors:
             return
-        self.config_manager.save("voice_library", self._data)
-        self.set_status("Voice library saved automatically")
+        self._persist_voice_library(
+            status_message="Voice library saved automatically",
+            use_busy_cursor=False,
+        )
 
     def _save_now(self) -> None:
         if self._selected_id and not self._apply_form_to_selected():
@@ -505,8 +521,7 @@ class VoiceLibraryPage(BasePage):
                 if errors:
                     Messagebox.show_warning("\n".join(errors), "Validation")
                     return
-        self.config_manager.save("voice_library", self._data)
-        self.set_status("Voice library saved")
+        self._persist_voice_library(status_message="Voice library saved")
 
     def _add_voice(self) -> None:
         self._apply_form_to_selected()
@@ -518,7 +533,7 @@ class VoiceLibraryPage(BasePage):
             }
         )
         self._data.setdefault("voices", []).append(voice)
-        self.config_manager.save("voice_library", self._data)
+        self._persist_voice_library(use_busy_cursor=False)
         self._refresh_tree()
         self._select_voice(voice["id"])
         self.set_status("Added new voice")
@@ -538,7 +553,7 @@ class VoiceLibraryPage(BasePage):
 
         self._data["voices"] = [item for item in self._data.get("voices", []) if item["id"] != voice["id"]]
         self._selected_id = None
-        self.config_manager.save("voice_library", self._data)
+        self._persist_voice_library(use_busy_cursor=False)
         self._refresh_tree()
         if self._data["voices"]:
             self._select_voice(self._data["voices"][0]["id"])
@@ -626,13 +641,29 @@ class VoiceLibraryPage(BasePage):
         source_path = Path(source)
         suffix = source_path.suffix.lower() or ".png"
         destination = voice_portraits_dir() / f"{voice['id']}{suffix}"
-        shutil.copy2(source_path, destination)
-        invalidate_path(destination)
+        voice_id = voice["id"]
+        self._show_busy_cursor(True)
+        self.set_status("Copying voice portrait…")
 
-        voice["portrait"] = self._portrait_relative_path(destination)
-        self._update_portrait_preview(voice["portrait"])
-        self.config_manager.save("voice_library", self._data)
-        self.set_status("Voice portrait updated")
+        def work() -> Path:
+            shutil.copy2(source_path, destination)
+            invalidate_path(destination)
+            return destination
+
+        def complete(dest: Path) -> None:
+            self._show_busy_cursor(False)
+            current = self._selected_voice()
+            if not current or current["id"] != voice_id:
+                return
+            current["portrait"] = self._portrait_relative_path(dest)
+            self._update_portrait_preview(current["portrait"])
+            self._persist_voice_library(status_message="Voice portrait updated")
+
+        def failed(error: Exception) -> None:
+            self._show_busy_cursor(False)
+            self._show_error_dialog("Upload Portrait", str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _remove_portrait(self) -> None:
         voice = self._selected_voice()
@@ -644,5 +675,4 @@ class VoiceLibraryPage(BasePage):
             invalidate_path(path)
         voice["portrait"] = ""
         self._update_portrait_preview("")
-        self.config_manager.save("voice_library", self._data)
-        self.set_status("Voice portrait removed")
+        self._persist_voice_library(status_message="Voice portrait removed")

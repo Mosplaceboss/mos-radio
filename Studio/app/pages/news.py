@@ -8,8 +8,10 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
 
+from app.core.background_tasks import run_in_background
 from app.core.integration_settings import news_live_paths
-from app.core.news_model import normalize_news_data, validate_news_data
+from app.core.news_loader import NewsLoadResult, load_news_page_data
+from app.core.news_model import validate_news_data
 from app.core.publish_manager import import_news_from_live, integration_bundle, publish_news, restore_news_backup
 from app.core.studio_info import environment_mode
 from app.pages.base_page import BasePage
@@ -25,10 +27,16 @@ class NewsPage(BasePage):
         self._data: dict = {}
         self._autosave_job: str | None = None
         self._loading = False
+        self._load_in_progress = False
+        self._load_generation = 0
         self._feed_rows: list[dict[str, tk.Variable]] = []
 
         toolbar = ttk.Frame(self._body, style="Studio.TFrame")
         toolbar.pack(fill="x", pady=(0, 12))
+        self._loading_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel")
+        self._loading_label.pack(side="left", padx=(0, 12))
+        self._error_label = ttk.Label(toolbar, text="", style="StudioMuted.TLabel", wraplength=520)
+        self._error_label.pack(side="left", fill="x", expand=True)
         ttk.Button(toolbar, text="Import from News", bootstyle="secondary", command=self._import_live).pack(side="left")
         ttk.Button(toolbar, text="Reload", bootstyle="secondary", command=self._load).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Publish to News", bootstyle="primary", command=self._publish).pack(side="right")
@@ -61,17 +69,53 @@ class NewsPage(BasePage):
         self._feeds_container = scroll.container
 
     def on_show(self) -> None:
-        self._load()
+        self._begin_background_load()
 
-    def _settings(self) -> dict:
-        return self.config_manager.load("settings", {})
+    def on_hide(self) -> None:
+        self._load_generation += 1
+        self._load_in_progress = False
+        self._loading_label.configure(text="")
+        self._show_busy_cursor(False)
 
-    def _integration(self) -> dict:
-        return integration_bundle(self._settings())
+    def _begin_background_load(self) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._load_in_progress = True
+        self._loading_label.configure(text="Loading news settings…")
+        self._error_label.configure(text="")
+        self._show_busy_cursor(True)
 
-    def _load(self) -> None:
+        def work() -> NewsLoadResult:
+            return load_news_page_data(self.config_manager.path_for("news"))
+
+        def complete(result: NewsLoadResult) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            try:
+                self._apply_loaded_data(result)
+            except Exception as exc:
+                self._loading_label.configure(text="")
+                self._show_busy_cursor(False)
+                self._show_error_dialog("News", str(exc))
+                return
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+
+        def failed(error: Exception) -> None:
+            if generation != self._load_generation:
+                return
+            self._load_in_progress = False
+            self._loading_label.configure(text="")
+            self._show_busy_cursor(False)
+            self._show_error_dialog("News", str(error))
+
+        run_in_background(self, work, complete, on_error=failed)
+
+    def _apply_loaded_data(self, result: NewsLoadResult) -> None:
         self._loading = True
-        self._data = normalize_news_data(self.config_manager.load("news", {}))
+        self._data = result.news_data
+        self.config_manager._cache["news"] = result.news_data
         self._enabled_var.set(self._data.get("enabled", True))
         self._last_run_label.configure(text=f"Last successful run: {self._data.get('last_successful_run') or 'Not recorded'}")
         live = news_live_paths(self._integration())
@@ -80,7 +124,15 @@ class NewsPage(BasePage):
         )
         self._render_feeds()
         self._loading = False
-        self.set_status("News configuration loaded")
+        if result.load_errors:
+            self._error_label.configure(text="; ".join(result.load_errors))
+            self.set_status("; ".join(result.load_errors))
+        else:
+            self._error_label.configure(text="")
+            self.set_status("News configuration loaded")
+
+    def _load(self) -> None:
+        self._begin_background_load()
 
     def _render_feeds(self) -> None:
         for child in self._feeds_container.winfo_children():
@@ -132,7 +184,15 @@ class NewsPage(BasePage):
             )
         return feeds
 
+    def _settings(self) -> dict:
+        return self.config_manager.load("settings", {})
+
+    def _integration(self) -> dict:
+        return integration_bundle(self._settings())
+
     def _collect_data(self) -> dict:
+        from app.core.news_model import normalize_news_data
+
         data = normalize_news_data(self._data)
         data["enabled"] = self._enabled_var.get()
         data["rss_feeds"] = self._collect_feeds()
@@ -151,9 +211,13 @@ class NewsPage(BasePage):
     def _save_dev_copy(self) -> None:
         self._autosave_job = None
         data = self._collect_data()
-        self.config_manager.save("news", data)
         self._data = data
-        self.set_status("News development config saved")
+        self._persist_config_async(
+            "news",
+            data,
+            status_message="News development config saved",
+            error_title="Save News",
+        )
 
     def _import_live(self) -> None:
         if not confirm_action(
@@ -162,14 +226,21 @@ class NewsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = import_news_from_live(self._integration())
-        if ok:
-            self.config_manager._cache.pop("news", None)
-            self._load()
-            Messagebox.show_info(message, "Import from News")
-        else:
-            Messagebox.show_warning(message, "Import from News")
-        self.set_status(message)
+
+        def work():
+            return import_news_from_live(self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                self.config_manager._cache.pop("news", None)
+                self._begin_background_load()
+                Messagebox.show_info(message, "Import from News")
+            else:
+                Messagebox.show_warning(message, "Import from News")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Importing news settings…", error_title="Import News")
 
     def _publish(self) -> None:
         data = self._collect_data()
@@ -184,12 +255,19 @@ class NewsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = publish_news(self.config_manager, self._integration())
-        if ok:
-            Messagebox.show_info(message, "Publish to News")
-        else:
-            Messagebox.show_error(message, "Publish to News")
-        self.set_status(message)
+
+        def work():
+            return publish_news(self.config_manager, self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Publish to News")
+            else:
+                Messagebox.show_error(message, "Publish to News")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Publishing news settings…", error_title="Publish News")
 
     def _restore(self) -> None:
         if not confirm_action(
@@ -198,9 +276,16 @@ class NewsPage(BasePage):
             self._settings(),
         ):
             return
-        ok, message = restore_news_backup(self._integration())
-        if ok:
-            Messagebox.show_info(message, "Restore News Backup")
-        else:
-            Messagebox.show_warning(message, "Restore News Backup")
-        self.set_status(message)
+
+        def work():
+            return restore_news_backup(self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Restore News Backup")
+            else:
+                Messagebox.show_warning(message, "Restore News Backup")
+            self.set_status(message)
+
+        self._run_async_task(work, complete, loading_message="Restoring news backup…", error_title="Restore News")
