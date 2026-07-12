@@ -89,6 +89,14 @@ class FolderComparisonRow:
 
 
 @dataclass
+class ScanError:
+    computer: str
+    path: str
+    error: str
+    phase: str = "file_scan"
+
+
+@dataclass
 class Recommendation:
     category: str
     severity: str
@@ -114,6 +122,9 @@ class InventorySnapshot:
     duplicates: list[DuplicateGroup] = field(default_factory=list)
     comparisons: list[FolderComparisonRow] = field(default_factory=list)
     recommendations: list[Recommendation] = field(default_factory=list)
+    scan_errors: list[ScanError] = field(default_factory=list)
+    status: str = "running"
+    progress_message: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         def _list(items: list[Any]) -> list[dict[str, Any]]:
@@ -135,4 +146,7 @@ class InventorySnapshot:
             "duplicates": _list(self.duplicates),
             "comparisons": _list(self.comparisons),
             "recommendations": _list(self.recommendations),
+            "scan_errors": _list(self.scan_errors),
+            "status": self.status,
+            "progress_message": self.progress_message,
         }

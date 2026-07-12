@@ -5,30 +5,53 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from app.core.paths_util import is_computer_name, resolve_computer_root
 from app.core.safety import validate_output_write
 from app.core.settings_store import (
     DEFAULT_OUTPUT_FOLDER,
     OFFICE_PLATFORM_PHYSICAL,
+    RADIO_OUTPUT_FOLDER,
     RADIO_PLATFORM_MAPPED,
-    mapped_platform_available,
+    is_office_pc,
+    is_radio_pc,
 )
+
+
+def _normalize_drive_path(path: str) -> str:
+    return path.rstrip("\\/").lower()
 
 
 def validate_scan_path(path: str, *, label: str) -> tuple[bool, str]:
     raw = path.strip()
     if not raw:
-        return False, f"{label} is required. Click Browse or enter a folder path."
+        return False, f"{label} is required."
 
-    normalized = raw.rstrip("\\/")
-    if (
-        label == "Platform folder"
-        and mapped_platform_available()
-        and normalized.lower() == OFFICE_PLATFORM_PHYSICAL.rstrip("\\").lower()
-    ):
-        return (
-            False,
-            "On the Radio PC, use the mapped platform drive V:\\ instead of D:\\MosPlaceRadioPlatform.",
-        )
+    label_lower = label.lower()
+    if is_computer_name(raw):
+        if "office" in label_lower:
+            return True, f"Will scan {raw} locally on this Office PC."
+        if "radio" in label_lower:
+            _name, roots, errors = resolve_computer_root(raw)
+            if roots:
+                return True, f"Remote scan ready ({len(roots)} reachable paths on {raw})."
+            return True, f"Will attempt remote scan of {raw}. {errors[0] if errors else ''}"
+        return True, f"Will scan {raw}."
+
+    normalized = _normalize_drive_path(raw)
+
+    if label == "Platform folder" and is_office_pc():
+        if normalized in {_normalize_drive_path(RADIO_PLATFORM_MAPPED), "v:"}:
+            return (
+                False,
+                "On the Office PC, use D:\\MosPlaceRadioPlatform for the platform folder, not V:\\.",
+            )
+
+    if label == "Platform folder" and is_radio_pc():
+        if normalized == _normalize_drive_path(OFFICE_PLATFORM_PHYSICAL):
+            return (
+                False,
+                "On the Radio PC, use the mapped platform drive V:\\ instead of D:\\MosPlaceRadioPlatform.",
+            )
 
     candidate = Path(raw)
     if not candidate.exists():
@@ -41,9 +64,6 @@ def validate_scan_path(path: str, *, label: str) -> tuple[bool, str]:
 
     if not os.access(candidate, os.R_OK):
         return False, f"{label} is not readable. Check permissions: {raw}"
-
-    if label == "Platform folder" and mapped_platform_available() and normalized.lower().startswith("d:\\"):
-        return False, "On the Radio PC, browse to V:\\ for the shared platform folder."
 
     return True, "Ready to scan."
 
@@ -62,12 +82,21 @@ def validate_output_path(path: str) -> tuple[bool, str]:
 
 
 def ensure_default_output_folder() -> str:
-    ok, _message = validate_output_path(DEFAULT_OUTPUT_FOLDER)
-    if ok:
-        return DEFAULT_OUTPUT_FOLDER
-    if mapped_platform_available():
-        fallback = Path(RADIO_PLATFORM_MAPPED) / "InventoryReports"
-    else:
-        fallback = Path.cwd() / "InventoryReports"
+    for candidate in (DEFAULT_OUTPUT_FOLDER, RADIO_OUTPUT_FOLDER):
+        ok, _message = validate_output_path(candidate)
+        if ok:
+            return candidate
+    fallback = Path.cwd() / "InventoryReports"
     validate_output_write(fallback)
     return str(fallback)
+
+
+def all_scan_paths_valid(settings: dict[str, str]) -> tuple[bool, list[str]]:
+    checks = [
+        validate_scan_path(settings.get("office_pc_path", ""), label="Local Office PC"),
+        validate_scan_path(settings.get("radio_pc_path", ""), label="Radio PC"),
+        validate_scan_path(settings.get("platform_folder", ""), label="Platform folder"),
+        validate_output_path(settings.get("output_folder", "")),
+    ]
+    messages = [message for ok, message in checks if not ok]
+    return not messages, messages

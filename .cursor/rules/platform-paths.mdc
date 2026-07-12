@@ -1,0 +1,18 @@
+---
+description: Mo's Place platform paths and Inventory deployment context
+alwaysApply: true
+---
+
+# Platform Paths
+
+- **Inventory runs on the Office PC**, not the Radio PC.
+- The shared platform physically lives at `D:\MosPlaceRadioPlatform` on the Office PC.
+- The Radio PC accesses that same platform through mapped drive `V:\`.
+- On the Office PC, Inventory must use `D:\MosPlaceRadioPlatform` — never `V:\`.
+- Default Inventory report output: `D:\MosPlaceRadioPlatform\Documentation\InventoryReports`.
+- Unattended defaults on the Office PC:
+  - Local Office PC: `Office`
+  - Radio PC: `MosPlaceRadio`
+  - Platform folder: `D:\MosPlaceRadioPlatform`
+  - Output folder: `D:\MosPlaceRadioPlatform\Documentation\InventoryReports`
+- Run unattended with `MoPlaceInventory.exe --scan`.

@@ -11,32 +11,82 @@ sys.path.insert(0, str(INVENTORY_ROOT))
 
 from app.core.compare import find_duplicate_files
 from app.core.file_scanner import FileInventoryScanner
-from app.core.models import FileRecord
+from app.core.models import FileRecord, ScanError
 from app.core.recommendations import build_recommendations
-from app.core.reports import write_reports
+from app.core.reports import write_checkpoint, write_reports
 from app.core.scan_engine import ScanEngine
 
 
 def test_settings_roundtrip() -> None:
-    from app.core.settings_store import current_machine_name, load_settings, save_settings
+    from app.core.settings_store import (
+        DEFAULT_OFFICE_PC,
+        DEFAULT_OUTPUT_FOLDER,
+        DEFAULT_RADIO_PC,
+        OFFICE_PLATFORM_PHYSICAL,
+        browse_initial_dir,
+        current_machine_name,
+        load_settings,
+        machine_defaults,
+        save_settings,
+    )
+
+    defaults = machine_defaults()
+    if defaults["office_pc_path"] != DEFAULT_OFFICE_PC:
+        raise RuntimeError("Office PC default should be Office")
+    if defaults["radio_pc_path"] != DEFAULT_RADIO_PC:
+        raise RuntimeError("Radio PC default should be MosPlaceRadio")
+    if defaults["platform_folder"] != OFFICE_PLATFORM_PHYSICAL:
+        raise RuntimeError("Platform default should be D:\\MosPlaceRadioPlatform")
+    if defaults["output_folder"] != DEFAULT_OUTPUT_FOLDER:
+        raise RuntimeError("Output default should be the Documentation\\InventoryReports folder")
 
     machine = current_machine_name()
     save_settings(
         {
-            "office_pc_path": r"\\OFFICE-PC\D$\MosPlaceRadioPlatform",
-            "radio_pc_path": r"V:\\",
-            "platform_folder": r"V:\\",
-            "output_folder": r"V:\Documentation\InventoryReports",
+            "office_pc_path": DEFAULT_OFFICE_PC,
+            "radio_pc_path": DEFAULT_RADIO_PC,
+            "platform_folder": OFFICE_PLATFORM_PHYSICAL,
+            "output_folder": DEFAULT_OUTPUT_FOLDER,
         }
     )
     loaded = load_settings()
-    if loaded["platform_folder"] != r"V:\\":
-        raise RuntimeError("Machine-specific platform path was not saved correctly")
+    if loaded["platform_folder"] != OFFICE_PLATFORM_PHYSICAL:
+        raise RuntimeError("Office PC platform path was not saved correctly")
+    if loaded["output_folder"] != DEFAULT_OUTPUT_FOLDER:
+        raise RuntimeError("Office PC output path was not saved correctly")
     store_path = INVENTORY_ROOT / "inventory_settings.json"
     if store_path.exists():
         text = store_path.read_text(encoding="utf-8")
         if machine not in text:
             raise RuntimeError("Settings were not stored under the current machine profile")
+
+    if not browse_initial_dir("platform_folder"):
+        raise RuntimeError("Browse initial directory should not be empty")
+    if browse_initial_dir("radio_pc_path") != r"\\":
+        raise RuntimeError("Radio PC browse should start at the network root when unset")
+
+
+def test_resolve_local_office() -> None:
+    from app.core.paths_util import is_computer_name, resolve_computer_root
+
+    if not is_computer_name("Office"):
+        raise RuntimeError("Office should be treated as a computer name")
+    label, roots, _errors = resolve_computer_root("Office")
+    if label != "Office":
+        raise RuntimeError("Office label was not preserved")
+    if not roots:
+        raise RuntimeError("Local Office scan should resolve at least one root")
+
+
+def test_scan_error_recording() -> None:
+    scanner = FileInventoryScanner()
+    errors: list[ScanError] = []
+    scanner._record_error = errors.append  # type: ignore[method-assign]
+    drives, folders, files, _components = scanner.scan_roots("Test", [Path("Z:\\definitely-missing-root")])
+    if drives and not errors:
+        return
+    if not errors:
+        raise RuntimeError("Expected scan errors for a missing root")
 
 
 def test_duplicate_detection() -> None:
@@ -68,8 +118,7 @@ def test_local_scan() -> None:
             platform_folder=str(INVENTORY_ROOT),
             output_folder=tmp,
         )
-        if engine._thread:
-            engine._thread.join(timeout=120)
+        engine.join(timeout=120)
     if done["error"]:
         raise RuntimeError(done["error"])
     if not done["ok"]:
@@ -82,10 +131,11 @@ def test_report_generation() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = InventorySnapshot(
             scanned_at="now",
-            office_pc=".",
-            radio_pc=".",
+            office_pc="Office",
+            radio_pc="MosPlaceRadio",
             platform_folder=".",
             output_folder=tmp,
+            status="complete",
         )
         paths = write_reports(snapshot)
         for name in (
@@ -98,10 +148,15 @@ def test_report_generation() -> None:
         ):
             if name not in paths:
                 raise RuntimeError(f"Missing report: {name}")
+        checkpoint = write_checkpoint(snapshot)
+        if "Inventory.json.partial" not in checkpoint:
+            raise RuntimeError("Missing partial checkpoint report")
 
 
 def main() -> int:
     test_settings_roundtrip()
+    test_resolve_local_office()
+    test_scan_error_recording()
     test_duplicate_detection()
     test_report_generation()
     test_local_scan()

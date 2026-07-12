@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
-from app.core.models import DriveRecord, FileRecord, FolderRecord
-from app.core.paths_util import list_local_drives
+from app.core.models import DriveRecord, FileRecord, FolderRecord, ScanError
+from app.core.paths_util import list_drives_for_target
 from app.core.safety import assert_read_only_path
 
 CATEGORY_RULES = {
@@ -54,18 +55,44 @@ def detect_component(path: Path) -> str | None:
 
 
 class FileInventoryScanner:
-    def __init__(self, progress_callback=None, cancel_check=None) -> None:
+    def __init__(
+        self,
+        progress_callback=None,
+        cancel_check=None,
+        error_callback: Callable[[ScanError], None] | None = None,
+        checkpoint_callback: Callable[[], None] | None = None,
+    ) -> None:
         self._progress = progress_callback or (lambda _m, _p: None)
         self._cancel = cancel_check or (lambda: False)
+        self._record_error = error_callback or (lambda _error: None)
+        self._checkpoint = checkpoint_callback or (lambda: None)
 
-    def scan_roots(self, computer: str, roots: list[Path]) -> tuple[list[DriveRecord], list[FolderRecord], list[FileRecord], list[tuple[str, str, str]]]:
+    def scan_roots(
+        self,
+        computer: str,
+        roots: list[Path],
+        *,
+        target_name: str = "",
+    ) -> tuple[list[DriveRecord], list[FolderRecord], list[FileRecord], list[tuple[str, str, str]]]:
+        drive_target = target_name or computer
         drives = [
             DriveRecord(letter=letter, label=label, total_bytes=total, free_bytes=free, computer=computer)
-            for letter, label, total, free in list_local_drives(computer)
+            for letter, label, total, free in list_drives_for_target(drive_target)
         ]
         folders: list[FolderRecord] = []
         files: list[FileRecord] = []
         components: list[tuple[str, str, str]] = []
+
+        if not roots:
+            self._record_error(
+                ScanError(
+                    computer=computer,
+                    path=drive_target,
+                    error="No scan roots were available.",
+                    phase="file_scan",
+                )
+            )
+            return drives, folders, files, components
 
         total_roots = max(len(roots), 1)
         for index, root in enumerate(roots):
@@ -85,10 +112,39 @@ class FileInventoryScanner:
         components: list[tuple[str, str, str]],
     ) -> None:
         if not root.exists():
+            self._record_error(
+                ScanError(
+                    computer=computer,
+                    path=str(root),
+                    error="Root path does not exist.",
+                    phase="file_scan",
+                )
+            )
             return
-        assert_read_only_path(root)
+        try:
+            assert_read_only_path(root)
+        except OSError as exc:
+            self._record_error(
+                ScanError(
+                    computer=computer,
+                    path=str(root),
+                    error=str(exc),
+                    phase="file_scan",
+                )
+            )
+            return
 
-        for dirpath, dirnames, filenames in os.walk(root, topdown=True, onerror=lambda _e: None):
+        def onerror(exc: OSError) -> None:
+            self._record_error(
+                ScanError(
+                    computer=computer,
+                    path=str(getattr(exc, "filename", root)),
+                    error=str(exc),
+                    phase="file_scan",
+                )
+            )
+
+        for dirpath, _dirnames, filenames in os.walk(root, topdown=True, onerror=onerror):
             if self._cancel():
                 return
             current = Path(dirpath)
@@ -102,7 +158,15 @@ class FileInventoryScanner:
                 try:
                     assert_read_only_path(file_path)
                     stat = file_path.stat()
-                except OSError:
+                except OSError as exc:
+                    self._record_error(
+                        ScanError(
+                            computer=computer,
+                            path=str(file_path),
+                            error=str(exc),
+                            phase="file_scan",
+                        )
+                    )
                     continue
 
                 extension = file_path.suffix
@@ -129,6 +193,8 @@ class FileInventoryScanner:
 
             if len(files) % 250 == 0:
                 self._progress(f"Indexed {len(files):,} files on {computer}", 0.0)
+            if len(files) % 500 == 0:
+                self._checkpoint()
 
 
 def _fmt_time(timestamp: float) -> str:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from app.core.models import InventorySnapshot
 from app.core.path_validation import ensure_default_output_folder, validate_output_path, validate_scan_path
@@ -12,6 +12,8 @@ from app.core.scan_engine import ScanEngine
 from app.core.settings_store import (
     DEFAULT_OUTPUT_FOLDER,
     current_machine_name,
+    browse_initial_dir,
+    is_office_pc,
     load_settings,
     machine_defaults,
     save_settings,
@@ -19,14 +21,17 @@ from app.core.settings_store import (
 
 
 class InventoryApplication:
+    BROWSE_KEYS = {"platform_folder", "output_folder"}
+
     FIELD_SPECS = (
-        ("office_pc_path", "Office PC Folder", "office_var"),
-        ("radio_pc_path", "Radio PC Folder", "radio_var"),
+        ("office_pc_path", "Local Office PC", "office_var"),
+        ("radio_pc_path", "Radio PC", "radio_var"),
         ("platform_folder", "Platform Folder", "platform_var"),
         ("output_folder", "Output Folder", "output_var"),
     )
 
-    def __init__(self) -> None:
+    def __init__(self, *, auto_scan: bool = False) -> None:
+        self._auto_scan = auto_scan
         self.root = tk.Tk()
         self.root.title("Mo's Place Inventory")
         self.root.geometry("1180x780")
@@ -56,29 +61,68 @@ class InventoryApplication:
             on_error=self._on_error,
         )
 
+        self._build_read_only_banner()
         self._build_inputs()
         self._build_notebook()
         self._build_status()
         self._wire_change_handlers()
         self._refresh_validation()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self._auto_scan:
+            self.root.after(250, self._maybe_auto_start)
+
+    def _maybe_auto_start(self) -> None:
+        self._refresh_validation()
+        if self.scan_button.cget("state") == "normal":
+            self._start_scan()
+
+    def _build_read_only_banner(self) -> None:
+        banner = tk.Frame(self.root, bg="#e8f5e9", padx=16, pady=12)
+        banner.pack(fill="x")
+
+        tk.Label(
+            banner,
+            text="READ ONLY MODE",
+            font=("Segoe UI", 14, "bold"),
+            fg="#1b5e20",
+            bg="#e8f5e9",
+            anchor="w",
+        ).pack(fill="x")
+
+        tk.Label(
+            banner,
+            text="This application does not modify your computers. It only inventories and reports.",
+            font=("Segoe UI", 10),
+            fg="#2e7d32",
+            bg="#e8f5e9",
+            anchor="w",
+        ).pack(fill="x", pady=(4, 0))
 
     def _build_inputs(self) -> None:
         frame = ttk.LabelFrame(self.root, text="Scan Inputs", padding=12)
         frame.pack(fill="x", padx=12, pady=12)
 
-        self._path_rows: dict[str, dict] = {}
-        for row, (key, label, var_name) in enumerate(self.FIELD_SPECS):
-            variable = getattr(self, var_name)
-            ttk.Label(frame, text=label, width=18).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(
+            frame,
+            text="Office and Radio use computer names. Browse for Platform and Output folders.",
+            foreground="#444444",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
 
-            entry = ttk.Entry(frame, textvariable=variable, width=72, state="readonly")
+        self._path_rows: dict[str, dict] = {}
+        for row, (key, label, var_name) in enumerate(self.FIELD_SPECS, start=1):
+            variable = getattr(self, var_name)
+            ttk.Label(frame, text=label, width=28).grid(row=row, column=0, sticky="w", pady=4)
+
+            entry = ttk.Entry(frame, textvariable=variable, width=72)
+            if key in self.BROWSE_KEYS:
+                entry.configure(state="readonly")
+                entry.bind("<Double-Button-1>", lambda _event, k=key: self._browse_path(k))
             entry.grid(row=row, column=1, sticky="ew", padx=8, pady=4)
 
             actions = ttk.Frame(frame)
             actions.grid(row=row, column=2, sticky="w", pady=4)
-            ttk.Button(actions, text="Browse", command=lambda k=key: self._browse_path(k)).pack(side="left")
-            ttk.Button(actions, text="Enter Path", command=lambda k=key: self._enter_path(k)).pack(side="left", padx=6)
+            if key in self.BROWSE_KEYS:
+                ttk.Button(actions, text="Browse...", command=lambda k=key: self._browse_path(k)).pack(side="left")
 
             status = ttk.Label(frame, text="", wraplength=420)
             status.grid(row=row, column=3, sticky="w", padx=(8, 0), pady=4)
@@ -89,20 +133,15 @@ class InventoryApplication:
         frame.columnconfigure(3, weight=1)
 
         actions = ttk.Frame(frame)
-        actions.grid(row=len(self.FIELD_SPECS), column=0, columnspan=4, sticky="w", pady=(10, 0))
+        actions.grid(row=len(self.FIELD_SPECS) + 1, column=0, columnspan=4, sticky="w", pady=(10, 0))
         self.scan_button = ttk.Button(actions, text="Scan", command=self._start_scan, state="disabled")
         self.scan_button.pack(side="left")
         ttk.Button(actions, text="Cancel", command=self._cancel_scan).pack(side="left", padx=8)
-        ttk.Label(
-            actions,
-            text="READ-ONLY: no copy, delete, move, rename, or modify operations.",
-            foreground="#8a4b08",
-        ).pack(side="left", padx=12)
 
         self.progress = ttk.Progressbar(frame, maximum=100)
-        self.progress.grid(row=len(self.FIELD_SPECS) + 1, column=0, columnspan=4, sticky="ew", pady=(12, 4))
-        self.progress_label = ttk.Label(frame, text="Select and validate all paths to enable Scan.")
-        self.progress_label.grid(row=len(self.FIELD_SPECS) + 2, column=0, columnspan=4, sticky="w")
+        self.progress.grid(row=len(self.FIELD_SPECS) + 2, column=0, columnspan=4, sticky="ew", pady=(12, 4))
+        self.progress_label = ttk.Label(frame, text="Confirm the defaults or edit paths to enable Scan.")
+        self.progress_label.grid(row=len(self.FIELD_SPECS) + 3, column=0, columnspan=4, sticky="w")
 
     def _build_notebook(self) -> None:
         self.notebook = ttk.Notebook(self.root)
@@ -134,9 +173,11 @@ class InventoryApplication:
         return {"frame": frame, "text": text}
 
     def _build_status(self) -> None:
+        host = current_machine_name()
+        role = "Office PC" if is_office_pc() else "this machine"
         self.status = ttk.Label(
             self.root,
-            text=f"Mo's Place Inventory is ready on {current_machine_name()}. Paths are saved per machine.",
+            text=f"Mo's Place Inventory is ready on {host} ({role}). Paths are saved per machine.",
             anchor="w",
         )
         self.status.pack(fill="x", padx=12, pady=(0, 12))
@@ -158,26 +199,16 @@ class InventoryApplication:
 
     def _browse_path(self, key: str) -> None:
         row = self._path_rows[key]
+        current = row["variable"].get().strip()
+        initialdir = browse_initial_dir(key, current)
         selected = filedialog.askdirectory(
             parent=self.root,
-            title=f"Select {row['label']}",
-            mustexist=True,
+            title=f"Browse for {row['label']}",
+            initialdir=initialdir,
+            mustexist=key != "output_folder",
         )
         if selected:
             row["variable"].set(selected)
-            self._save_settings()
-
-    def _enter_path(self, key: str) -> None:
-        row = self._path_rows[key]
-        current = row["variable"].get().strip()
-        entered = simpledialog.askstring(
-            "Enter Path",
-            f"Enter the full local or UNC path for {row['label']}:",
-            initialvalue=current,
-            parent=self.root,
-        )
-        if entered is not None:
-            row["variable"].set(entered.strip())
             self._save_settings()
 
     def _set_validation(self, key: str, ok: bool, message: str) -> None:
@@ -190,8 +221,8 @@ class InventoryApplication:
     def _refresh_validation(self) -> None:
         settings = self._current_settings()
         checks = [
-            ("office_pc_path", validate_scan_path(settings["office_pc_path"], label="Office PC folder")),
-            ("radio_pc_path", validate_scan_path(settings["radio_pc_path"], label="Radio PC folder")),
+            ("office_pc_path", validate_scan_path(settings["office_pc_path"], label="Local Office PC")),
+            ("radio_pc_path", validate_scan_path(settings["radio_pc_path"], label="Radio PC")),
             ("platform_folder", validate_scan_path(settings["platform_folder"], label="Platform folder")),
             ("output_folder", validate_output_path(settings["output_folder"])),
         ]
@@ -247,8 +278,9 @@ class InventoryApplication:
             self._report_paths = report_paths
             self._scanning = False
             self.progress["value"] = 100
-            self.progress_label.configure(text="Scan complete")
-            self.status.configure(text=f"Reports written to {snapshot.output_folder}")
+            status = snapshot.status or "complete"
+            self.progress_label.configure(text=f"Scan finished ({status})")
+            self.status.configure(text=f"{status.title()} · reports in {snapshot.output_folder}")
             self._populate_tabs()
             self._refresh_validation()
 
@@ -275,6 +307,8 @@ class InventoryApplication:
                 f"Radio PC: {snap.radio_pc}",
                 f"Platform Folder: {snap.platform_folder}",
                 f"Output Folder: {snap.output_folder}",
+                f"Status: {snap.status}",
+                f"Scan errors: {len(snap.scan_errors):,}",
                 f"Files: {len(snap.files):,}",
                 f"Folders: {len(snap.folders):,}",
                 f"Drives: {len(snap.drives):,}",
@@ -284,6 +318,12 @@ class InventoryApplication:
                 f"Components: {len(snap.components):,}",
                 f"Duplicates: {len(snap.duplicates):,}",
                 f"Recommendations: {len(snap.recommendations):,}",
+                "",
+                "Scan Errors:",
+                *[
+                    f"{err.computer} | {err.phase} | {err.path} | {err.error}"
+                    for err in snap.scan_errors[:200]
+                ],
             ],
         )
         self._set_tab(

@@ -14,7 +14,13 @@ OFFICE_PLATFORM_PHYSICAL = r"D:\MosPlaceRadioPlatform"
 # Radio PC mapped drive for the same shared platform.
 RADIO_PLATFORM_MAPPED = r"V:\\"
 
-DEFAULT_OUTPUT_FOLDER = r"V:\Documentation\InventoryReports"
+# Primary deployment default (Office PC).
+DEFAULT_OUTPUT_FOLDER = r"D:\MosPlaceRadioPlatform\Documentation\InventoryReports"
+RADIO_OUTPUT_FOLDER = r"V:\Documentation\InventoryReports"
+
+# Unattended scan defaults on the Office PC.
+DEFAULT_OFFICE_PC = "Office"
+DEFAULT_RADIO_PC = "MosPlaceRadio"
 
 SETTING_KEYS = (
     "office_pc_path",
@@ -46,6 +52,14 @@ def office_platform_available() -> bool:
     return Path(OFFICE_PLATFORM_PHYSICAL).exists()
 
 
+def is_office_pc() -> bool:
+    return office_platform_available()
+
+
+def is_radio_pc() -> bool:
+    return mapped_platform_available() and not office_platform_available()
+
+
 def machine_defaults() -> dict[str, str]:
     defaults = {
         "office_pc_path": "",
@@ -54,14 +68,15 @@ def machine_defaults() -> dict[str, str]:
         "output_folder": DEFAULT_OUTPUT_FOLDER,
     }
 
-    if mapped_platform_available():
-        defaults["platform_folder"] = RADIO_PLATFORM_MAPPED
-        defaults["output_folder"] = DEFAULT_OUTPUT_FOLDER
-        defaults["radio_pc_path"] = RADIO_PLATFORM_MAPPED
-    elif office_platform_available():
+    if is_office_pc():
+        defaults["office_pc_path"] = DEFAULT_OFFICE_PC
+        defaults["radio_pc_path"] = DEFAULT_RADIO_PC
         defaults["platform_folder"] = OFFICE_PLATFORM_PHYSICAL
-        defaults["office_pc_path"] = OFFICE_PLATFORM_PHYSICAL
-        defaults["output_folder"] = str(Path(OFFICE_PLATFORM_PHYSICAL) / "Documentation" / "InventoryReports")
+        defaults["output_folder"] = DEFAULT_OUTPUT_FOLDER
+    elif is_radio_pc():
+        defaults["radio_pc_path"] = RADIO_PLATFORM_MAPPED
+        defaults["platform_folder"] = RADIO_PLATFORM_MAPPED
+        defaults["output_folder"] = RADIO_OUTPUT_FOLDER
 
     return defaults
 
@@ -83,7 +98,6 @@ def _read_store() -> dict:
     if isinstance(data, dict) and "machines" in data:
         return data
 
-    # Migrate legacy flat settings into the current machine profile.
     if isinstance(data, dict):
         migrated = _empty_settings()
         for key in SETTING_KEYS:
@@ -122,3 +136,62 @@ def save_settings(values: dict[str, str]) -> None:
     machines = store.setdefault("machines", {})
     machines[machine] = _normalize_machine_settings(values)
     settings_path().write_text(json.dumps(store, indent=2) + "\n", encoding="utf-8")
+
+
+def _existing_dir(path: str) -> str | None:
+    candidate = Path(path.strip())
+    if candidate.is_dir():
+        return str(candidate)
+    parent = candidate.parent
+    parent_text = str(parent)
+    if parent_text not in {"", "."} and parent.is_dir():
+        return str(parent)
+    return None
+
+
+def browse_initial_dir(key: str, current: str = "") -> str:
+    """Pick a sensible starting folder for each Browse dialog."""
+    if current.strip():
+        existing = _existing_dir(current)
+        if existing:
+            return existing
+
+    if key == "office_pc_path":
+        for candidate in (
+            OFFICE_PLATFORM_PHYSICAL,
+            r"D:\MoPlaceStudio",
+            "D:\\",
+        ):
+            existing = _existing_dir(candidate)
+            if existing:
+                return existing
+
+    if key == "radio_pc_path":
+        if current.strip():
+            existing = _existing_dir(current)
+            if existing:
+                return existing
+        return r"\\"
+
+    if key == "platform_folder":
+        for candidate in (
+            OFFICE_PLATFORM_PHYSICAL,
+            RADIO_PLATFORM_MAPPED,
+            "D:\\",
+        ):
+            existing = _existing_dir(candidate)
+            if existing:
+                return existing
+
+    if key == "output_folder":
+        for candidate in (
+            DEFAULT_OUTPUT_FOLDER,
+            RADIO_OUTPUT_FOLDER,
+            str(Path(DEFAULT_OUTPUT_FOLDER).parent),
+            OFFICE_PLATFORM_PHYSICAL,
+        ):
+            existing = _existing_dir(candidate)
+            if existing:
+                return existing
+
+    return str(Path.home())
