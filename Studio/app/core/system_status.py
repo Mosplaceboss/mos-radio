@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import socket
-import subprocess
 import urllib.error
 import urllib.request
+from app.core.hidden_process import NETWORK_TIMEOUT, clear_process_cache, list_windows_process_lines
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,34 +42,27 @@ class LiveSystemStatus:
     last_refreshed: str = ""
 
 
-def _process_running(image_name: str, match_text: str = "") -> tuple[bool, str]:
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode != 0:
-            return False, "Unable to query Windows task list"
-        lines = [line.strip().strip('"') for line in result.stdout.splitlines() if line.strip()]
-        image_lower = image_name.lower()
-        match_lower = match_text.lower()
-        for line in lines:
-            parts = [part.strip('"') for part in line.split('","')]
-            if not parts:
-                continue
-            proc_name = parts[0].lower()
-            if proc_name != image_lower and not proc_name.endswith(image_lower):
-                continue
-            if match_lower and match_lower not in line.lower():
-                continue
-            return True, f"{parts[0]} detected"
-        return False, f"{image_name} not running"
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.debug("Process check failed: %s", exc)
+def _process_running(
+    image_name: str,
+    match_text: str = "",
+    process_lines: list[str] | None = None,
+) -> tuple[bool, str]:
+    lines = process_lines if process_lines is not None else list_windows_process_lines()
+    if not lines:
         return False, "Process check unavailable"
+    image_lower = image_name.lower()
+    match_lower = match_text.lower()
+    for line in lines:
+        parts = [part.strip('"') for part in line.split('","')]
+        if not parts:
+            continue
+        proc_name = parts[0].lower()
+        if proc_name != image_lower and not proc_name.endswith(image_lower):
+            continue
+        if match_lower and match_lower not in line.lower():
+            continue
+        return True, f"{parts[0]} detected"
+    return False, f"{image_name} not running"
 
 
 def _lock_file_running(folder_name: str) -> bool:
@@ -88,7 +81,7 @@ def _voicebox_api_ok(api_url: str, health_path: str) -> tuple[str, str, bool]:
     candidates = (f"{base}{path}", base, f"{base}/health", f"{base}/v1/health")
     for url in candidates:
         try:
-            with urllib.request.urlopen(url, timeout=3) as response:
+            with urllib.request.urlopen(url, timeout=NETWORK_TIMEOUT) as response:
                 if 200 <= response.status < 500:
                     return HEALTH_OK, f"API responding ({response.status})", True
         except (OSError, urllib.error.URLError, TimeoutError):
@@ -96,7 +89,7 @@ def _voicebox_api_ok(api_url: str, health_path: str) -> tuple[str, str, bool]:
     try:
         host = urlparse(base).hostname or "127.0.0.1"
         port = urlparse(base).port or (7860 if "7860" in base else 80)
-        with socket.create_connection((host, port), timeout=2):
+        with socket.create_connection((host, port), timeout=NETWORK_TIMEOUT):
             return HEALTH_WARN, "Port open but API health endpoint not verified", True
     except OSError:
         pass
@@ -105,7 +98,7 @@ def _voicebox_api_ok(api_url: str, health_path: str) -> tuple[str, str, bool]:
 
 def _internet_connected() -> tuple[str, str]:
     try:
-        with urllib.request.urlopen("https://example.com", timeout=3) as response:
+        with urllib.request.urlopen("https://example.com", timeout=NETWORK_TIMEOUT) as response:
             if 200 <= response.status < 500:
                 return HEALTH_OK, "Internet reachable"
     except (OSError, urllib.error.URLError, TimeoutError):
@@ -136,12 +129,16 @@ def _news_task_status(news_config_path: Path) -> tuple[str, str, bool]:
 
 
 def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
+    clear_process_cache()
     integration = normalize_integration_settings(settings)
     livedj_paths = livedj_live_paths(integration)
     request_paths = requests_live_paths(integration)
     news_paths = news_live_paths(integration)
+    process_lines = list_windows_process_lines(force_refresh=True)
 
-    radiodj_running, radiodj_detail = _process_running(integration["radiodj_process"])
+    radiodj_running, radiodj_detail = _process_running(
+        integration["radiodj_process"], process_lines=process_lines
+    )
     radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
 
     voicebox_status, voicebox_detail, voicebox_running = _voicebox_api_ok(
@@ -153,6 +150,7 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
     livedj_proc, livedj_proc_detail = _process_running(
         integration["livedj_process"],
         integration["livedj_process_match"],
+        process_lines=process_lines,
     )
     livedj_running = livedj_lock or livedj_proc
     if livedj_running:
@@ -169,6 +167,7 @@ def build_live_system_status(settings: dict[str, Any]) -> LiveSystemStatus:
     request_proc, request_proc_detail = _process_running(
         integration["request_watcher_process"],
         integration["request_watcher_match"],
+        process_lines=process_lines,
     )
     request_running = request_lock or request_proc
     if request_running:

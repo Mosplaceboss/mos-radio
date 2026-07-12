@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-import subprocess
+import sys
 from pathlib import Path
 
 from app.core.automation_model import append_automation_log
+from app.core.hidden_process import popen_hidden
 from app.core.integration_settings import livedj_live_paths, news_live_paths, requests_live_paths
 from app.core.live_connector import resolve_engine_script
 from app.core.system_status import build_live_system_status
@@ -18,11 +19,10 @@ def _run_script(script_path: Path, action: str) -> tuple[bool, str]:
     if not script_path.exists():
         return False, f"Script not found: {script_path}"
     try:
-        subprocess.Popen(
-            ["cmd", "/c", str(script_path)],
-            cwd=str(script_path.parent),
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+        if sys.platform == "win32":
+            popen_hidden(["cmd", "/c", str(script_path)], cwd=script_path.parent)
+        else:
+            popen_hidden([str(script_path)], cwd=script_path.parent)
         append_automation_log(f"{action} launched via {script_path.name}")
         return True, f"{action} started using {script_path.name}"
     except OSError as exc:

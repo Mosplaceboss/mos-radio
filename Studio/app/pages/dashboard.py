@@ -7,6 +7,7 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledText
 
+from app.core.background_tasks import run_in_background
 from app.core.dashboard_model import DashboardSnapshot, StatusLight, build_dashboard_snapshot
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.pages.base_page import BasePage
@@ -34,6 +35,8 @@ class DashboardPage(BasePage):
         self._health_labels: dict[str, ttk.Label] = {}
         self._activity_text: ScrolledText | None = None
         self._last_activity_signature: tuple[str, ...] = ()
+        self._refresh_in_progress = False
+        self._refresh_cancelled = False
 
         station = ttk.Labelframe(
             self._body,
@@ -196,10 +199,12 @@ class DashboardPage(BasePage):
         self._value_labels[key] = value
 
     def on_show(self) -> None:
+        self._refresh_cancelled = False
         self.refresh()
         self._start_auto_refresh()
 
     def on_hide(self) -> None:
+        self._refresh_cancelled = True
         if self._refresh_job:
             self.after_cancel(self._refresh_job)
             self._refresh_job = None
@@ -223,10 +228,27 @@ class DashboardPage(BasePage):
             self.on_navigate(page_id)
 
     def refresh(self, *, quiet: bool = False) -> None:
-        snapshot = build_dashboard_snapshot(self.config_manager)
-        self._apply_snapshot(snapshot)
-        if not quiet:
-            self.set_status("Dashboard refreshed")
+        if self._refresh_in_progress:
+            return
+        self._refresh_in_progress = True
+
+        def work() -> DashboardSnapshot:
+            return build_dashboard_snapshot(self.config_manager)
+
+        def complete(snapshot: DashboardSnapshot) -> None:
+            self._refresh_in_progress = False
+            if self._refresh_cancelled:
+                return
+            self._apply_snapshot(snapshot)
+            if not quiet:
+                self.set_status("Dashboard refreshed")
+
+        def failed(_error: Exception) -> None:
+            self._refresh_in_progress = False
+            if not quiet:
+                self.set_status("Dashboard refresh failed")
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _apply_snapshot(self, snapshot: DashboardSnapshot) -> None:
         for light in snapshot.station_lights:

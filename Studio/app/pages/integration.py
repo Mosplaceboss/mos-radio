@@ -8,6 +8,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledText
 
+from app.core.background_tasks import run_in_background
 from app.core.live_connector import (
     ensure_local_integration_template,
     import_all_from_live,
@@ -50,6 +51,7 @@ class IntegrationPage(BasePage):
         ttk.Checkbutton(paths, text="Live integration enabled", variable=self._enabled).pack(anchor="w", pady=(0, 8))
 
         self._fields: dict[str, tk.StringVar] = {}
+        self._test_in_progress = False
         specs = (
             ("now_playing_file", "Now Playing File"),
             ("livedj_personalities", "LiveDJ Personalities"),
@@ -175,16 +177,31 @@ class IntegrationPage(BasePage):
         self._save_local()
 
     def _test_connections(self, *, quiet: bool = False) -> None:
+        if self._test_in_progress:
+            return
+        self._test_in_progress = True
         save_local_integration(self._collect_local())
-        results = test_all_connections(self._settings())
-        lines = [f"{'OK' if result.ok else 'FAIL'} · {result.name}: {result.detail}" for result in results]
-        self._status_box.delete("1.0", "end")
-        self._status_box.insert("end", "\n".join(lines))
-        ok_count = sum(1 for result in results if result.ok)
-        message = f"{ok_count}/{len(results)} checks passed"
-        if not quiet:
-            Messagebox.show_info("\n".join(lines[:20]), "Live Integration Test")
-        self.set_status(message)
+        settings = self._settings()
+
+        def work():
+            return test_all_connections(settings)
+
+        def complete(results) -> None:
+            self._test_in_progress = False
+            lines = [f"{'OK' if result.ok else 'FAIL'} · {result.name}: {result.detail}" for result in results]
+            self._status_box.delete("1.0", "end")
+            self._status_box.insert("end", "\n".join(lines))
+            ok_count = sum(1 for result in results if result.ok)
+            message = f"{ok_count}/{len(results)} checks passed"
+            if not quiet:
+                Messagebox.show_info("\n".join(lines[:20]), "Live Integration Test")
+            self.set_status(message)
+
+        def failed(_error: Exception) -> None:
+            self._test_in_progress = False
+            self.set_status("Connection test failed")
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _import_all(self) -> None:
         if not confirm_action(

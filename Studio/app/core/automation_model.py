@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
+from app.core.hidden_process import NETWORK_TIMEOUT
 from app.core.paths import automation_logs_dir, automation_root, config_dir, logs_dir, studio_root
 from app.core.personality_model import normalize_personalities_data
 from app.core.requests_model import normalize_requests_data
@@ -243,7 +244,7 @@ def build_module_status(
 def _internet_connected() -> tuple[str, str]:
     try:
         socket.getaddrinfo("example.com", 443)
-        with urllib.request.urlopen("https://example.com", timeout=3) as response:
+        with urllib.request.urlopen("https://example.com", timeout=NETWORK_TIMEOUT) as response:
             if 200 <= response.status < 500:
                 return HEALTH_OK, "Internet reachable"
     except (OSError, urllib.error.URLError, TimeoutError):

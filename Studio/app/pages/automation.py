@@ -28,6 +28,7 @@ from app.core.automation_model import (
     append_automation_log,
     build_automation_snapshot,
 )
+from app.core.background_tasks import run_in_background
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
 from app.pages.base_page import BasePage
 from app.ui.confirm_dialog import confirm_action
@@ -46,6 +47,8 @@ class AutomationPage(BasePage):
         self._selected_module_id: str | None = None
         self._snapshot: AutomationSnapshot | None = None
         self._detail_labels: dict[str, ttk.Label] = {}
+        self._refresh_in_progress = False
+        self._refresh_cancelled = False
 
         ops = ttk.Labelframe(self._body, text="Operations", style="StudioCard.TLabelframe", padding=12)
         ops.pack(fill="x", pady=(0, 12))
@@ -168,10 +171,12 @@ class AutomationPage(BasePage):
         ttk.Label(footer, text="Auto-refresh every 5 seconds", style="StudioMuted.TLabel").pack(side="right")
 
     def on_show(self) -> None:
+        self._refresh_cancelled = False
         self.refresh()
         self._start_auto_refresh()
 
     def on_hide(self) -> None:
+        self._refresh_cancelled = True
         if self._refresh_job:
             self.after_cancel(self._refresh_job)
             self._refresh_job = None
@@ -191,10 +196,28 @@ class AutomationPage(BasePage):
             self._schedule_refresh()
 
     def refresh(self, *, quiet: bool = False) -> None:
-        self._snapshot = build_automation_snapshot(self.config_manager)
-        self._apply_snapshot(self._snapshot)
-        if not quiet:
-            self.set_status("Automation manager refreshed")
+        if self._refresh_in_progress:
+            return
+        self._refresh_in_progress = True
+
+        def work() -> AutomationSnapshot:
+            return build_automation_snapshot(self.config_manager)
+
+        def complete(snapshot: AutomationSnapshot) -> None:
+            self._refresh_in_progress = False
+            if self._refresh_cancelled:
+                return
+            self._snapshot = snapshot
+            self._apply_snapshot(snapshot)
+            if not quiet:
+                self.set_status("Automation manager refreshed")
+
+        def failed(_error: Exception) -> None:
+            self._refresh_in_progress = False
+            if not quiet:
+                self.set_status("Automation refresh failed")
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _apply_snapshot(self, snapshot: AutomationSnapshot) -> None:
         self._summary_label.configure(text=snapshot.summary)
@@ -343,11 +366,26 @@ class AutomationPage(BasePage):
         )
 
     def _op_refresh_status(self) -> None:
-        self._run_operation(
+        if not confirm_action(
             "Refresh All Statuses",
             "Refresh live system status for Dashboard and Automation monitoring?",
-            lambda: refresh_all_statuses(self._settings()),
-        )
+            self._settings(),
+        ):
+            return
+
+        def work():
+            return refresh_all_statuses(self._settings())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                Messagebox.show_info(message, "Refresh All Statuses")
+            else:
+                Messagebox.show_warning(message, "Refresh All Statuses")
+            self.set_status(message)
+            self.refresh(quiet=True)
+
+        run_in_background(self, work, complete)
 
     def _action_start(self) -> None:
         module = self._selected_module()

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from typing import Any
 
+from app.core.hidden_process import read_git_commit_short
 from app.core.integration_settings import operation_mode
 from app.core.paths import studio_root
 
@@ -20,23 +20,7 @@ def environment_mode(settings: dict[str, Any] | None = None) -> str:
 
 
 def git_commit_short() -> str:
-    repo = studio_root().parent
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-        if result.returncode == 0:
-            commit = result.stdout.strip()
-            if commit:
-                return commit
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return "unknown"
+    return read_git_commit_short(studio_root().parent)
 
 
 def current_profile(settings: dict[str, Any] | None = None) -> str:
@@ -48,5 +32,5 @@ def status_bar_summary(settings: dict[str, Any] | None = None) -> str:
     profile = current_profile(settings)
     return (
         f"Mo's Place Studio v{APP_VERSION}  ·  Git {git_commit_short()}  ·  "
-        f"Profile: {profile}  ·  {environment_mode()} Mode"
+        f"Profile: {profile}  ·  {environment_mode(settings)} Mode"
     )
