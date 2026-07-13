@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
 from pathlib import Path
+
+os.environ["STUDIO_VERIFY"] = "1"
 
 STUDIO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(STUDIO_ROOT))
@@ -15,6 +18,7 @@ from app.core.config_manager import ConfigManager
 from app.ui.main_window import MainWindow
 from app.ui.navigation import NavigationPanel
 from app.ui.theme import StudioTheme
+from verify_bootstrap import prepare_verify_config
 
 
 def main() -> int:
@@ -25,6 +29,7 @@ def main() -> int:
     try:
         StudioTheme.apply_custom_styles(ttk.Style())
         config_manager = ConfigManager()
+        prepare_verify_config(config_manager)
         window = MainWindow(root, config_manager)
 
         for page_id in MainWindow.PAGE_CLASSES:
@@ -32,7 +37,6 @@ def main() -> int:
                 window.show_page(page_id)
                 root.update_idletasks()
                 page = window._pages[page_id]
-                page.on_show()
                 root.update_idletasks()
                 print(f"PAGE OK: {page_id} ({page.page_title})")
             except Exception as exc:

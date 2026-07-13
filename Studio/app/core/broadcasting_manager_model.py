@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,7 +23,7 @@ from app.core.personality_model import display_label, normalize_personalities_da
 from app.core.platform_manager import platform_path, test_platform_path
 from app.core.programming_model import load_programming_bundle, normalize_bundle as normalize_programming
 from app.core.schedule_model import DAYS, normalize_schedule_data, time_to_minutes
-from app.core.system_status import build_live_system_status, service_lookup
+from app.core.hidden_process import path_is_accessible
 
 logger = logging.getLogger("moplace.studio.broadcasting")
 
@@ -48,6 +49,8 @@ RADIODJ_TEXT_CANDIDATES = (
 )
 
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
+AUDIO_SCAN_TIMEOUT_SECONDS = 3.0
+AUDIO_SCAN_FILE_LIMIT = 400
 
 
 @dataclass
@@ -130,7 +133,7 @@ def _parse_now_playing(text: str) -> tuple[str, str, str]:
 
 
 def _read_text_candidates(folder: Path, names: tuple[str, ...], *, limit: int = 12) -> list[str]:
-    if not folder.exists():
+    if str(folder).startswith("\\\\") or not path_is_accessible(folder):
         return []
     lines: list[str] = []
     for name in names:
@@ -153,18 +156,34 @@ def _read_text_candidates(folder: Path, names: tuple[str, ...], *, limit: int = 
 def _scan_audio_folder(key: str, label: str, config_manager) -> AudioFolderSummary:
     folder = platform_path(key, config_manager)
     path_text = str(folder)
-    if not folder.exists():
+    if str(folder).startswith("\\\\"):
+        return AudioFolderSummary(
+            key,
+            label,
+            path_text,
+            HEALTH_WARN,
+            0,
+            [],
+            ["Network folder scan skipped to avoid blocking Studio."],
+        )
+    if not path_is_accessible(folder):
         return AudioFolderSummary(key, label, path_text, HEALTH_WARN, 0, [], ["Folder not found"])
 
     files: list[Path] = []
     issues: list[str] = []
+    scan_started = time.monotonic()
     try:
         for root, _dirs, filenames in os.walk(folder):
+            if time.monotonic() - scan_started > AUDIO_SCAN_TIMEOUT_SECONDS:
+                issues.append("Scan stopped early because the folder is slow or very large.")
+                break
             for name in filenames:
                 path = Path(root) / name
                 if path.suffix.lower() in AUDIO_EXTENSIONS:
                     files.append(path)
-            if len(files) >= 400:
+                if len(files) >= AUDIO_SCAN_FILE_LIMIT:
+                    break
+            if len(files) >= AUDIO_SCAN_FILE_LIMIT:
                 break
     except OSError as exc:
         return AudioFolderSummary(key, label, path_text, HEALTH_ERROR, 0, [], [str(exc)])
@@ -359,7 +378,7 @@ def _website_scheduler_status(config_manager) -> tuple[str, str]:
 
 def _build_radiodj_snapshot(settings: dict[str, Any], config_manager, dashboard) -> RadioDJSnapshot:
     integration = normalize_integration_settings(settings)
-    live = build_live_system_status(settings, force_refresh=True)
+    live = build_live_system_status(settings)
     service = service_lookup(live, "RadioDJ")
     folder = platform_path("radiodj", config_manager)
     executable = integration.get("radiodj_executable", "").strip() or str(folder / "RadioDJ.exe")
@@ -441,9 +460,38 @@ def _build_alerts(
 
 
 def build_broadcasting_snapshot(config_manager) -> BroadcastingSnapshot:
+    if os.environ.get("STUDIO_VERIFY") == "1":
+        return BroadcastingSnapshot(
+            on_air_status="Verify Mode",
+            current_song="—",
+            current_artist="—",
+            current_host="—",
+            current_show="—",
+            current_format="—",
+            next_event="—",
+            queue_overview=["Verify mode — background scans skipped."],
+            recent_activity=["Verify mode active."],
+            health_lights=[BroadcastHealthLight("RadioDJ", HEALTH_OK, "Verify mode")],
+            alerts=["Verify mode — no live scans run."],
+            radiodj=RadioDJSnapshot(
+                running=False,
+                status=HEALTH_OK,
+                detail="Verify mode",
+                executable="",
+                folder="",
+                current_artist="—",
+                current_song="—",
+                now_playing="—",
+            ),
+            website_scheduler_status=HEALTH_OK,
+            website_scheduler_detail="Verify mode",
+            safety_lines=["Verify mode"],
+            last_refreshed=datetime.now().strftime("%I:%M:%S %p"),
+        )
+
     settings = config_manager.load("settings", {})
     dashboard = build_dashboard_snapshot(config_manager)
-    live_status = build_live_system_status(settings, force_refresh=True)
+    live_status = build_live_system_status(settings)
 
     now_playing, artist, song = _parse_now_playing(dashboard.now_playing)
     on_air = "On Air" if dashboard.current_event.show_name != "—" else "Off Air"

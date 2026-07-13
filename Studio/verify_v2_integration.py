@@ -35,7 +35,7 @@ def main() -> int:
 
     from app.core.studio_info import APP_VERSION_LABEL
 
-    if "v2.0" not in APP_VERSION_LABEL:
+    if "v2.0" not in APP_VERSION_LABEL or "Release Candidate" not in APP_VERSION_LABEL:
         print(f"FAILED: unexpected version label {APP_VERSION_LABEL!r}")
         return 1
     print(f"OK: Version label {APP_VERSION_LABEL}")

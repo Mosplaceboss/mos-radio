@@ -8,9 +8,10 @@ from typing import Any
 from app.core.hidden_process import read_git_commit_short
 from app.core.integration_settings import operation_mode
 from app.core.paths import studio_root
+from app.core.user_modes import mode_label, show_git_metadata
 
-APP_VERSION = "2.0.0"
-APP_VERSION_LABEL = "Mo's Place Studio v2.0 Development"
+APP_VERSION = "2.0.0-rc1"
+APP_VERSION_LABEL = "Mo's Place Studio v2.0 Release Candidate"
 
 
 def environment_mode(settings: dict[str, Any] | None = None) -> str:
@@ -38,12 +39,15 @@ def environment_badge(settings: dict[str, Any] | None = None) -> tuple[str, str]
 
 def status_bar_summary(settings: dict[str, Any] | None = None) -> str:
     profile = current_profile(settings)
+    role = mode_label(settings)
     if getattr(sys, "frozen", False):
-        return f"{APP_VERSION_LABEL}  ·  {profile}"
+        return f"{APP_VERSION_LABEL}  ·  {profile}  ·  {role}"
     mode = environment_mode(settings)
     if mode == "Production":
-        return f"{APP_VERSION_LABEL}  ·  {profile}  ·  On Air"
-    return (
-        f"{APP_VERSION_LABEL}  ·  {profile}  ·  "
-        f"Setup  ·  Git {git_commit_short()}"
-    )
+        return f"{APP_VERSION_LABEL}  ·  {profile}  ·  {role}  ·  On Air"
+    if show_git_metadata(settings):
+        return (
+            f"{APP_VERSION_LABEL}  ·  {profile}  ·  {role}  ·  "
+            f"Setup  ·  Git {git_commit_short()}"
+        )
+    return f"{APP_VERSION_LABEL}  ·  {profile}  ·  {role}  ·  Setup"

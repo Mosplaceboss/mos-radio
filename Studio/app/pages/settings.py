@@ -9,6 +9,7 @@ from ttkbootstrap.constants import *
 
 from app.core.background_tasks import run_in_background
 from app.core.platform_manager import integration_paths_from_platform
+from app.core.user_modes import USER_MODES, is_staff_mode
 from app.core.voice_library_loader import read_json_with_timeout
 from app.pages.base_page import BasePage
 
@@ -37,10 +38,12 @@ class SettingsPage(BasePage):
         self._auto_save = ttk.BooleanVar(value=True)
         self._theme = ttk.StringVar()
         self._operation_mode = ttk.StringVar(value="development")
+        self._user_mode = ttk.StringVar(value="owner")
 
         fields = (
             ("Station Name", self._station_name, None),
             ("Timezone", self._timezone, None),
+            ("Operating Mode", self._user_mode, USER_MODES),
             ("Operation Mode", self._operation_mode, ("development", "production")),
             ("Log Level", self._log_level, ("DEBUG", "INFO", "WARNING", "ERROR")),
             ("Theme", self._theme, ("darkly", "cyborg", "superhero")),
@@ -66,6 +69,7 @@ class SettingsPage(BasePage):
             padding=20,
         )
         integration.pack(fill="x", pady=(16, 0))
+        self._integration_frame = integration
         self._radiodj_process = ttk.StringVar()
         self._voicebox_url = ttk.StringVar()
         self._livedj_personalities = ttk.StringVar()
@@ -90,6 +94,8 @@ class SettingsPage(BasePage):
         actions.pack(fill="x", pady=16)
         ttk.Button(actions, text="Reload", bootstyle="secondary", command=self._load).pack(side="left")
         ttk.Button(actions, text="Save Settings", bootstyle="primary", command=self._save).pack(side="left", padx=8)
+        ttk.Button(actions, text="Open Setup Wizard", bootstyle="secondary", command=self._open_setup).pack(side="left", padx=8)
+        ttk.Button(actions, text="Updates", bootstyle="secondary", command=self._open_updates).pack(side="left")
 
     def on_show(self) -> None:
         self._begin_background_load()
@@ -142,6 +148,7 @@ class SettingsPage(BasePage):
         self._station_name.set(data.get("station_name", "Mo's Place Radio"))
         self._timezone.set(data.get("timezone", "America/New_York"))
         self._operation_mode.set(data.get("operation_mode", "development"))
+        self._user_mode.set(data.get("user_mode", "owner"))
         self._log_level.set(data.get("log_level", "INFO"))
         self._auto_save.set(data.get("auto_save", True))
         self._theme.set(data.get("theme", "darkly"))
@@ -157,6 +164,18 @@ class SettingsPage(BasePage):
         )
         self._requests_config.set(requests_paths.get("config", requests_defaults["config"]))
         self._news_config.set(news_paths.get("config", news_defaults["config"]))
+        if is_staff_mode(data):
+            self._integration_frame.pack_forget()
+        else:
+            self._integration_frame.pack(fill="x", pady=(16, 0))
+
+    def _open_setup(self) -> None:
+        if self.on_navigate:
+            self.on_navigate("setup_wizard")
+
+    def _open_updates(self) -> None:
+        if self.on_navigate:
+            self.on_navigate("updates")
 
     def _load(self) -> None:
         self._begin_background_load()
@@ -186,15 +205,28 @@ class SettingsPage(BasePage):
         data = {
             "station_name": self._station_name.get().strip(),
             "timezone": self._timezone.get().strip(),
+            "user_mode": self._user_mode.get().strip(),
             "operation_mode": self._operation_mode.get().strip(),
             "log_level": self._log_level.get(),
             "auto_save": self._auto_save.get(),
             "theme": self._theme.get(),
             "integration": integration,
+            "setup_complete": existing.get("setup_complete", False),
+            "advanced_password": existing.get("advanced_password", ""),
+            "last_page": existing.get("last_page", "daily_operations"),
         }
         self._persist_config_async(
             "settings",
             data,
-            status_message="Application settings saved — production mode requires extra publish confirmation",
+            status_message="Application settings saved",
             error_title="Save Settings",
+            on_complete=self._after_save,
         )
+
+    def _after_save(self) -> None:
+        widget = self
+        while widget is not None:
+            if hasattr(widget, "refresh_shell"):
+                widget.refresh_shell()
+                break
+            widget = getattr(widget, "master", None)

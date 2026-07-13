@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Sequence
 
@@ -116,3 +117,19 @@ def list_windows_process_lines(*, force_refresh: bool = False) -> list[str]:
 def clear_process_cache() -> None:
     global _PROCESS_CACHE
     _PROCESS_CACHE = None
+
+
+def path_is_accessible(path: Path, *, timeout: float = 2.0) -> bool:
+    """Check path existence without blocking indefinitely on slow network shares."""
+    result = {"value": False}
+
+    def worker() -> None:
+        try:
+            result["value"] = path.exists()
+        except OSError:
+            result["value"] = False
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return bool(result["value"])

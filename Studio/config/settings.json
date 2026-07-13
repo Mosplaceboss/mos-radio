@@ -1,13 +1,16 @@
-{
-  "station_name": "Mo's Place Radio",
-  "timezone": "America/New_York",
-  "log_level": "INFO",
-  "auto_save": true,
-  "theme": "superhero",
-  "operation_mode": "development",
-  "integration": {
-    "radiodj_process": "RadioDJ.exe",
-    "voicebox_api_url": "http://127.0.0.1:7860",
-    "voicebox_health_path": "/"
-  }
-}
+{
+  "station_name": "Mo's Place Radio",
+  "timezone": "America/New_York",
+  "log_level": "INFO",
+  "auto_save": true,
+  "theme": "superhero",
+  "operation_mode": "production",
+  "user_mode": "owner",
+  "setup_complete": false,
+  "integration": {
+    "radiodj_process": "RadioDJ.exe",
+    "voicebox_api_url": "http://127.0.0.1:7860",
+    "voicebox_health_path": "/"
+  },
+  "last_page": "daily_operations"
+}

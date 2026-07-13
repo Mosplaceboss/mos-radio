@@ -5,19 +5,23 @@ from __future__ import annotations
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledText
 
-from app.core.studio_info import APP_VERSION, APP_VERSION_LABEL, environment_mode
+from app.core.studio_info import APP_VERSION_LABEL, environment_mode
 from app.pages.base_page import BasePage
 
 MODULE_GUIDE = """
-Station Manager — Start here. See what is on the air, service health, alerts, and quick actions.
+Daily Operations — Your everyday home screen. On-air status, service health, alerts, and approved daily actions.
+
+First-Run Setup Wizard — Configure station name, logo, paths, and test connections without editing code.
+
+Station Manager — Full control center with service health, alerts, and quick actions.
 
 Dashboard — Summary view of services, schedule, module status, and recent activity.
 
-Platform Manager — Set and test every folder path used by Studio. All modules use these paths.
+Broadcasting — Monitor RadioDJ, Voicebox, automation watchers, audio output, and today's schedule.
 
 Programming Manager — Plan shows, formats, clocks, schedules, and programming validation.
 
-Music Manager — Browse and organize your music library in read-only development mode.
+Music Manager — Browse and organize your music library in read-only mode.
 
 Personalities — Manage on-air hosts, pictures, and show assignments.
 
@@ -25,37 +29,46 @@ Voice Library — Manage voice profiles used for announcements and automation.
 
 Schedule — Weekly show schedule used across Studio modules.
 
-Requests — Listener request settings (development copy only in this build).
+Requests — Listener request settings.
 
-Advertising Manager — Sponsors and campaigns stored in StationData.
+Advertising Manager — Sponsors and campaigns.
 
-Website & Audience Manager — Website content and audience planning (development only).
+Website & Audience Manager — Website content and audience planning.
 
-News & Content Manager — News personalities, feeds, schedules, and development output.
+News & Content Manager — News personalities, feeds, schedules, and output.
 
 Inventory — Open Mo's Place Inventory and review scan reports (read-only).
-
-Broadcasting — Monitor RadioDJ, Voicebox, automation watchers, audio output, and today's schedule.
 
 Operations Manager — System status, backups, deployment packages, and migration staging.
 
 Reports — Station reports and summaries.
 
-Settings — Station name, theme, and operation mode. Keep Development Mode until cutover.
+Settings — Station name, theme, and operating mode (Owner, Staff, or Advanced).
 
-Advanced — Technical tools such as Connection Setup, LiveDJ, and legacy automation screens.
+Platform Manager — Advanced only. Set and test every folder path used by Studio.
+
+Advanced — Technical tools such as Connection Setup, LiveDJ, updates, and legacy automation screens.
 """.strip()
 
 TODAY_CHECKLIST = """
 What do I do today?
-1. Open Station Manager and review alerts.
-2. Open Platform Manager and validate all paths are green or yellow.
-3. Check Dashboard module overview for schedule, backup, and inventory status.
-4. Open Broadcasting to confirm RadioDJ, Voicebox, and watcher health.
-5. Use Programming, Music, and News managers to plan changes in development data.
-6. Run Inventory if you need an updated folder map (read-only scan).
-7. Create a backup in Operations Manager before any major testing.
-8. Stay in Development Mode — live publishing is disabled in this build.
+1. Open Daily Operations and click Refresh.
+2. Review alerts and confirm RadioDJ, Voicebox, and watcher status.
+3. Check current host, format, and now playing.
+4. Review today's advertising and the next scheduled event.
+5. Run approved actions only when needed (Open RadioDJ, Run News, restart watchers).
+6. Use Owner or Advanced Mode for programming, backups, or path changes.
+7. Create a backup in Operations Manager before major testing.
+8. Read the guides in Documentation\\StudioGuides after install.
+""".strip()
+
+OPERATING_MODES = """
+Operating Modes
+- Owner Mode — Full production tools without advanced path editors.
+- Staff Mode — Daily Operations, schedule, personalities, requests, and Help only.
+- Advanced Mode — All tools including Platform Manager, updates, and Connection Setup.
+
+Switch modes in Settings. Advanced screens require a password or confirmation.
 """.strip()
 
 
@@ -81,9 +94,15 @@ class HelpPage(BasePage):
         today_text.pack(fill="x")
         self._set_text(today_text, TODAY_CHECKLIST)
 
+        modes = ttk.Labelframe(self._body, text="Operating Modes", style="StudioCard.TLabelframe", padding=16)
+        modes.pack(fill="x", pady=(0, 12))
+        modes_text = ScrolledText(modes, height=6, autohide=True, bootstyle="secondary", state="disabled", wrap="word")
+        modes_text.pack(fill="x")
+        self._set_text(modes_text, OPERATING_MODES)
+
         modules = ttk.Labelframe(self._body, text="Module Guide", style="StudioCard.TLabelframe", padding=16)
         modules.pack(fill="both", expand=True)
-        module_text = ScrolledText(modules, height=16, autohide=True, bootstyle="secondary", state="disabled", wrap="word")
+        module_text = ScrolledText(modules, height=14, autohide=True, bootstyle="secondary", state="disabled", wrap="word")
         module_text.pack(fill="both", expand=True)
         self._set_text(module_text, MODULE_GUIDE)
 

@@ -13,4 +13,3 @@ python -m PyInstaller ^
   app\main.py
 echo.
 echo EXE created in Studio\dist\MoPlaceStudio\
-pause

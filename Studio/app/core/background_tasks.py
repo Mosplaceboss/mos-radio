@@ -16,6 +16,7 @@ _RESULT_QUEUE: queue.Queue[tuple[str, str, Any, Callable[..., None] | None, Call
     queue.Queue()
 )
 _POLLER_ROOTS: weakref.WeakKeyDictionary[tk.Misc, bool] = weakref.WeakKeyDictionary()
+_POLLER_JOBS: weakref.WeakKeyDictionary[tk.Misc, str] = weakref.WeakKeyDictionary()
 _POLLER_LOCK = threading.Lock()
 
 
@@ -67,10 +68,39 @@ def _start_poller(root: tk.Misc) -> None:
                     except Exception:
                         pass
 
-        if _widget_alive(root_widget):
-            root_widget.after(50, _poll)
+        try:
+            if _widget_alive(root_widget):
+                job = root_widget.after(50, _poll)
+                _POLLER_JOBS[root_widget] = job
+        except tk.TclError:
+            return
 
-    root.after(50, _poll)
+    try:
+        job = root.after(50, _poll)
+        _POLLER_JOBS[root] = job
+    except tk.TclError:
+        return
+
+
+def cancel_background_tasks(root: tk.Misc) -> None:
+    """Stop queued callbacks for a window that is closing."""
+    job = _POLLER_JOBS.pop(root, None)
+    if job:
+        try:
+            root.after_cancel(job)
+        except tk.TclError:
+            pass
+    with _POLLER_LOCK:
+        _POLLER_ROOTS.pop(root, None)
+
+
+def drain_background_results() -> None:
+    """Drop pending thread results after a window closes."""
+    while True:
+        try:
+            _RESULT_QUEUE.get_nowait()
+        except queue.Empty:
+            return
 
 
 def run_in_background(

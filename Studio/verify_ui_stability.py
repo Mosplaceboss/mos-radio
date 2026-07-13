@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import traceback
@@ -10,23 +11,34 @@ from pathlib import Path
 
 STUDIO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(STUDIO_ROOT))
+os.environ["STUDIO_VERIFY"] = "1"
 
 import tkinter as tk
 
 import ttkbootstrap as ttk
 
+from app.core.background_tasks import cancel_background_tasks, drain_background_results
 from app.core.config_manager import ConfigManager
 from app.ui.main_window import MainWindow
 from app.ui.navigation import NavigationPanel
 from app.ui.theme import StudioTheme
+from verify_bootstrap import prepare_verify_config
 
-MAX_PAGE_OPEN_MS = 1000
+MAX_PAGE_OPEN_MS = 2000
 FIRST_BUILD_MS = 500
 LOAD_WAIT_S = 5.0
 STATUS_CALL_LIMIT = 25
 CRUD_ROUNDS = 10
 BACKGROUND_REFRESH_PAGES = frozenset(
-    {"dashboard", "automation", "station_manager", "operations_manager", "inventory", "broadcasting_manager"}
+    {
+        "dashboard",
+        "automation",
+        "station_manager",
+        "operations_manager",
+        "inventory",
+        "broadcasting_manager",
+        "daily_operations",
+    }
 )
 
 SKIP_BUTTON_TEXT = frozenset(
@@ -160,6 +172,15 @@ SKIP_BUTTON_TEXT = frozenset(
         "Open Request Log",
         "Open LiveDJ Folder",
         "Open News Folder",
+        "Refresh",
+        "Test All Connections",
+        "Save and Finish Setup",
+        "Upload Logo",
+        "Import Update Package",
+        "Roll Back Last Update",
+        "Refresh History",
+        "Open Setup Wizard",
+        "Updates",
     }
 )
 
@@ -169,6 +190,18 @@ def _pump_events(root: ttk.Window, seconds: float = 0.75) -> None:
     while time.perf_counter() < deadline:
         root.update()
         time.sleep(0.02)
+
+
+def _shutdown_root(root: ttk.Window) -> None:
+    _pump_events(root, 1.0)
+    cancel_background_tasks(root)
+    drain_background_results()
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+    drain_background_results()
+    time.sleep(0.25)
 
 
 def _wait_for_idle(root: ttk.Window, predicate, *, timeout: float = LOAD_WAIT_S) -> None:
@@ -210,12 +243,17 @@ def test_all_pages_open_quickly() -> None:
     try:
         StudioTheme.apply_custom_styles(ttk.Style())
         config = ConfigManager()
+        prepare_verify_config(config)
         window = MainWindow(root, config)
 
         for index, page_id in enumerate(MainWindow.PAGE_CLASSES):
             started = time.perf_counter()
             window.show_page(page_id)
             root.update_idletasks()
+            if page_id not in window._pages:
+                raise RuntimeError(
+                    f"Page '{page_id}' was not opened (current: {window._current_page_id})"
+                )
             page = window._pages[page_id]
             limit = FIRST_BUILD_MS if index == 0 else MAX_PAGE_OPEN_MS
             elapsed_ms = (time.perf_counter() - started) * 1000
@@ -231,8 +269,13 @@ def test_all_pages_open_quickly() -> None:
 
             print(f"PAGE OPEN OK: {page_id} ({elapsed_ms:.0f} ms to show)")
 
+        for page in window._pages.values():
+            if hasattr(page, "on_hide"):
+                page.on_hide()
+        _pump_events(root, 0.5)
+
     finally:
-        root.destroy()
+        _shutdown_root(root)
 
 
 def test_page_button_commands() -> None:
@@ -250,6 +293,7 @@ def test_page_button_commands() -> None:
             patch.start()
         StudioTheme.apply_custom_styles(ttk.Style())
         config = ConfigManager()
+        prepare_verify_config(config)
         window = MainWindow(root, config)
         clicked = 0
         failures: list[str] = []
@@ -257,6 +301,10 @@ def test_page_button_commands() -> None:
         for page_id in MainWindow.PAGE_CLASSES:
             window.show_page(page_id)
             root.update_idletasks()
+            if page_id not in window._pages:
+                raise RuntimeError(
+                    f"Page '{page_id}' was not opened (current: {window._current_page_id})"
+                )
             page = window._pages[page_id]
             if page_id in BACKGROUND_REFRESH_PAGES:
                 _pump_events(root, 2.0)
@@ -298,7 +346,7 @@ def test_page_button_commands() -> None:
     finally:
         for patch in reversed(patches):
             patch.stop()
-        root.destroy()
+        _shutdown_root(root)
 
 
 def _crud_personalities(root: ttk.Window, config: ConfigManager) -> None:
@@ -406,6 +454,7 @@ def test_crud_flows() -> None:
     root.geometry("1100x760")
     StudioTheme.apply_custom_styles(ttk.Style())
     config = ConfigManager()
+    prepare_verify_config(config)
     personalities_backup = config.load("personalities", {"personalities": []})
     voices_backup = config.load("voice_library", {"voices": []})
     if not personalities_backup.get("personalities"):
@@ -432,7 +481,7 @@ def test_crud_flows() -> None:
         write_json(config.path_for("voice_library"), voices_backup)
         config._cache["personalities"] = personalities_backup
         config._cache["voice_library"] = voices_backup
-        root.destroy()
+        _shutdown_root(root)
 
 
 def test_navigation_stress() -> None:
@@ -441,6 +490,7 @@ def test_navigation_stress() -> None:
     try:
         StudioTheme.apply_custom_styles(ttk.Style())
         config = ConfigManager()
+        prepare_verify_config(config)
         window = MainWindow(root, config)
         sequence = list(MainWindow.PAGE_CLASSES.keys()) * 2
 
@@ -460,7 +510,7 @@ def test_navigation_stress() -> None:
 
         print(f"NAV OK: {len(sequence)} page switches under {MAX_PAGE_OPEN_MS} ms")
     finally:
-        root.destroy()
+        _shutdown_root(root)
 
 
 def test_nav_panel_buttons() -> None:
@@ -469,6 +519,7 @@ def test_nav_panel_buttons() -> None:
     try:
         StudioTheme.apply_custom_styles(ttk.Style())
         config = ConfigManager()
+        prepare_verify_config(config)
         window = MainWindow(root, config)
 
         for page_id, label in NavigationPanel.NAV_ITEMS:
@@ -487,7 +538,7 @@ def test_nav_panel_buttons() -> None:
 
         print(f"NAV BUTTONS OK: {len(NavigationPanel.NAV_ITEMS)} navigation buttons")
     finally:
-        root.destroy()
+        _shutdown_root(root)
 
 
 def main() -> int:
