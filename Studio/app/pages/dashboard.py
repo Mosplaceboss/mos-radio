@@ -11,6 +11,7 @@ from ttkbootstrap.scrolled import ScrolledText
 from app.core.background_tasks import run_in_background
 from app.core.dashboard_model import DashboardSnapshot, StatusLight, build_dashboard_snapshot
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
+from app.core.integration_snapshot import IntegrationSnapshot, build_integration_snapshot
 from app.core.paths import assets_dir
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
@@ -41,6 +42,9 @@ class DashboardPage(BasePage):
         self._up_next_labels: list[ttk.Label] = []
         self._status_lights: dict[str, tuple[tk.Canvas, ttk.Label]] = {}
         self._health_labels: dict[str, ttk.Label] = {}
+        self._integration_labels: dict[str, ttk.Label] = {}
+        self._alerts_text: ScrolledText | None = None
+        self._module_overview_text: ScrolledText | None = None
         self._activity_text: ScrolledText | None = None
         self._last_activity_signature: tuple[str, ...] = ()
         self._refresh_in_progress = False
@@ -100,6 +104,65 @@ class DashboardPage(BasePage):
             detail.pack(pady=(4, 0))
             self._status_lights[name] = (canvas, detail)
             lights_row.columnconfigure(index, weight=1)
+
+        integration = ttk.Labelframe(
+            self._body,
+            text="Alerts & Module Status",
+            style="StudioCard.TLabelframe",
+            padding=16,
+        )
+        integration.pack(fill="x", pady=(0, 12))
+
+        alerts_row = ttk.Frame(integration, style="StudioPanel.TFrame")
+        alerts_row.pack(fill="x", pady=(0, 12))
+        ttk.Label(alerts_row, text="Current Alerts", style="StudioMuted.TLabel").pack(anchor="w", pady=(0, 4))
+        self._alerts_text = ScrolledText(
+            alerts_row,
+            height=4,
+            autohide=True,
+            bootstyle="secondary",
+            font=(StudioTheme.FONT_FAMILY, 10),
+            state="disabled",
+            wrap="word",
+        )
+        self._alerts_text.pack(fill="x")
+
+        status_grid = ttk.Frame(integration, style="StudioPanel.TFrame")
+        status_grid.pack(fill="x")
+        for index, (key, title) in enumerate(
+            (
+                ("platform", "Platform"),
+                ("inventory", "Inventory"),
+                ("advertising", "Advertising"),
+                ("schedule", "Schedule"),
+                ("backup", "Backup"),
+            )
+        ):
+            cell = ttk.Frame(status_grid, style="StudioPanel.TFrame")
+            cell.grid(row=index // 3, column=index % 3, sticky="nsew", padx=8, pady=6)
+            ttk.Label(cell, text=title, style="StudioMetricTitle.TLabel").pack(anchor="w")
+            label = ttk.Label(cell, text="—", style="StudioCard.TLabel", wraplength=260, justify="left")
+            label.pack(anchor="w", pady=(4, 0))
+            self._integration_labels[key] = label
+            status_grid.columnconfigure(index % 3, weight=1)
+
+        overview = ttk.Labelframe(
+            self._body,
+            text="Module Overview",
+            style="StudioCard.TLabelframe",
+            padding=16,
+        )
+        overview.pack(fill="x", pady=(0, 12))
+        self._module_overview_text = ScrolledText(
+            overview,
+            height=6,
+            autohide=True,
+            bootstyle="secondary",
+            font=(StudioTheme.FONT_FAMILY, 10),
+            state="disabled",
+            wrap="word",
+        )
+        self._module_overview_text.pack(fill="x")
 
         middle = ttk.Frame(self._body, style="Studio.TFrame")
         middle.pack(fill="both", expand=True)
@@ -198,12 +261,18 @@ class DashboardPage(BasePage):
         )
         quick.pack(fill="x", pady=(12, 0))
         quick_specs = (
+            ("help", "Help"),
             ("programming", "Programming"),
+            ("music_manager", "Music"),
             ("schedule", "Schedule"),
             ("personalities", "Personalities"),
             ("requests", "Requests"),
             ("voice_library", "Voice Library"),
-            ("news", "News"),
+            ("news_content_manager", "News"),
+            ("advertising_manager", "Advertising"),
+            ("website_audience_manager", "Website"),
+            ("inventory", "Inventory"),
+            ("operations_manager", "Operations"),
         )
         for index, (page_id, label) in enumerate(quick_specs):
             ttk.Button(
@@ -212,8 +281,8 @@ class DashboardPage(BasePage):
                 style="StudioAction.TButton",
                 bootstyle="primary",
                 command=lambda pid=page_id: self._open_page(pid),
-            ).grid(row=index // 3, column=index % 3, sticky="ew", padx=8, pady=8)
-            quick.columnconfigure(index % 3, weight=1)
+            ).grid(row=index // 4, column=index % 4, sticky="ew", padx=8, pady=8)
+            quick.columnconfigure(index % 4, weight=1)
 
         footer = ttk.Frame(self._body, style="Studio.TFrame")
         footer.pack(fill="x", pady=(12, 0))
@@ -274,10 +343,14 @@ class DashboardPage(BasePage):
             self._show_busy_cursor(True)
             self.set_status("Updating dashboard…")
 
-        def work() -> DashboardSnapshot:
-            return build_dashboard_snapshot(self.config_manager)
+        def work() -> tuple[DashboardSnapshot, IntegrationSnapshot]:
+            return (
+                build_dashboard_snapshot(self.config_manager),
+                build_integration_snapshot(self.config_manager),
+            )
 
-        def complete(snapshot: DashboardSnapshot) -> None:
+        def complete(result: tuple[DashboardSnapshot, IntegrationSnapshot]) -> None:
+            snapshot, integration = result
             if not quiet:
                 self._show_busy_cursor(False)
             if generation != self._refresh_generation:
@@ -286,6 +359,7 @@ class DashboardPage(BasePage):
             if self._refresh_cancelled:
                 return
             self._apply_snapshot(snapshot)
+            self._apply_integration(integration)
             if not quiet:
                 self.set_status("Dashboard updated")
 
@@ -352,6 +426,31 @@ class DashboardPage(BasePage):
         self._update_activity_log(snapshot.activity_log)
         self._last_refresh_label.configure(text=f"Last updated: {snapshot.clock} · {snapshot.clock_date}")
         self._station_status_label.configure(text=self._station_summary(snapshot))
+
+    def _apply_integration(self, integration: IntegrationSnapshot) -> None:
+        if self._alerts_text:
+            alert_text = "\n".join(f"• {line}" for line in integration.alerts)
+            self._alerts_text.text.configure(state="normal")
+            self._alerts_text.delete("1.0", "end")
+            self._alerts_text.insert("end", alert_text)
+            self._alerts_text.text.configure(state="disabled")
+
+        mapping = {
+            "platform": f"{integration.platform_status.upper()} — {integration.platform_message}",
+            "inventory": f"{integration.inventory_status.upper()} — {integration.inventory_message}",
+            "advertising": integration.advertising_summary,
+            "schedule": integration.schedule_summary,
+            "backup": integration.backup_summary,
+        }
+        for key, value in mapping.items():
+            if key in self._integration_labels:
+                self._integration_labels[key].configure(text=value)
+
+        if self._module_overview_text:
+            self._module_overview_text.text.configure(state="normal")
+            self._module_overview_text.delete("1.0", "end")
+            self._module_overview_text.insert("end", "\n".join(integration.module_lines))
+            self._module_overview_text.text.configure(state="disabled")
 
     def _station_summary(self, snapshot: DashboardSnapshot) -> str:
         service_lights = [light for light in snapshot.station_lights if light.name in SERVICE_LIGHTS]

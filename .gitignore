@@ -20,6 +20,7 @@ Studio/assets/voices/*
 !Studio/assets/voices/.gitkeep
 Releases/*
 !Releases/.gitkeep
+!Releases/RELEASE_NOTES_*.md
 Inventory/build/
 Inventory/dist/
 Inventory/*.spec

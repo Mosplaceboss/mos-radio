@@ -25,7 +25,7 @@ FIRST_BUILD_MS = 500
 LOAD_WAIT_S = 5.0
 STATUS_CALL_LIMIT = 25
 CRUD_ROUNDS = 10
-BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager", "operations_manager"})
+BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager", "operations_manager", "inventory"})
 
 SKIP_BUTTON_TEXT = frozenset(
     {
@@ -138,6 +138,13 @@ SKIP_BUTTON_TEXT = frozenset(
         "Health Check",
         "Remove Picture",
         "Remove Portrait",
+        "Save Advertising Data",
+        "Save Website Data",
+        "Open Inventory App",
+        "Open Reports Folder",
+        "Open Advertising Folder",
+        "Open Website Folder",
+        "Reload",
     }
 )
 

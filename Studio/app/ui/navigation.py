@@ -16,14 +16,17 @@ class NavigationPanel(ttk.Frame):
     NAV_ITEMS = (
         ("station_manager", "Station Manager"),
         ("dashboard", "Dashboard"),
+        ("help", "Help"),
         ("programming", "Programming"),
         ("music_manager", "Music"),
         ("personalities", "Personalities"),
         ("voice_library", "Voice Library"),
         ("schedule", "Schedule"),
         ("requests", "Requests"),
-        ("advertising", "Advertising"),
+        ("advertising_manager", "Advertising"),
+        ("website_audience_manager", "Website & Audience"),
         ("news_content_manager", "News & Content"),
+        ("inventory", "Inventory"),
         ("operations_manager", "Operations"),
         ("reports", "Reports"),
         ("settings", "Settings"),
@@ -32,11 +35,14 @@ class NavigationPanel(ttk.Frame):
     )
 
     NAV_SECTIONS = (
-        ("", ("station_manager", "dashboard")),
-        ("On Air", ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests")),
-        ("Station", ("advertising", "news_content_manager")),
-        ("Operations", ("operations_manager", "reports")),
-        ("", ("settings", "platform_manager", "advanced")),
+        ("Control", ("station_manager", "dashboard", "help")),
+        (
+            "On Air",
+            ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests"),
+        ),
+        ("Station Content", ("advertising_manager", "website_audience_manager", "news_content_manager")),
+        ("Operations", ("inventory", "operations_manager", "reports")),
+        ("Setup", ("settings", "platform_manager", "advanced")),
     )
 
     OFF_NAV_PARENTS = {
@@ -45,7 +51,10 @@ class NavigationPanel(ttk.Frame):
         "station_information": "station_manager",
         "news": "news_content_manager",
         "automation": "operations_manager",
+        "advertising": "advertising_manager",
     }
+
+    PRIMARY_PAGES = frozenset(page_id for page_id, _label in NAV_ITEMS)
 
     def __init__(self, parent: tk.Misc, on_navigate: Callable[[str], None]) -> None:
         super().__init__(parent, style="StudioNav.TFrame", width=StudioTheme.NAV_WIDTH)
@@ -65,12 +74,11 @@ class NavigationPanel(ttk.Frame):
 
         labels = {page_id: label for page_id, label in self.NAV_ITEMS}
         for section_title, page_ids in self.NAV_SECTIONS:
-            if section_title:
-                ttk.Label(
-                    self,
-                    text=section_title.upper(),
-                    style="StudioNavSection.TLabel",
-                ).pack(anchor="w", padx=16, pady=(10, 4))
+            ttk.Label(
+                self,
+                text=section_title.upper(),
+                style="StudioNavSection.TLabel",
+            ).pack(anchor="w", padx=16, pady=(10, 4))
             for page_id in page_ids:
                 label = labels[page_id]
                 button = ttk.Button(

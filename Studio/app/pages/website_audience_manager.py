@@ -1,0 +1,111 @@
+"""Website & Audience Manager."""
+
+from __future__ import annotations
+
+import tkinter as tk
+from copy import deepcopy
+from datetime import datetime
+
+import ttkbootstrap as ttk
+from ttkbootstrap.scrolled import ScrolledText
+
+from app.core.background_tasks import run_in_background
+from app.core.platform_manager import open_folder, platform_path
+from app.core.website_audience_model import build_overview_lines, normalize_bundle, validate_website
+from app.core.website_audience_storage import load_website_bundle, save_website_bundle
+from app.pages.base_page import BasePage
+
+
+class WebsiteAudienceManagerPage(BasePage):
+    page_id = "website_audience_manager"
+    page_title = "Website & Audience Manager"
+    page_subtitle = "Plan website content, audience segments, and publishing schedule"
+    page_help = "Development-only website management. Live website files are not modified automatically."
+
+    def build(self) -> None:
+        self._bundle = normalize_bundle({})
+        self._busy = False
+        toolbar = ttk.Frame(self._body, style="Studio.TFrame")
+        toolbar.pack(fill="x", pady=(0, 12))
+        ttk.Button(toolbar, text="Save Website Data", style="StudioAction.TButton", bootstyle="primary", command=self._save).pack(
+            side="right"
+        )
+        ttk.Button(toolbar, text="Open Website Folder", bootstyle="secondary", command=self._open_folder).pack(side="left")
+        ttk.Button(toolbar, text="Reload", bootstyle="secondary", command=self._load).pack(side="left", padx=8)
+
+        self._notebook = ttk.Notebook(self._body, bootstyle="primary")
+        self._notebook.pack(fill="both", expand=True)
+        overview = ttk.Frame(self._notebook, style="Studio.TFrame", padding=12)
+        self._notebook.add(overview, text="Overview")
+        self._overview_text = ScrolledText(overview, height=18, autohide=True, bootstyle="secondary", state="disabled", wrap="word")
+        self._overview_text.pack(fill="both", expand=True)
+
+        audience = ttk.Frame(self._notebook, style="Studio.TFrame", padding=12)
+        self._notebook.add(audience, text="Audience")
+        self._audience_tree = ttk.Treeview(audience, columns=("name", "enabled"), show="headings", bootstyle="info", height=12)
+        self._audience_tree.heading("name", text="Segment")
+        self._audience_tree.heading("enabled", text="Active")
+        self._audience_tree.pack(fill="both", expand=True)
+
+        validation = ttk.Frame(self._notebook, style="Studio.TFrame", padding=12)
+        self._notebook.add(validation, text="Validation")
+        self._validation_text = ScrolledText(
+            validation, height=18, autohide=True, bootstyle="secondary", state="disabled", wrap="word"
+        )
+        self._validation_text.pack(fill="both", expand=True)
+
+    def on_show(self) -> None:
+        self._load()
+
+    def _load(self) -> None:
+        self._bundle = normalize_bundle(load_website_bundle(self.config_manager))
+        self._refresh_views()
+        self.set_status("Website & Audience data loaded")
+
+    def _save(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        payload = deepcopy(self._bundle)
+
+        def work() -> None:
+            save_website_bundle(payload, self.config_manager)
+
+        def complete(_: None) -> None:
+            self._busy = False
+            self.set_status("Website data saved")
+
+        run_in_background(self, work, lambda _: complete(None), on_error=lambda e: self._finish_error(e))
+
+    def _finish_error(self, error: Exception) -> None:
+        self._busy = False
+        self._show_error_dialog("Website & Audience", str(error))
+
+    def _open_folder(self) -> None:
+        try:
+            open_folder(str(platform_path("website", self.config_manager)))
+            self.set_status("Opened website folder.")
+        except OSError as exc:
+            self._show_error_dialog("Open Website Folder", str(exc))
+
+    def _refresh_views(self) -> None:
+        self._set_text(self._overview_text, "\n".join(build_overview_lines(self._bundle, self.config_manager)))
+        self._audience_tree.delete(*self._audience_tree.get_children())
+        for segment in self._bundle["audience"]["segments"]:
+            self._audience_tree.insert(
+                "",
+                "end",
+                iid=segment["id"],
+                values=(segment.get("name", ""), "Yes" if segment.get("enabled") else "No"),
+            )
+        warnings = validate_website(self._bundle, self.config_manager)
+        self._bundle["state"]["last_validated"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+        text = "\n".join(f"• {w}" for w in warnings) if warnings else "No validation warnings."
+        self._set_text(self._validation_text, text)
+
+    @staticmethod
+    def _set_text(widget: ScrolledText, content: str) -> None:
+        widget.text.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("end", content)
+        widget.text.configure(state="disabled")

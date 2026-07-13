@@ -56,6 +56,12 @@ def import_news_from_live(integration: dict[str, Any]) -> tuple[bool, str]:
 
 
 def publish_livedj(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
+    settings = config_manager.load("settings", {})
+    from app.core.integration_settings import is_production_mode
+
+    if not is_production_mode(settings):
+        return False, "Live publishing is disabled in Development Mode."
+
     errors = validate_livedj_bundle(config_manager)
     if errors:
         return False, "Validation failed:\n" + "\n".join(errors[:12])
@@ -77,6 +83,12 @@ def publish_livedj(config_manager, integration: dict[str, Any]) -> tuple[bool, s
 
 
 def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
+    settings = config_manager.load("settings", {})
+    from app.core.integration_settings import is_production_mode
+
+    if not is_production_mode(settings):
+        return False, "Live publishing is disabled in Development Mode."
+
     data = normalize_requests_data(config_manager.load("requests", {}))
     errors, _warnings = validate_requests_settings(data)
     if errors:
@@ -94,6 +106,12 @@ def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool,
 
 
 def publish_news(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
+    settings = config_manager.load("settings", {})
+    from app.core.integration_settings import is_production_mode
+
+    if not is_production_mode(settings):
+        return False, "Live publishing is disabled in Development Mode."
+
     data = normalize_news_data(config_manager.load("news", {}))
     errors = validate_news_data(data)
     if errors:

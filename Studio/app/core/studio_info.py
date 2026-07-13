@@ -9,7 +9,8 @@ from app.core.hidden_process import read_git_commit_short
 from app.core.integration_settings import operation_mode
 from app.core.paths import studio_root
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
+APP_VERSION_LABEL = "Mo's Place Studio v2.0 Development"
 
 
 def environment_mode(settings: dict[str, Any] | None = None) -> str:
@@ -38,11 +39,11 @@ def environment_badge(settings: dict[str, Any] | None = None) -> tuple[str, str]
 def status_bar_summary(settings: dict[str, Any] | None = None) -> str:
     profile = current_profile(settings)
     if getattr(sys, "frozen", False):
-        return f"Mo's Place Studio v{APP_VERSION}  ·  {profile}"
+        return f"{APP_VERSION_LABEL}  ·  {profile}"
     mode = environment_mode(settings)
     if mode == "Production":
-        return f"Mo's Place Studio v{APP_VERSION}  ·  {profile}  ·  On Air"
+        return f"{APP_VERSION_LABEL}  ·  {profile}  ·  On Air"
     return (
-        f"Mo's Place Studio v{APP_VERSION}  ·  {profile}  ·  "
+        f"{APP_VERSION_LABEL}  ·  {profile}  ·  "
         f"Setup  ·  Git {git_commit_short()}"
     )

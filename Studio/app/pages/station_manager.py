@@ -9,8 +9,6 @@ from ttkbootstrap.scrolled import ScrolledText
 
 from app.core.background_tasks import run_in_background
 from app.core.health_constants import HEALTH_ERROR, HEALTH_OK, HEALTH_WARN
-from app.core.platform_manager import open_folder, platform_path
-from app.core.station_data import inventory_reports_dir
 from app.core.station_manager_model import StationManagerSnapshot, build_station_manager_snapshot
 from app.pages.base_page import BasePage
 from app.ui.theme import StudioTheme
@@ -31,14 +29,14 @@ STATUS_LABELS = {
 
 QUICK_ACTIONS = (
     ("programming", "Programming"),
-    ("advertising", "Advertising"),
+    ("advertising_manager", "Advertising"),
+    ("website_audience_manager", "Website"),
     ("news_content_manager", "News"),
     ("requests", "Requests"),
-    ("_website", "Website"),
     ("personalities", "Personalities"),
     ("voice_library", "Voice Library"),
+    ("inventory", "Inventory"),
     ("platform_manager", "Platform Manager"),
-    ("_inventory", "Inventory"),
     ("reports", "Reports"),
     ("settings", "Settings"),
     ("operations_manager", "Operations"),
@@ -220,20 +218,6 @@ class StationManagerPage(BasePage):
             self.on_navigate(page_id)
 
     def _quick_action(self, page_id: str) -> None:
-        if page_id == "_inventory":
-            try:
-                open_folder(str(inventory_reports_dir(self.config_manager)))
-                self.set_status("Opened inventory reports folder.")
-            except OSError as exc:
-                self._show_error_dialog("Inventory", str(exc))
-            return
-        if page_id == "_website":
-            try:
-                open_folder(str(platform_path("website", self.config_manager)))
-                self.set_status("Opened website folder.")
-            except OSError as exc:
-                self._show_error_dialog("Website", str(exc))
-            return
         self._open_page(page_id)
 
     def refresh(self, *, quiet: bool = False) -> None:
