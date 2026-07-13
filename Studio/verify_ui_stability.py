@@ -25,7 +25,9 @@ FIRST_BUILD_MS = 500
 LOAD_WAIT_S = 5.0
 STATUS_CALL_LIMIT = 25
 CRUD_ROUNDS = 10
-BACKGROUND_REFRESH_PAGES = frozenset({"dashboard", "automation", "station_manager", "operations_manager", "inventory"})
+BACKGROUND_REFRESH_PAGES = frozenset(
+    {"dashboard", "automation", "station_manager", "operations_manager", "inventory", "broadcasting_manager"}
+)
 
 SKIP_BUTTON_TEXT = frozenset(
     {
@@ -145,6 +147,19 @@ SKIP_BUTTON_TEXT = frozenset(
         "Open Advertising Folder",
         "Open Website Folder",
         "Reload",
+        "Open RadioDJ",
+        "Open RadioDJ Folder",
+        "Start LiveDJ Watcher",
+        "Restart LiveDJ Watcher",
+        "Start Request Watcher",
+        "Restart Request Watcher",
+        "Run News Now",
+        "Refresh All Statuses",
+        "Open LiveDJ Log",
+        "Open News Log",
+        "Open Request Log",
+        "Open LiveDJ Folder",
+        "Open News Folder",
     }
 )
 

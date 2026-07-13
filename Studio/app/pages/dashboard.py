@@ -272,6 +272,7 @@ class DashboardPage(BasePage):
             ("advertising_manager", "Advertising"),
             ("website_audience_manager", "Website"),
             ("inventory", "Inventory"),
+            ("broadcasting_manager", "Broadcasting"),
             ("operations_manager", "Operations"),
         )
         for index, (page_id, label) in enumerate(quick_specs):

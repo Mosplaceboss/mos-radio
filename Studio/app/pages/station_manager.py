@@ -36,6 +36,7 @@ QUICK_ACTIONS = (
     ("personalities", "Personalities"),
     ("voice_library", "Voice Library"),
     ("inventory", "Inventory"),
+    ("broadcasting_manager", "Broadcasting"),
     ("platform_manager", "Platform Manager"),
     ("reports", "Reports"),
     ("settings", "Settings"),

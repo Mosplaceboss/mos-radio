@@ -8,7 +8,7 @@ from typing import Type
 import ttkbootstrap as ttk
 
 from app.core.config_manager import ConfigManager
-from app.pages.base_page import BasePage
+from app.pages.broadcasting_manager import BroadcastingManagerPage
 from app.pages.advanced import AdvancedPage
 from app.pages.advertising import AdvertisingPage
 from app.pages.advertising_manager import AdvertisingManagerPage
@@ -57,6 +57,7 @@ class MainWindow(ttk.Frame):
         "website_audience_manager": WebsiteAudienceManagerPage,
         "news_content_manager": NewsContentManagerPage,
         "inventory": InventoryPage,
+        "broadcasting_manager": BroadcastingManagerPage,
         "operations_manager": OperationsManagerPage,
         "reports": ReportsPage,
         "settings": SettingsPage,

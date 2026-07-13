@@ -35,6 +35,8 @@ News & Content Manager — News personalities, feeds, schedules, and development
 
 Inventory — Open Mo's Place Inventory and review scan reports (read-only).
 
+Broadcasting — Monitor RadioDJ, Voicebox, automation watchers, audio output, and today's schedule.
+
 Operations Manager — System status, backups, deployment packages, and migration staging.
 
 Reports — Station reports and summaries.
@@ -49,10 +51,11 @@ What do I do today?
 1. Open Station Manager and review alerts.
 2. Open Platform Manager and validate all paths are green or yellow.
 3. Check Dashboard module overview for schedule, backup, and inventory status.
-4. Use Programming, Music, and News managers to plan changes in development data.
-5. Run Inventory if you need an updated folder map (read-only scan).
-6. Create a backup in Operations Manager before any major testing.
-7. Stay in Development Mode — live publishing is disabled in this build.
+4. Open Broadcasting to confirm RadioDJ, Voicebox, and watcher health.
+5. Use Programming, Music, and News managers to plan changes in development data.
+6. Run Inventory if you need an updated folder map (read-only scan).
+7. Create a backup in Operations Manager before any major testing.
+8. Stay in Development Mode — live publishing is disabled in this build.
 """.strip()
 
 

@@ -27,6 +27,7 @@ class NavigationPanel(ttk.Frame):
         ("website_audience_manager", "Website & Audience"),
         ("news_content_manager", "News & Content"),
         ("inventory", "Inventory"),
+        ("broadcasting_manager", "Broadcasting"),
         ("operations_manager", "Operations"),
         ("reports", "Reports"),
         ("settings", "Settings"),
@@ -41,7 +42,7 @@ class NavigationPanel(ttk.Frame):
             ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests"),
         ),
         ("Station Content", ("advertising_manager", "website_audience_manager", "news_content_manager")),
-        ("Operations", ("inventory", "operations_manager", "reports")),
+        ("Operations", ("inventory", "broadcasting_manager", "operations_manager", "reports")),
         ("Setup", ("settings", "platform_manager", "advanced")),
     )
 
