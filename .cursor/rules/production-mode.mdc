@@ -1,0 +1,28 @@
+---
+description: Production-mode priorities for Mo's Place Radio Studio — stability over features
+alwaysApply: true
+---
+
+# Production Mode
+
+Mo's Place Radio Studio is feature-complete and in production. Prefer small, stable, well-tested improvements over large changes.
+
+## Hard rules
+
+- Do **not** add major new functionality unless the user specifically requests it.
+- Stability is the highest priority. Preserve existing behavior; if a change adds risk, keep the current path.
+- Prefer surgical fixes over broad refactors. Refactor only when it clearly improves maintainability without behavior change.
+
+## Focus areas (in order)
+
+1. **Reliability** — Eliminate edge-case failures; harden error handling; make Local AI succeed whenever possible without sacrificing quality; keep OpenAI as the safety-net fallback only.
+2. **Performance** — Reduce Local AI generation time; optimize prompts without changing output quality; remove unnecessary OpenAI fallbacks caused by overly strict validation.
+3. **Dashboard polish** — Clean, operator-focused UI; surface only information that helps run the station; hide developer/debug details unless explicitly enabled.
+4. **Logging** — Log thoroughly behind the scenes for diagnosis; do not clutter the UI with log noise.
+5. **AI optimization** — Maximize Local AI usage; call OpenAI only when Local AI cannot produce a valid broadcast-quality script; improve prompts and validation to reduce OpenAI calls.
+6. **Code quality** — Refactor carefully; remove dead code and leftover test harnesses; improve maintainability without changing production paths.
+
+## Change style
+
+- Treat updates like production software: small diffs, clear rollback path, verify against real logs/status when possible.
+- Never break on-air / scheduled generation paths for speculative improvements.
