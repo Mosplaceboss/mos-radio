@@ -22,7 +22,8 @@ Refresh status and read alerts in plain English. Note which service is red:
 | Problem | Try this |
 |---------|----------|
 | RadioDJ not running | Open RadioDJ from Daily Operations |
-| Piper down | Restart Piper TTS on its PC, then refresh |
+| Piper down | On the **Office PC**, double-click `D:\MosPlaceRadioPlatform\Automation\Requests\start_piper.bat` (or from this repo: `Automation\Requests\start_piper.bat`). Leave the window open. Then open `http://127.0.0.1:5000` — it must load. Refresh Studio. |
+| Piper never installed / `No module named piper` | Run `start_piper.bat` once — it installs `piper-tts[http]` if needed, downloads a voice, and starts the server on port 5000. Prefer Python 3.11/3.12 if 3.14 fails. |
 | Requests still going to Voicebox | Open Requests → **Fix TTS → Piper Only** (removes Voicebox fields), then Restart Request Watcher |
 | Piper worked, then Voicebox returned | A Publish / Restore rewrote `requests.json` — run Fix TTS → Piper Only; requests must not contain any `voicebox_*` keys |
 | LiveDJ watcher stopped | Restart LiveDJ Watcher (confirm when asked) |

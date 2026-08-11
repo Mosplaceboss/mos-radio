@@ -30,7 +30,7 @@ Every action asks for confirmation first.
 | Alert | What to do |
 |-------|------------|
 | RadioDJ stopped | Open RadioDJ or check the broadcast PC |
-| Piper disconnected | Confirm Piper is running and the TTS API address is correct (default `http://127.0.0.1:5000`) |
+| Piper disconnected | Start Piper with `Automation\Requests\start_piper.bat` on the Office PC; leave that window open. Confirm `http://127.0.0.1:5000` loads. |
 | Watcher stopped | Restart the approved watcher from Daily Operations |
 | Watcher looks frozen | Restart LiveDJ and/or Request Watcher; also confirm Piper is running |
 | Missing audio | Check the Audio Monitoring tab in Broadcasting |
