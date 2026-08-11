@@ -427,16 +427,19 @@ def _build_alerts(
     if radiodj and not radiodj.running:
         alerts.append(f"RadioDJ stopped — {radiodj.detail}")
 
-    voicebox = service_lookup(live_status, "Voicebox")
+    voicebox = service_lookup(live_status, "Piper")
     if voicebox and voicebox.status == HEALTH_ERROR:
-        alerts.append(f"Voicebox disconnected — {voicebox.detail}")
+        alerts.append(f"{voicebox.name} disconnected — {voicebox.detail}")
     elif voicebox and not voicebox.running:
-        alerts.append(f"Voicebox not responding — {voicebox.detail}")
+        alerts.append(f"{voicebox.name} not responding — {voicebox.detail}")
 
     for service_name, label in (("LiveDJ Watcher", "LiveDJ watcher"), ("Request Watcher", "Request watcher")):
         service = service_lookup(live_status, service_name)
         if service and not service.running:
-            alerts.append(f"{label} stopped — {service.detail}")
+            if "Marker present" in (service.detail or ""):
+                alerts.append(f"{label} looks frozen — {service.detail}")
+            else:
+                alerts.append(f"{label} stopped — {service.detail}")
 
     for folder in audio_folders:
         if folder.status == HEALTH_ERROR:
@@ -452,7 +455,14 @@ def _build_alerts(
 
     requests = service_lookup(live_status, "Request Watcher")
     if requests and not requests.running:
-        alerts.append("Request system unavailable — watcher is not running")
+        if "Marker present" in (requests.detail or ""):
+            alerts.append("Request system frozen — restart Request Watcher")
+        else:
+            alerts.append("Request system unavailable — watcher is not running")
+
+    livedj = service_lookup(live_status, "LiveDJ Watcher")
+    if livedj and not livedj.running and "Marker present" in (livedj.detail or ""):
+        alerts.append("LiveDJ looks frozen — hosts may not talk until the watcher is restarted")
 
     if not alerts:
         alerts.append("No active broadcast alerts. All monitored systems look ready.")
@@ -499,7 +509,7 @@ def build_broadcasting_snapshot(config_manager) -> BroadcastingSnapshot:
     health_lights = [
         BroadcastHealthLight(light.name, light.status, light.detail)
         for light in dashboard.station_lights
-        if light.name in {"RadioDJ", "Voicebox", "LiveDJ", "News", "Requests", "Now Playing"}
+        if light.name in {"RadioDJ", "Piper", "Voicebox", "LiveDJ", "News", "Requests", "Now Playing"}
     ]
 
     website_status, website_detail = _website_scheduler_status(config_manager)

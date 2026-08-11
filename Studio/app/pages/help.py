@@ -17,7 +17,7 @@ Station Manager — Full control center with service health, alerts, and quick a
 
 Dashboard — Summary view of services, schedule, module status, and recent activity.
 
-Broadcasting — Monitor RadioDJ, Voicebox, automation watchers, audio output, and today's schedule.
+Broadcasting — Monitor RadioDJ, Piper, automation watchers, audio output, and today's schedule.
 
 Programming Manager — Plan shows, formats, clocks, schedules, and programming validation.
 
@@ -53,7 +53,7 @@ Advanced — Technical tools such as Connection Setup, LiveDJ, updates, and lega
 TODAY_CHECKLIST = """
 What do I do today?
 1. Open Daily Operations and click Refresh.
-2. Review alerts and confirm RadioDJ, Voicebox, and watcher status.
+2. Review alerts and confirm RadioDJ, Piper, and watcher status.
 3. Check current host, format, and now playing.
 4. Review today's advertising and the next scheduled event.
 5. Run approved actions only when needed (Open RadioDJ, Run News, restart watchers).

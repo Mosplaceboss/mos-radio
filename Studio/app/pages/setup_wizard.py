@@ -53,7 +53,7 @@ class SetupWizardPage(BasePage):
             ("platform_root", "Platform Root"),
             ("radiodj_path", "RadioDJ Path"),
             ("music_library_path", "Music Library Path"),
-            ("voicebox_api_url", "Voicebox API"),
+            ("voicebox_api_url", "Piper TTS API"),
             ("voice_output_path", "Shared Voice Output Folder"),
             ("livedj_folder", "LiveDJ Folder"),
             ("news_folder", "News Folder"),

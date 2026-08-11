@@ -46,11 +46,13 @@
       "default_shift": ""
     },
     {
-      "id": "vb-request-greeter",
+      "id": "piper-request-greeter",
       "display_name": "Request Greeter",
       "voicebox_id": "mos-place-requests-v1",
+      "piper_voice_id": "mos-place-requests-v1",
+      "tts_engine": "piper",
       "personality_id": "",
-      "voice_description": "Friendly voice for listener request acknowledgements.",
+      "voice_description": "Friendly Piper voice for listener request acknowledgements. Do not use Voicebox.",
       "portrait": "",
       "active": true,
       "default_greeting": "Thanks for your request here at Mo's Place Radio!",

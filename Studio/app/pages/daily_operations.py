@@ -82,7 +82,7 @@ class DailyOperationsPage(BasePage):
         services.pack(fill="x", pady=(0, 12))
         self._services_row = ttk.Frame(services, style="StudioPanel.TFrame")
         self._services_row.pack(fill="x")
-        for name in ("RadioDJ", "Voicebox", "LiveDJ", "News", "Requests", "Website Scheduler"):
+        for name in ("RadioDJ", "Piper", "LiveDJ", "News", "Requests", "Website Scheduler"):
             cell = ttk.Frame(self._services_row, style="StudioPanel.TFrame")
             cell.pack(side="left", expand=True, fill="x", padx=6)
             canvas = tk.Canvas(cell, width=52, height=52, bg=StudioTheme.BG_PANEL, highlightthickness=0)

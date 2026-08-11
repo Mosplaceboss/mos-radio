@@ -11,7 +11,7 @@ Mo's Place Studio is the control center for Mo's Place Radio. It helps you manag
 1. Run the installer or extract the portable ZIP.
 2. Open **Mo's Place Studio** from the Desktop or Start Menu shortcut.
 3. Complete the **First-Run Setup Wizard** when prompted.
-4. Open **Daily Operations** to confirm RadioDJ, Voicebox, and automation health.
+4. Open **Daily Operations** to confirm RadioDJ, Piper, and automation health.
 
 ## Default platform folder
 
@@ -24,7 +24,7 @@ The installer creates required subfolders automatically. Your settings and stati
 ## Recommended first steps
 
 1. Enter your station name and logo in Setup.
-2. Confirm RadioDJ, music library, and Voicebox paths.
+2. Confirm RadioDJ, music library, and Piper TTS paths.
 3. Test every connection until results are green or clearly explained in yellow.
 4. Open **Help** for the daily checklist.
 

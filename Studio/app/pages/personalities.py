@@ -159,7 +159,7 @@ class PersonalitiesPage(BasePage):
         row = 0
         row = self._add_entry_row(form, row, "Display Name", "display_name", required=True)
         row = self._add_entry_row(form, row, "Show Name", "show_name")
-        row = self._add_entry_row(form, row, "Voicebox Voice ID", "voicebox_voice_id", required=True)
+        row = self._add_entry_row(form, row, "Piper Voice Model ID", "voicebox_voice_id", required=True)
         row = self._add_entry_row(form, row, "RadioDJ Cart ID", "radiodj_cart_id")
         row = self._add_path_row(form, row, "WAV Output Path", "wav_output_path", file_mode=False)
         row = self._add_path_row(form, row, "Prompt File", "prompt_file", file_mode=True)

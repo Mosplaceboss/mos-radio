@@ -36,13 +36,25 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def import_requests_from_live(integration: dict[str, Any]) -> tuple[bool, str]:
+    from app.core.tts_settings import remove_voicebox_from_requests, tts_fields_for_requests
+
     live = requests_live_paths(integration)
     source = live["config"]
     if not source.exists():
         return False, f"Live request config not found: {source}"
     destination = studio_config_path("requests")
     shutil.copy2(source, destination)
-    return True, "Imported live request settings into Studio development config."
+    try:
+        with destination.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            data = normalize_requests_data(data)
+            data.update(tts_fields_for_requests(integration))
+            remove_voicebox_from_requests(data)
+            _write_json(destination, data)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return True, "Imported live request settings into Studio (Piper only; Voicebox fields removed)."
 
 
 def import_news_from_live(integration: dict[str, Any]) -> tuple[bool, str]:
@@ -85,11 +97,15 @@ def publish_livedj(config_manager, integration: dict[str, Any]) -> tuple[bool, s
 def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
     settings = config_manager.load("settings", {})
     from app.core.integration_settings import is_production_mode
+    from app.core.tts_settings import remove_voicebox_from_requests, tts_fields_for_requests
 
     if not is_production_mode(settings):
         return False, "Live publishing is disabled in Development Mode."
 
     data = normalize_requests_data(config_manager.load("requests", {}))
+    data.update(tts_fields_for_requests(integration))
+    data = normalize_requests_data(data)
+    remove_voicebox_from_requests(data)
     errors, _warnings = validate_requests_settings(data)
     if errors:
         return False, "Validation failed:\n" + "\n".join(errors)
@@ -102,7 +118,41 @@ def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool,
 
     _write_json(destination, data)
     config_manager.save("requests", data)
-    return True, "Published request settings to live path with backup."
+    return True, (
+        "Published request settings with Piper-only TTS "
+        f"({data.get('tts_api_url')}). Voicebox fields removed."
+    )
+
+
+def repair_live_requests_tts(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
+    """Rewrite live requests.json to Piper-only and delete Voicebox fields."""
+    from app.core.tts_settings import remove_voicebox_from_requests, tts_fields_for_requests
+
+    live = requests_live_paths(integration)
+    destination = live["config"]
+    if destination.exists():
+        try:
+            with destination.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            return False, f"Could not read live requests config: {exc}"
+        create_backup("requests", {"requests": destination})
+    else:
+        data = config_manager.load("requests", {})
+
+    data = normalize_requests_data(data)
+    data.update(tts_fields_for_requests(integration))
+    data = normalize_requests_data(data)
+    remove_voicebox_from_requests(data)
+    _write_json(destination, data)
+    config_manager.save("requests", data)
+    logger.info("Repaired live requests TTS to Piper-only (%s)", data.get("tts_api_url"))
+    return True, (
+        f"Repaired live requests to Piper only ({data.get('tts_api_url')}). "
+        "All Voicebox fields removed. Restart Request Watcher."
+    )
 
 
 def publish_news(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
@@ -135,8 +185,26 @@ def restore_livedj_backup(integration: dict[str, Any]) -> tuple[bool, str]:
 
 
 def restore_requests_backup(integration: dict[str, Any]) -> tuple[bool, str]:
+    from app.core.tts_settings import remove_voicebox_from_requests, tts_fields_for_requests
+
     live = requests_live_paths(integration)
-    return restore_last_backup("requests", {"requests": live["config"]})
+    ok, message = restore_last_backup("requests", {"requests": live["config"]})
+    if not ok:
+        return ok, message
+    destination = live["config"]
+    if destination.exists():
+        try:
+            with destination.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if isinstance(data, dict):
+                data = normalize_requests_data(data)
+                data.update(tts_fields_for_requests(integration))
+                remove_voicebox_from_requests(data)
+                _write_json(destination, data)
+                return True, f"{message} Voicebox fields removed; Piper-only TTS kept."
+        except (OSError, json.JSONDecodeError) as exc:
+            return True, f"{message} (Voicebox strip skipped: {exc})"
+    return ok, message
 
 
 def restore_news_backup(integration: dict[str, Any]) -> tuple[bool, str]:

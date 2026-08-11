@@ -25,6 +25,7 @@ from app.core.integration_settings import (
     resolve_integration_path,
 )
 from app.core.platform_manager import automation_module_dir
+from app.core.tts_settings import TTS_SERVICE_PIPER, TTS_SERVICE_VOICEBOX, resolve_tts_settings
 
 logger = logging.getLogger("moplace.studio.system_status")
 
@@ -77,6 +78,49 @@ def _process_running(
     return False, f"{image_name} not running"
 
 
+def _process_candidates(
+    primary_image: str,
+    primary_match: str,
+    fallbacks: Any,
+) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(image: str, match: str) -> None:
+        key = (image.lower(), match.lower())
+        if not image or key in seen:
+            return
+        seen.add(key)
+        candidates.append((image, match))
+
+    _add(primary_image, primary_match or "")
+    if isinstance(fallbacks, (list, tuple)):
+        for item in fallbacks:
+            if isinstance(item, (list, tuple)) and item:
+                image = str(item[0]).strip()
+                match = str(item[1]).strip() if len(item) > 1 else ""
+                _add(image, match)
+            elif isinstance(item, str):
+                _add(item.strip(), "")
+    return candidates
+
+
+def _any_process_running(
+    candidates: list[tuple[str, str]],
+    process_lines: list[str] | None = None,
+) -> tuple[bool, str]:
+    lines = process_lines if process_lines is not None else list_windows_process_lines()
+    if not lines:
+        return False, "Process check unavailable"
+    last_detail = "Process not detected"
+    for image_name, match_text in candidates:
+        running, detail = _process_running(image_name, match_text, process_lines=lines)
+        if running:
+            return True, detail
+        last_detail = detail
+    return False, last_detail
+
+
 def _lock_file_running(folder_name: str) -> bool:
     folder = automation_module_dir(folder_name)
     if not folder.exists():
@@ -87,19 +131,62 @@ def _lock_file_running(folder_name: str) -> bool:
     return False
 
 
-def _voicebox_api_ok(
+def _watcher_status(
+    *,
+    folder_name: str,
+    process_candidates: list[tuple[str, str]],
+    process_lines: list[str] | None,
+    config_present: bool,
+) -> tuple[str, str, bool]:
+    """Return status/detail/running for LiveDJ/Request-style watchers.
+
+    A lock marker alone used to report healthy even after the process died,
+    which made frozen requests/breaks look green in Daily Operations.
+    """
+    lock = _lock_file_running(folder_name)
+    proc, proc_detail = _any_process_running(process_candidates, process_lines=process_lines)
+
+    if proc:
+        return HEALTH_OK, proc_detail, True
+    if lock:
+        return (
+            HEALTH_WARN,
+            "Marker present · process not detected — restart watcher if frozen",
+            False,
+        )
+    if config_present:
+        return HEALTH_WARN, "Config present · watcher not running", False
+    return HEALTH_WARN, "Watcher not detected", False
+
+
+def _tts_api_ok(
     api_url: str,
     health_path: str,
     *,
     timeout: float = NETWORK_TIMEOUT,
     max_candidates: int | None = None,
+    default_port: int = 5000,
+    not_responding_detail: str = "TTS API not responding",
 ) -> tuple[str, str, bool]:
     base = api_url.rstrip("/")
     path = health_path if health_path.startswith("/") else f"/{health_path}"
-    candidates = (f"{base}{path}", base, f"{base}/health", f"{base}/v1/health")
-    if max_candidates is not None:
-        candidates = candidates[:max_candidates]
+    candidates = (
+        f"{base}{path}",
+        base,
+        f"{base}/voices",
+        f"{base}/health",
+        f"{base}/v1/health",
+    )
+    # Preserve unique order while dropping empties.
+    ordered: list[str] = []
+    seen: set[str] = set()
     for url in candidates:
+        if url and url not in seen:
+            seen.add(url)
+            ordered.append(url)
+    if max_candidates is not None:
+        ordered = ordered[:max_candidates]
+    for url in ordered:
         try:
             with urllib.request.urlopen(url, timeout=timeout) as response:
                 if 200 <= response.status < 500:
@@ -108,12 +195,31 @@ def _voicebox_api_ok(
             continue
     try:
         host = urlparse(base).hostname or "127.0.0.1"
-        port = urlparse(base).port or (7860 if "7860" in base else 80)
+        parsed_port = urlparse(base).port
+        port = parsed_port or default_port
         with socket.create_connection((host, port), timeout=timeout):
             return HEALTH_WARN, "Port open but API health endpoint not verified", True
     except OSError:
         pass
-    return HEALTH_WARN, "Voicebox API not responding", False
+    return HEALTH_WARN, not_responding_detail, False
+
+
+def _voicebox_api_ok(
+    api_url: str,
+    health_path: str,
+    *,
+    timeout: float = NETWORK_TIMEOUT,
+    max_candidates: int | None = None,
+) -> tuple[str, str, bool]:
+    """Backward-compatible alias for older callers/tests."""
+    return _tts_api_ok(
+        api_url,
+        health_path,
+        timeout=timeout,
+        max_candidates=max_candidates,
+        default_port=7860,
+        not_responding_detail="Voicebox API not responding",
+    )
 
 
 def _internet_connected(*, timeout: float = NETWORK_TIMEOUT) -> tuple[str, str]:
@@ -126,7 +232,12 @@ def _internet_connected(*, timeout: float = NETWORK_TIMEOUT) -> tuple[str, str]:
     return HEALTH_WARN, "Internet not verified"
 
 
-def _news_task_status(news_config_path: Path) -> tuple[str, str, bool]:
+def _news_task_status(
+    news_config_path: Path,
+    *,
+    process_lines: list[str] | None = None,
+    integration: dict[str, Any] | None = None,
+) -> tuple[str, str, bool]:
     if not news_config_path.exists():
         return HEALTH_WARN, "News config not found on live path", False
     try:
@@ -139,10 +250,23 @@ def _news_task_status(news_config_path: Path) -> tuple[str, str, bool]:
             return HEALTH_WARN, "News tasks disabled", False
         if not feeds:
             return HEALTH_WARN, "No enabled RSS feeds", False
-        running = _lock_file_running("News")
         detail = f"{len(feeds)} feed(s) · last run: {last_run}"
+        integration = integration or {}
+        candidates = _process_candidates(
+            integration.get("news_process", "MosNews.exe"),
+            integration.get("news_process_match", ""),
+            integration.get("news_process_fallbacks"),
+        )
+        status, watcher_detail, running = _watcher_status(
+            folder_name="News",
+            process_candidates=candidates,
+            process_lines=process_lines,
+            config_present=True,
+        )
         if running:
             return HEALTH_OK, f"Tasks active · {detail}", True
+        if status == HEALTH_WARN and "Marker present" in watcher_detail:
+            return HEALTH_WARN, f"{watcher_detail} · {detail}", False
         return HEALTH_WARN, f"Tasks idle/stopped · {detail}", False
     except (OSError, json.JSONDecodeError) as exc:
         return HEALTH_ERROR, f"News config error: {exc}", False
@@ -159,16 +283,17 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
         clear_process_cache()
         process_lines = list_windows_process_lines(force_refresh=True)
         network_timeout = NETWORK_TIMEOUT
-        voicebox_candidates = None
+        tts_candidates = None
     else:
         process_lines = list_windows_process_lines(force_refresh=False)
         network_timeout = FAST_NETWORK_TIMEOUT
-        voicebox_candidates = 2
+        tts_candidates = 2
 
     integration = normalize_integration_settings(settings)
     livedj_paths = livedj_live_paths(integration)
     request_paths = requests_live_paths(integration)
     news_paths = news_live_paths(integration)
+    tts = resolve_tts_settings(integration)
 
     radiodj_executable = integration.get("radiodj_executable", "").strip()
     if radiodj_executable:
@@ -189,53 +314,51 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
         )
         radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
 
-    voicebox_status, voicebox_detail, voicebox_running = _voicebox_api_ok(
-        integration["voicebox_api_url"],
-        integration["voicebox_health_path"],
+    tts_status, tts_detail, tts_running = _tts_api_ok(
+        tts["api_url"],
+        tts["health_path"],
         timeout=network_timeout,
-        max_candidates=voicebox_candidates,
+        max_candidates=tts_candidates,
+        default_port=int(tts["default_port"]),
+        not_responding_detail=str(tts["not_responding_detail"]),
     )
 
-    livedj_lock = _lock_file_running("LiveDJ")
-    livedj_proc, livedj_proc_detail = _process_running(
-        integration["livedj_process"],
-        integration["livedj_process_match"],
+    livedj_candidates = _process_candidates(
+        integration.get("livedj_process", "MosLiveDJ.exe"),
+        integration.get("livedj_process_match", ""),
+        integration.get("livedj_process_fallbacks"),
+    )
+    livedj_status, livedj_detail, livedj_running = _watcher_status(
+        folder_name="LiveDJ",
+        process_candidates=livedj_candidates,
         process_lines=process_lines,
+        config_present=any(
+            path.exists() for path in (livedj_paths["schedule"], livedj_paths["personalities"])
+        ),
     )
-    livedj_running = livedj_lock or livedj_proc
-    if livedj_running:
-        livedj_status = HEALTH_OK
-        livedj_detail = "Watcher running" if livedj_lock else livedj_proc_detail
-    elif any(path.exists() for path in (livedj_paths["schedule"], livedj_paths["personalities"])):
-        livedj_status = HEALTH_WARN
-        livedj_detail = "Config present · watcher not running"
-    else:
-        livedj_status = HEALTH_WARN
-        livedj_detail = "Watcher not detected"
 
-    request_lock = _lock_file_running("Requests")
-    request_proc, request_proc_detail = _process_running(
-        integration["request_watcher_process"],
-        integration["request_watcher_match"],
+    request_candidates = _process_candidates(
+        integration.get("request_watcher_process", "MoRequestsWatcher.exe"),
+        integration.get("request_watcher_match", ""),
+        integration.get("request_watcher_process_fallbacks"),
+    )
+    request_status, request_detail, request_running = _watcher_status(
+        folder_name="Requests",
+        process_candidates=request_candidates,
         process_lines=process_lines,
+        config_present=request_paths["config"].exists(),
     )
-    request_running = request_lock or request_proc
-    if request_running:
-        request_status = HEALTH_OK
-        request_detail = "Watcher running" if request_lock else request_proc_detail
-    elif request_paths["config"].exists():
-        request_status = HEALTH_WARN
-        request_detail = "Config present · watcher not running"
-    else:
-        request_status = HEALTH_WARN
-        request_detail = "Watcher not detected"
 
-    news_status, news_detail, news_running = _news_task_status(news_paths["config"])
+    news_status, news_detail, news_running = _news_task_status(
+        news_paths["config"],
+        process_lines=process_lines,
+        integration=integration,
+    )
     internet_status, internet_detail = _internet_connected(timeout=network_timeout)
 
     services = [
         ServiceStatus("RadioDJ", radiodj_status, radiodj_detail, radiodj_running),
-        ServiceStatus("Voicebox", voicebox_status, voicebox_detail, voicebox_running),
+        ServiceStatus(str(tts["service_name"]), tts_status, tts_detail, tts_running),
         ServiceStatus("LiveDJ Watcher", livedj_status, livedj_detail, livedj_running),
         ServiceStatus("News Tasks", news_status, news_detail, news_running),
         ServiceStatus("Request Watcher", request_status, request_detail, request_running),
@@ -249,8 +372,13 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
 
 
 def service_lookup(status: LiveSystemStatus, name: str) -> ServiceStatus | None:
+    aliases = {
+        TTS_SERVICE_PIPER: (TTS_SERVICE_PIPER, TTS_SERVICE_VOICEBOX),
+        TTS_SERVICE_VOICEBOX: (TTS_SERVICE_VOICEBOX, TTS_SERVICE_PIPER),
+    }
+    wanted = aliases.get(name, (name,))
     for service in status.services:
-        if service.name == name:
+        if service.name in wanted:
             return service
     return None
 

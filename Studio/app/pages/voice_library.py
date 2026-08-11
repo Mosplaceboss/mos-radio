@@ -87,7 +87,7 @@ class VoiceLibraryPage(BasePage):
             selectmode="browse",
         )
         self._tree.heading("display_name", text="Display Name")
-        self._tree.heading("voicebox_id", text="Voicebox ID")
+        self._tree.heading("voicebox_id", text="Voice Model ID")
         self._tree.heading("active", text="Active")
         self._tree.column("display_name", width=150)
         self._tree.column("voicebox_id", width=130)
@@ -154,7 +154,7 @@ class VoiceLibraryPage(BasePage):
 
         row = 0
         row = self._add_entry_row(form, row, "Display Name", "display_name", required=True)
-        row = self._add_entry_row(form, row, "Voicebox ID", "voicebox_id", required=True)
+        row = self._add_entry_row(form, row, "Voice Model ID (Piper)", "voicebox_id", required=True)
 
         ttk.Label(form, text="Personality Assignment", style="StudioCard.TLabel").grid(
             row=row, column=0, sticky="w", padx=(0, 12), pady=6

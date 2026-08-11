@@ -31,7 +31,7 @@ from app.core.system_status import build_live_system_status, service_lookup
 
 OPERATION_MODULES = (
     "RadioDJ",
-    "Voicebox",
+    "Piper",
     "LiveDJ",
     "News",
     "Request Watcher",
@@ -109,7 +109,7 @@ def build_system_status_cards(config_manager) -> list[StatusCard]:
 
     service_names = (
         "RadioDJ",
-        "Voicebox",
+        "Piper",
         "LiveDJ Watcher",
         "News Tasks",
         "Request Watcher",

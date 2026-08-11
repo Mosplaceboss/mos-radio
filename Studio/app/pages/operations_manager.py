@@ -302,7 +302,7 @@ class OperationsManagerPage(BasePage):
         module = self._control_module.get()
         if not self._confirmed("Test", f"Run test for {module}?"):
             return
-        if module in {"Voicebox", "RadioDJ", "Website Scheduler"}:
+        if module in {"Piper", "Voicebox", "RadioDJ", "Website Scheduler"}:
             ok, msg = refresh_all_statuses(self._settings())
         else:
             ok, msg = True, f"Test queued for {module} (development mode)."

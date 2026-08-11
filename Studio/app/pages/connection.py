@@ -62,7 +62,7 @@ class ConnectionSetupPage(BasePage):
             ("news_folder", "News Folder Path"),
             ("requests_folder", "Request Watcher Folder Path"),
             ("radiodj_executable", "RadioDJ Executable Path"),
-            ("voicebox_api_url", "Voicebox API Address"),
+            ("tts_api_url", "Piper TTS API Address"),
         )
         for key, label in specs:
             row = ttk.Frame(form, style="StudioPanel.TFrame")
@@ -80,7 +80,7 @@ class ConnectionSetupPage(BasePage):
             "News",
             "Request Watcher",
             "RadioDJ",
-            "Voicebox API",
+            "Piper API",
             "Internet",
         ):
             row = ttk.Frame(status, style="StudioPanel.TFrame")
@@ -132,11 +132,21 @@ class ConnectionSetupPage(BasePage):
     def _load_settings(self) -> None:
         station = load_station_connection()
         for key, variable in self._fields.items():
-            variable.set(station.get(key, ""))
+            if key == "tts_api_url":
+                variable.set(
+                    station.get(
+                        "tts_api_url",
+                        station.get("piper_api_url", "http://127.0.0.1:5000"),
+                    )
+                )
+            else:
+                variable.set(station.get(key, ""))
         self.set_status("Connection settings loaded")
 
     def _save_settings(self) -> None:
         station = self._collect_station()
+        station["tts_provider"] = "piper"
+        station["piper_api_url"] = station.get("tts_api_url", "http://127.0.0.1:5000")
         save_local_integration(build_local_from_station(station, enabled=True))
         self.set_status("Connection settings saved")
 

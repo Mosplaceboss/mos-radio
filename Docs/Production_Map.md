@@ -16,7 +16,7 @@ This map shows where Mo's Place Radio production components live.
 |--------|---------|
 | **Mo's Place Studio** | Control center, programming, operations |
 | **RadioDJ** | Music scheduling and on-air playback |
-| **Voicebox** | Voice generation API |
+| **Piper** | Voice generation API (TTS) |
 | **LiveDJ automation** | Voice tracks, sweepers, show logic |
 | **News automation** | RSS, scripts, news audio |
 | **Request Watcher** | Listener requests |

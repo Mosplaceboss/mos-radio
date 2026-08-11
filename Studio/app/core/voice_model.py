@@ -40,6 +40,8 @@ def normalize_voice(raw: dict[str, Any]) -> dict[str, Any]:
 
     record.setdefault("id", new_voice_id())
     record.setdefault("voicebox_id", "")
+    record.setdefault("piper_voice_id", record.get("voicebox_id", ""))
+    record.setdefault("tts_engine", "piper")
     record.setdefault("personality_id", "")
     record.setdefault("portrait", "")
     record.setdefault("active", True)
@@ -48,6 +50,12 @@ def normalize_voice(raw: dict[str, Any]) -> dict[str, Any]:
     record.setdefault("personality_prompt", "")
     record.setdefault("pronunciation_notes", "")
     record.setdefault("default_shift", "")
+
+    # Request greeter and other station voices use Piper — never Voicebox.
+    if not str(record.get("piper_voice_id") or "").strip():
+        record["piper_voice_id"] = str(record.get("voicebox_id") or "").strip()
+    engine = str(record.get("tts_engine") or "piper").strip().lower()
+    record["tts_engine"] = "piper" if engine in {"voicebox", "vb", ""} else engine
 
     specialties = record.get("genre_specialties", [])
     if isinstance(specialties, str):
@@ -86,5 +94,5 @@ def validate_voice(voice: dict[str, Any]) -> list[str]:
     if not voice.get("display_name", "").strip():
         errors.append("Display Name is required.")
     if not voice.get("voicebox_id", "").strip():
-        errors.append("Voicebox ID is required.")
+        errors.append("Voice Model ID is required.")
     return errors

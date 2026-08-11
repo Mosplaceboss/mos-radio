@@ -267,9 +267,9 @@ def build_system_health(config_manager) -> list[SystemHealthStatus]:
 
     return [
         SystemHealthStatus(
-            "Voicebox Connected",
+            "Piper Connected",
             HEALTH_OK if voicebox_ok else HEALTH_WARN,
-            "Active Voicebox voices configured" if voicebox_ok else "No active Voicebox voices",
+            "Active Piper voices configured" if voicebox_ok else "No active Piper voices",
         ),
         SystemHealthStatus(
             "RadioDJ Connected",

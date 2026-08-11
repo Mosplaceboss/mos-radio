@@ -73,6 +73,20 @@ def normalize_requests_data(data: dict[str, Any]) -> dict[str, Any]:
     record.setdefault("song_not_found_email", DEFAULT_NOT_FOUND_EMAIL)
     record.setdefault("limit_reached_message", DEFAULT_LIMIT_MESSAGE)
 
+    from app.core.tts_settings import (
+        DEFAULT_PIPER_API_URL,
+        TTS_PROVIDER_PIPER,
+        remove_voicebox_from_requests,
+        tts_fields_for_requests,
+    )
+
+    # Requests use Piper only — strip every Voicebox field.
+    record.update(tts_fields_for_requests(record))
+    remove_voicebox_from_requests(record)
+    record["tts_provider"] = TTS_PROVIDER_PIPER
+    if not str(record.get("tts_api_url") or "").strip():
+        record["tts_api_url"] = DEFAULT_PIPER_API_URL
+
     formats = record.get("allowed_formats", [])
     if isinstance(formats, str):
         record["allowed_formats"] = [item.strip() for item in formats.split(",") if item.strip()]

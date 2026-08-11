@@ -22,7 +22,13 @@ from app.core.integration_settings import (
 )
 from app.core.platform_manager import platform_path
 from app.core.paths import config_dir, studio_root
-from app.core.system_status import _internet_connected, _voicebox_api_ok
+from app.core.system_status import _internet_connected, _tts_api_ok, _voicebox_api_ok
+from app.core.tts_settings import (
+    DEFAULT_PIPER_API_URL,
+    DEFAULT_TTS_PROVIDER,
+    apply_tts_defaults,
+    resolve_tts_settings,
+)
 
 logger = logging.getLogger("moplace.studio.live_connector")
 
@@ -34,7 +40,9 @@ DEFAULT_STATION = {
     "news_folder": "",
     "requests_folder": "",
     "radiodj_executable": "",
-    "voicebox_api_url": "http://127.0.0.1:7860",
+    "tts_provider": DEFAULT_TTS_PROVIDER,
+    "tts_api_url": DEFAULT_PIPER_API_URL,
+    "piper_api_url": DEFAULT_PIPER_API_URL,
 }
 
 
@@ -139,7 +147,12 @@ def build_local_from_station(station: dict[str, str], *, enabled: bool = True) -
         "station": station,
         "radiodj_process": process_name,
         "radiodj_executable": radiodj_executable,
-        "voicebox_api_url": station.get("voicebox_api_url", DEFAULT_STATION["voicebox_api_url"]),
+        "tts_provider": station.get("tts_provider", DEFAULT_STATION["tts_provider"]),
+        "tts_api_url": station.get(
+            "tts_api_url",
+            station.get("piper_api_url", DEFAULT_STATION["tts_api_url"]),
+        ),
+        "piper_api_url": station.get("piper_api_url", DEFAULT_STATION["piper_api_url"]),
         "live_paths": live_paths,
         "engine_scripts": engine_scripts,
     }
@@ -158,7 +171,9 @@ def ensure_local_integration_template() -> Path:
         "news_folder": str(platform_path("automation_news")),
         "requests_folder": str(platform_path("automation_requests")),
         "radiodj_executable": str(platform_path("radiodj")),
-        "voicebox_api_url": "http://127.0.0.1:7860",
+        "tts_provider": DEFAULT_TTS_PROVIDER,
+        "tts_api_url": DEFAULT_PIPER_API_URL,
+        "piper_api_url": DEFAULT_PIPER_API_URL,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
     return path
@@ -168,7 +183,7 @@ def merge_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
     integration = base_integration_settings(settings)
     local = load_local_integration()
     if not local.get("enabled"):
-        return integration
+        return apply_tts_defaults(integration)
 
     station = local.get("station", {})
     if isinstance(station, dict) and any(station.get(key, "").strip() for key in DEFAULT_STATION):
@@ -198,21 +213,31 @@ def merge_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
             if isinstance(value, str) and value.strip()
         }
 
-    for key in ("radiodj_process", "radiodj_executable", "voicebox_api_url", "voicebox_health_path", "now_playing_file"):
+    for key in (
+        "radiodj_process",
+        "radiodj_executable",
+        "tts_provider",
+        "tts_api_url",
+        "tts_health_path",
+        "piper_api_url",
+        "piper_health_path",
+        "now_playing_file",
+    ):
         value = local.get(key)
         if isinstance(value, str) and value.strip():
             integration[key] = value.strip()
 
     if isinstance(station, dict):
-        voicebox = station.get("voicebox_api_url", "").strip()
-        if voicebox:
-            integration["voicebox_api_url"] = voicebox
+        for key in ("tts_provider", "tts_api_url", "piper_api_url"):
+            value = station.get(key, "").strip() if isinstance(station.get(key), str) else ""
+            if value:
+                integration[key] = value
         radiodj_executable = station.get("radiodj_executable", "").strip()
         if radiodj_executable:
             integration["radiodj_executable"] = radiodj_executable
             integration["radiodj_process"] = Path(radiodj_executable).name
 
-    return integration
+    return apply_tts_defaults(integration)
 
 
 def now_playing_path(settings: dict[str, Any]) -> Path | None:
@@ -278,11 +303,28 @@ def _test_radiodj_executable(executable: str) -> ConnectionResult:
     return ConnectionResult("RadioDJ", HEALTH_WARN, f"RadioDJ executable found but {process_name} is not running.")
 
 
+def _test_tts(integration: dict[str, Any] | None = None, api_url: str = "") -> ConnectionResult:
+    payload = dict(integration or {})
+    if api_url.strip():
+        payload.setdefault("tts_api_url", api_url.strip())
+        # Preserve provider if already set; otherwise assume Piper when a custom URL is given.
+        payload.setdefault("tts_provider", DEFAULT_TTS_PROVIDER)
+    tts = resolve_tts_settings(payload)
+    label = f"{tts['service_name']} API"
+    if not tts["api_url"]:
+        return ConnectionResult(label, HEALTH_WARN, f"{tts['service_name']} API address is not configured yet.")
+    status, detail, _running = _tts_api_ok(
+        tts["api_url"],
+        tts["health_path"],
+        default_port=int(tts["default_port"]),
+        not_responding_detail=str(tts["not_responding_detail"]),
+    )
+    return ConnectionResult(label, status, detail)
+
+
 def _test_voicebox(api_url: str) -> ConnectionResult:
-    if not api_url.strip():
-        return ConnectionResult("Voicebox API", HEALTH_WARN, "Voicebox API address is not configured yet.")
-    status, detail, _running = _voicebox_api_ok(api_url.strip(), "/")
-    return ConnectionResult("Voicebox API", status, detail)
+    """Legacy alias — prefers Piper when only a URL is supplied."""
+    return _test_tts(api_url=api_url)
 
 
 def test_connection_setup(settings: dict[str, Any]) -> list[ConnectionResult]:
@@ -294,6 +336,13 @@ def test_connection_setup(settings: dict[str, Any]) -> list[ConnectionResult]:
     livedj_folder = _folder_path(station.get("livedj_folder", ""))
     news_folder = _folder_path(station.get("news_folder", ""))
     requests_folder = _folder_path(station.get("requests_folder", ""))
+    integration = apply_tts_defaults(
+        {
+            "tts_provider": station.get("tts_provider", DEFAULT_TTS_PROVIDER),
+            "tts_api_url": station.get("tts_api_url", ""),
+            "piper_api_url": station.get("piper_api_url", ""),
+        }
+    )
 
     results = [
         _test_radio_pc(station.get("radio_pc", "")),
@@ -301,7 +350,7 @@ def test_connection_setup(settings: dict[str, Any]) -> list[ConnectionResult]:
         _test_folder("News", news_folder, ("news.json",)),
         _test_folder("Request Watcher", requests_folder, ("requests.json",)),
         _test_radiodj_executable(station.get("radiodj_executable", "")),
-        _test_voicebox(station.get("voicebox_api_url", "")),
+        _test_tts(integration),
     ]
 
     internet_status, internet_detail = _internet_connected()
