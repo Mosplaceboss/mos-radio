@@ -25,6 +25,7 @@ from app.core.integration_settings import (
     resolve_integration_path,
 )
 from app.core.platform_manager import automation_module_dir
+from app.core.tts_settings import TTS_SERVICE_PIPER, TTS_SERVICE_VOICEBOX, resolve_tts_settings
 
 logger = logging.getLogger("moplace.studio.system_status")
 
@@ -158,19 +159,34 @@ def _watcher_status(
     return HEALTH_WARN, "Watcher not detected", False
 
 
-def _voicebox_api_ok(
+def _tts_api_ok(
     api_url: str,
     health_path: str,
     *,
     timeout: float = NETWORK_TIMEOUT,
     max_candidates: int | None = None,
+    default_port: int = 5000,
+    not_responding_detail: str = "TTS API not responding",
 ) -> tuple[str, str, bool]:
     base = api_url.rstrip("/")
     path = health_path if health_path.startswith("/") else f"/{health_path}"
-    candidates = (f"{base}{path}", base, f"{base}/health", f"{base}/v1/health")
-    if max_candidates is not None:
-        candidates = candidates[:max_candidates]
+    candidates = (
+        f"{base}{path}",
+        base,
+        f"{base}/voices",
+        f"{base}/health",
+        f"{base}/v1/health",
+    )
+    # Preserve unique order while dropping empties.
+    ordered: list[str] = []
+    seen: set[str] = set()
     for url in candidates:
+        if url and url not in seen:
+            seen.add(url)
+            ordered.append(url)
+    if max_candidates is not None:
+        ordered = ordered[:max_candidates]
+    for url in ordered:
         try:
             with urllib.request.urlopen(url, timeout=timeout) as response:
                 if 200 <= response.status < 500:
@@ -179,12 +195,31 @@ def _voicebox_api_ok(
             continue
     try:
         host = urlparse(base).hostname or "127.0.0.1"
-        port = urlparse(base).port or (7860 if "7860" in base else 80)
+        parsed_port = urlparse(base).port
+        port = parsed_port or default_port
         with socket.create_connection((host, port), timeout=timeout):
             return HEALTH_WARN, "Port open but API health endpoint not verified", True
     except OSError:
         pass
-    return HEALTH_WARN, "Voicebox API not responding", False
+    return HEALTH_WARN, not_responding_detail, False
+
+
+def _voicebox_api_ok(
+    api_url: str,
+    health_path: str,
+    *,
+    timeout: float = NETWORK_TIMEOUT,
+    max_candidates: int | None = None,
+) -> tuple[str, str, bool]:
+    """Backward-compatible alias for older callers/tests."""
+    return _tts_api_ok(
+        api_url,
+        health_path,
+        timeout=timeout,
+        max_candidates=max_candidates,
+        default_port=7860,
+        not_responding_detail="Voicebox API not responding",
+    )
 
 
 def _internet_connected(*, timeout: float = NETWORK_TIMEOUT) -> tuple[str, str]:
@@ -248,16 +283,17 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
         clear_process_cache()
         process_lines = list_windows_process_lines(force_refresh=True)
         network_timeout = NETWORK_TIMEOUT
-        voicebox_candidates = None
+        tts_candidates = None
     else:
         process_lines = list_windows_process_lines(force_refresh=False)
         network_timeout = FAST_NETWORK_TIMEOUT
-        voicebox_candidates = 2
+        tts_candidates = 2
 
     integration = normalize_integration_settings(settings)
     livedj_paths = livedj_live_paths(integration)
     request_paths = requests_live_paths(integration)
     news_paths = news_live_paths(integration)
+    tts = resolve_tts_settings(integration)
 
     radiodj_executable = integration.get("radiodj_executable", "").strip()
     if radiodj_executable:
@@ -278,11 +314,13 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
         )
         radiodj_status = HEALTH_OK if radiodj_running else HEALTH_WARN
 
-    voicebox_status, voicebox_detail, voicebox_running = _voicebox_api_ok(
-        integration["voicebox_api_url"],
-        integration["voicebox_health_path"],
+    tts_status, tts_detail, tts_running = _tts_api_ok(
+        tts["api_url"],
+        tts["health_path"],
         timeout=network_timeout,
-        max_candidates=voicebox_candidates,
+        max_candidates=tts_candidates,
+        default_port=int(tts["default_port"]),
+        not_responding_detail=str(tts["not_responding_detail"]),
     )
 
     livedj_candidates = _process_candidates(
@@ -320,7 +358,7 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
 
     services = [
         ServiceStatus("RadioDJ", radiodj_status, radiodj_detail, radiodj_running),
-        ServiceStatus("Voicebox", voicebox_status, voicebox_detail, voicebox_running),
+        ServiceStatus(str(tts["service_name"]), tts_status, tts_detail, tts_running),
         ServiceStatus("LiveDJ Watcher", livedj_status, livedj_detail, livedj_running),
         ServiceStatus("News Tasks", news_status, news_detail, news_running),
         ServiceStatus("Request Watcher", request_status, request_detail, request_running),
@@ -334,8 +372,13 @@ def build_live_system_status(settings: dict[str, Any], *, force_refresh: bool = 
 
 
 def service_lookup(status: LiveSystemStatus, name: str) -> ServiceStatus | None:
+    aliases = {
+        TTS_SERVICE_PIPER: (TTS_SERVICE_PIPER, TTS_SERVICE_VOICEBOX),
+        TTS_SERVICE_VOICEBOX: (TTS_SERVICE_VOICEBOX, TTS_SERVICE_PIPER),
+    }
+    wanted = aliases.get(name, (name,))
     for service in status.services:
-        if service.name == name:
+        if service.name in wanted:
             return service
     return None
 

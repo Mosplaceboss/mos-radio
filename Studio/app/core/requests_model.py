@@ -72,6 +72,48 @@ def normalize_requests_data(data: dict[str, Any]) -> dict[str, Any]:
     record.setdefault("intro_announcement_enabled", True)
     record.setdefault("song_not_found_email", DEFAULT_NOT_FOUND_EMAIL)
     record.setdefault("limit_reached_message", DEFAULT_LIMIT_MESSAGE)
+    record.setdefault("tts_provider", "piper")
+    record.setdefault("tts_api_url", "http://127.0.0.1:5000")
+    record.setdefault("tts_health_path", "/voices")
+    record.setdefault("voice_api_url", record.get("tts_api_url", "http://127.0.0.1:5000"))
+    record.setdefault("piper_api_url", "")
+    record.setdefault("voicebox_api_url", "")
+
+    # Prefer Piper. Drop leftover Voicebox URLs that would send request intros
+    # to a retired engine when the provider is Piper.
+    provider = str(record.get("tts_provider", "piper")).strip().lower()
+    if provider in {"vb", "voice-box", "voice_box"}:
+        provider = "voicebox"
+    if provider not in {"piper", "voicebox"}:
+        provider = "piper"
+    record["tts_provider"] = provider
+    if provider == "piper":
+        piper_url = (
+            str(record.get("tts_api_url") or record.get("piper_api_url") or record.get("voice_api_url") or "")
+            .strip()
+        )
+        legacy = str(record.get("voicebox_api_url") or "").strip()
+        if not piper_url:
+            if legacy and "7860" not in legacy and "voicebox" not in legacy.lower():
+                piper_url = legacy
+            else:
+                piper_url = "http://127.0.0.1:5000"
+        record["tts_api_url"] = piper_url.rstrip("/")
+        record["voice_api_url"] = record["tts_api_url"]
+        record["piper_api_url"] = record["tts_api_url"]
+        record["voicebox_api_url"] = ""
+        record["tts_health_path"] = str(record.get("tts_health_path") or "/voices").strip() or "/voices"
+    else:
+        voicebox_url = (
+            str(record.get("tts_api_url") or record.get("voicebox_api_url") or record.get("voice_api_url") or "")
+            .strip()
+            or "http://127.0.0.1:7860"
+        )
+        record["tts_api_url"] = voicebox_url.rstrip("/")
+        record["voice_api_url"] = record["tts_api_url"]
+        record["voicebox_api_url"] = record["tts_api_url"]
+        record["piper_api_url"] = ""
+        record["tts_health_path"] = str(record.get("tts_health_path") or "/").strip() or "/"
 
     formats = record.get("allowed_formats", [])
     if isinstance(formats, str):

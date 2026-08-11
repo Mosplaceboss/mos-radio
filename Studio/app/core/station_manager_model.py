@@ -152,7 +152,7 @@ def build_station_manager_snapshot(config_manager) -> StationManagerSnapshot:
 
     service_cards = [
         StatusLight("RadioDJ", *_service_tuple(service_lookup(live_status, "RadioDJ"))),
-        StatusLight("Voicebox", *_service_tuple(service_lookup(live_status, "Voicebox"))),
+        StatusLight("Piper", *_service_tuple(service_lookup(live_status, "Piper"))),
         StatusLight("LiveDJ", *_service_tuple(service_lookup(live_status, "LiveDJ Watcher"))),
         StatusLight("News", *_service_tuple(service_lookup(live_status, "News Tasks"))),
         StatusLight("Requests", *_service_tuple(service_lookup(live_status, "Request Watcher"))),

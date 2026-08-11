@@ -43,7 +43,7 @@ LIGHT_COLORS = {
 class BroadcastingManagerPage(BasePage):
     page_id = "broadcasting_manager"
     page_title = "Broadcasting"
-    page_subtitle = "Monitor RadioDJ, Voicebox, automation, audio output, and today's schedule"
+    page_subtitle = "Monitor RadioDJ, Piper, automation, audio output, and today's schedule"
     page_help = (
         "Read-only RadioDJ monitoring in this version. Automation actions require confirmation. "
         "Development Mode prevents production database changes and live publishing."

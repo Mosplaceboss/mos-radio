@@ -86,5 +86,5 @@ def validate_voice(voice: dict[str, Any]) -> list[str]:
     if not voice.get("display_name", "").strip():
         errors.append("Display Name is required.")
     if not voice.get("voicebox_id", "").strip():
-        errors.append("Voicebox ID is required.")
+        errors.append("Voice Model ID is required.")
     return errors

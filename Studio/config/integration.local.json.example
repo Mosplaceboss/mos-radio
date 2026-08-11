@@ -6,6 +6,9 @@
     "news_folder": "",
     "requests_folder": "",
     "radiodj_executable": "",
+    "tts_provider": "piper",
+    "tts_api_url": "http://127.0.0.1:5000",
+    "piper_api_url": "http://127.0.0.1:5000",
     "voicebox_api_url": "http://127.0.0.1:7860"
   },
   "now_playing_file": "",

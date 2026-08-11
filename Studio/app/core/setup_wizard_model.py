@@ -32,7 +32,7 @@ class SetupWizardData:
     platform_root: str = DEFAULT_PLATFORM_ROOT
     radiodj_path: str = ""
     music_library_path: str = ""
-    voicebox_api_url: str = "http://127.0.0.1:7860"
+    voicebox_api_url: str = "http://127.0.0.1:5000"
     voice_output_path: str = ""
     livedj_folder: str = ""
     news_folder: str = ""
@@ -94,7 +94,16 @@ def load_setup_data(config_manager) -> SetupWizardData:
         platform_root=root,
         radiodj_path=paths.get("radiodj", PATH_DEFINITIONS["radiodj"]["default"]),
         music_library_path=paths.get("music_library", PATH_DEFINITIONS["music_library"]["default"]),
-        voicebox_api_url=local_station.get("voicebox_api_url", station.get("voicebox_api_url", "http://127.0.0.1:7860")),
+        voicebox_api_url=local_station.get(
+            "tts_api_url",
+            local_station.get(
+                "piper_api_url",
+                local_station.get(
+                    "voicebox_api_url",
+                    station.get("tts_api_url", station.get("piper_api_url", station.get("voicebox_api_url", "http://127.0.0.1:5000"))),
+                ),
+            ),
+        ),
         voice_output_path=paths.get("audio_generated", str(Path(root) / "Audio" / "Generated")),
         livedj_folder=local_station.get("livedj_folder", paths.get("automation_livedj", str(Path(root) / "Automation" / "LiveDJ"))),
         news_folder=local_station.get("news_folder", paths.get("automation_news", str(Path(root) / "Automation" / "News"))),
@@ -143,6 +152,9 @@ def test_setup(data: SetupWizardData, config_manager) -> SetupWizardSnapshot:
         "news_folder": data.news_folder,
         "requests_folder": data.requests_folder,
         "radiodj_executable": str(Path(data.radiodj_path) / "RadioDJ.exe"),
+        "tts_provider": "piper",
+        "tts_api_url": data.voicebox_api_url,
+        "piper_api_url": data.voicebox_api_url,
         "voicebox_api_url": data.voicebox_api_url,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
@@ -150,7 +162,10 @@ def test_setup(data: SetupWizardData, config_manager) -> SetupWizardSnapshot:
     settings = config_manager.load("settings", {})
     settings["station_name"] = data.station_name
     settings.setdefault("integration", {})
-    settings["integration"]["voicebox_api_url"] = data.voicebox_api_url
+    settings["integration"]["tts_provider"] = "piper"
+    settings["integration"]["tts_api_url"] = data.voicebox_api_url
+    settings["integration"]["piper_api_url"] = data.voicebox_api_url
+    settings["integration"]["tts_health_path"] = "/voices"
     config_manager.save("settings", settings)
 
     connection_results = [
@@ -196,6 +211,9 @@ def apply_setup(data: SetupWizardData, config_manager) -> None:
         "news_folder": data.news_folder,
         "requests_folder": data.requests_folder,
         "radiodj_executable": str(Path(data.radiodj_path) / "RadioDJ.exe"),
+        "tts_provider": "piper",
+        "tts_api_url": data.voicebox_api_url,
+        "piper_api_url": data.voicebox_api_url,
         "voicebox_api_url": data.voicebox_api_url,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
@@ -204,7 +222,10 @@ def apply_setup(data: SetupWizardData, config_manager) -> None:
     settings["station_name"] = data.station_name
     settings["setup_complete"] = True
     settings.setdefault("integration", {})
-    settings["integration"]["voicebox_api_url"] = data.voicebox_api_url
+    settings["integration"]["tts_provider"] = "piper"
+    settings["integration"]["tts_api_url"] = data.voicebox_api_url
+    settings["integration"]["piper_api_url"] = data.voicebox_api_url
+    settings["integration"]["tts_health_path"] = "/voices"
     if data.logo_path:
         settings["station_logo"] = data.logo_path
     config_manager.save("settings", settings)

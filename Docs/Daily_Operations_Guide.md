@@ -5,7 +5,7 @@ Use the **Daily Operations** screen as your everyday home page.
 ## What you see
 
 - **Station On Air** — whether a show is scheduled right now
-- **Service status lights** — RadioDJ, Voicebox, LiveDJ, News, Requests, Website
+- **Service status lights** — RadioDJ, Piper, LiveDJ, News, Requests, Website
 - **Current host, format, and now playing**
 - **Next scheduled event**
 - **Today's advertising**
@@ -30,9 +30,9 @@ Every action asks for confirmation first.
 | Alert | What to do |
 |-------|------------|
 | RadioDJ stopped | Open RadioDJ or check the broadcast PC |
-| Voicebox disconnected | Confirm Voicebox is running and the API address is correct |
+| Piper disconnected | Confirm Piper is running and the TTS API address is correct (default `http://127.0.0.1:5000`) |
 | Watcher stopped | Restart the approved watcher from Daily Operations |
-| Watcher looks frozen | Restart LiveDJ and/or Request Watcher; also confirm Voicebox is running |
+| Watcher looks frozen | Restart LiveDJ and/or Request Watcher; also confirm Piper is running |
 | Missing audio | Check the Audio Monitoring tab in Broadcasting |
 | Stale news | Run News Now or check the News automation folder |
 

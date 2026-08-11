@@ -24,7 +24,7 @@ LIGHT_COLORS = {
     HEALTH_ERROR: StudioTheme.DANGER,
 }
 
-SERVICE_LIGHTS = ("RadioDJ", "Voicebox", "LiveDJ", "News", "Requests", "Internet")
+SERVICE_LIGHTS = ("RadioDJ", "Piper", "LiveDJ", "News", "Requests", "Internet")
 
 
 class DashboardPage(BasePage):

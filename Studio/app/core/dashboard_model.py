@@ -245,7 +245,7 @@ def build_dashboard_snapshot(config_manager) -> DashboardSnapshot:
         _service_light(live_status, "LiveDJ Watcher", "LiveDJ"),
         _service_light(live_status, "News Tasks", "News"),
         _service_light(live_status, "Request Watcher", "Requests"),
-        _service_light(live_status, "Voicebox", "Voicebox"),
+        _service_light(live_status, "Piper", "Piper"),
         _service_light(live_status, "RadioDJ", "RadioDJ"),
         _service_light(live_status, "Internet", "Internet"),
         StatusLight("Now Playing", now_playing_status, now_playing_detail),

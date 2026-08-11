@@ -10,6 +10,12 @@ from app.core.paths import repo_root, studio_root
 
 DEFAULT_INTEGRATION: dict[str, Any] = {
     "radiodj_process": "RadioDJ.exe",
+    # Piper is the production TTS engine. Voicebox keys remain for legacy installs.
+    "tts_provider": "piper",
+    "tts_api_url": "http://127.0.0.1:5000",
+    "tts_health_path": "/voices",
+    "piper_api_url": "http://127.0.0.1:5000",
+    "piper_health_path": "/voices",
     "voicebox_api_url": "http://127.0.0.1:7860",
     "voicebox_health_path": "/",
     "livedj_process": "MosLiveDJ.exe",
@@ -74,13 +80,16 @@ def base_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
                         integration["live_paths"][target].update(paths)
             else:
                 integration[key] = value
-    return integration
+    from app.core.tts_settings import apply_tts_defaults
+
+    return apply_tts_defaults(integration)
 
 
 def normalize_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
     from app.core.live_connector import merge_integration_settings
+    from app.core.tts_settings import apply_tts_defaults
 
-    return merge_integration_settings(settings)
+    return apply_tts_defaults(merge_integration_settings(settings))
 
 
 def operation_mode(settings: dict[str, Any]) -> str:

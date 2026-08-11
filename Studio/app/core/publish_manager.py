@@ -85,11 +85,16 @@ def publish_livedj(config_manager, integration: dict[str, Any]) -> tuple[bool, s
 def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
     settings = config_manager.load("settings", {})
     from app.core.integration_settings import is_production_mode
+    from app.core.tts_settings import tts_fields_for_requests
 
     if not is_production_mode(settings):
         return False, "Live publishing is disabled in Development Mode."
 
     data = normalize_requests_data(config_manager.load("requests", {}))
+    # Always publish the active Studio TTS endpoint so Request Watcher uses Piper
+    # (or legacy Voicebox) instead of a hard-coded retired Voicebox URL.
+    data.update(tts_fields_for_requests(integration))
+    data = normalize_requests_data(data)
     errors, _warnings = validate_requests_settings(data)
     if errors:
         return False, "Validation failed:\n" + "\n".join(errors)

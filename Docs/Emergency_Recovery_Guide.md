@@ -11,7 +11,7 @@ Studio is designed **not** to delete or move live station files automatically. A
 Refresh status and read alerts in plain English. Note which service is red:
 
 - RadioDJ
-- Voicebox
+- Piper
 - LiveDJ watcher
 - News tasks
 - Request watcher
@@ -22,9 +22,9 @@ Refresh status and read alerts in plain English. Note which service is red:
 | Problem | Try this |
 |---------|----------|
 | RadioDJ not running | Open RadioDJ from Daily Operations |
-| Voicebox down | Restart Voicebox on its PC, then refresh |
+| Piper down | Restart Piper TTS on its PC, then refresh |
 | LiveDJ watcher stopped | Restart LiveDJ Watcher (confirm when asked) |
-| LiveDJ / Requests look frozen | Restart the matching watcher; confirm Voicebox is up (Kathy and request intros need it) |
+| LiveDJ / Requests look frozen | Restart the matching watcher; confirm Piper is up (Kathy and request intros need it) |
 | News stale | Run News Now (confirm when asked) |
 | Requests unavailable | Restart Request Watcher (confirm when asked) |
 

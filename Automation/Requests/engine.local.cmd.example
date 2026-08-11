@@ -1,5 +1,7 @@
 @echo off
 REM Copy to engine.local.cmd and point at your real Request Watcher.
+REM Request intros use Piper TTS (tts_provider/tts_api_url in requests.json).
+REM Do not point the watcher at Voicebox — Studio publishes Piper by default.
 REM Example (adjust path to your installed MoRequestsWatcher):
 REM   start "" "D:\MosPlaceRadioPlatform\Automation\Requests\MoRequestsWatcher.exe"
 REM   echo. > "%~dp0.running"

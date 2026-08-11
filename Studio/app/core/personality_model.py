@@ -81,7 +81,7 @@ def validate_personality(personality: dict[str, Any]) -> list[str]:
     if not personality.get("display_name", "").strip():
         errors.append("Display Name is required.")
     if not personality.get("voicebox_voice_id", "").strip():
-        errors.append("Voicebox Voice ID is required.")
+        errors.append("Piper Voice Model ID is required.")
     return errors
 
 

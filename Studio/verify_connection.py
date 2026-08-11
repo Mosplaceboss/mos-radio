@@ -50,14 +50,16 @@ def main() -> int:
             "news_folder": str(news),
             "requests_folder": str(requests),
             "radiodj_executable": "",
-            "voicebox_api_url": "http://127.0.0.1:7860",
+            "tts_provider": "piper",
+            "tts_api_url": "http://127.0.0.1:5000",
+            "piper_api_url": "http://127.0.0.1:5000",
         }
         save_local_integration(build_local_from_station(station, enabled=True))
 
         settings = ConfigManager().load("settings", {})
         results = test_connection_setup(settings)
         names = {result.name for result in results}
-        required = {"Radio PC", "LiveDJ", "News", "Request Watcher", "RadioDJ", "Voicebox API", "Internet"}
+        required = {"Radio PC", "LiveDJ", "News", "Request Watcher", "RadioDJ", "Piper API", "Internet"}
         if names != required:
             print(f"FAIL: expected {required}, got {names}")
             return 1

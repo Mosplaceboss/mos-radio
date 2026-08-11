@@ -108,7 +108,7 @@ class StationManagerPage(BasePage):
         service_row = ttk.Frame(services, style="StudioPanel.TFrame")
         service_row.pack(fill="x")
         for index, name in enumerate(
-            ("RadioDJ", "Voicebox", "LiveDJ", "News", "Requests", "Website", "Internet")
+            ("RadioDJ", "Piper", "LiveDJ", "News", "Requests", "Website", "Internet")
         ):
             cell = ttk.Frame(service_row, style="StudioPanel.TFrame")
             cell.pack(side="left", expand=True, fill="x", padx=6)
