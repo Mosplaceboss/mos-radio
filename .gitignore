@@ -14,6 +14,7 @@ Automation/**
 !Automation/**/.gitkeep
 !Automation/**/*.bat
 !Automation/**/*.example
+!Automation/**/repair_tts_to_piper.py
 Studio/assets/personalities/*
 !Studio/assets/personalities/.gitkeep
 Studio/assets/voices/*
