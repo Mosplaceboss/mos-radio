@@ -36,13 +36,25 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def import_requests_from_live(integration: dict[str, Any]) -> tuple[bool, str]:
+    from app.core.tts_settings import scrub_voicebox_endpoints, tts_fields_for_requests
+
     live = requests_live_paths(integration)
     source = live["config"]
     if not source.exists():
         return False, f"Live request config not found: {source}"
     destination = studio_config_path("requests")
     shutil.copy2(source, destination)
-    return True, "Imported live request settings into Studio development config."
+    try:
+        with destination.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            data = normalize_requests_data(data)
+            data.update(tts_fields_for_requests(integration))
+            scrub_voicebox_endpoints(data, str(data.get("tts_api_url") or "http://127.0.0.1:5000"))
+            _write_json(destination, data)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return True, "Imported live request settings into Studio (TTS forced to Piper)."
 
 
 def import_news_from_live(integration: dict[str, Any]) -> tuple[bool, str]:
@@ -178,8 +190,26 @@ def restore_livedj_backup(integration: dict[str, Any]) -> tuple[bool, str]:
 
 
 def restore_requests_backup(integration: dict[str, Any]) -> tuple[bool, str]:
+    from app.core.tts_settings import scrub_voicebox_endpoints, tts_fields_for_requests
+
     live = requests_live_paths(integration)
-    return restore_last_backup("requests", {"requests": live["config"]})
+    ok, message = restore_last_backup("requests", {"requests": live["config"]})
+    if not ok:
+        return ok, message
+    destination = live["config"]
+    if destination.exists():
+        try:
+            with destination.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if isinstance(data, dict):
+                data = normalize_requests_data(data)
+                data.update(tts_fields_for_requests(integration))
+                scrub_voicebox_endpoints(data, str(data.get("tts_api_url") or "http://127.0.0.1:5000"))
+                _write_json(destination, data)
+                return True, f"{message} TTS remapped to Piper so Voicebox cannot return."
+        except (OSError, json.JSONDecodeError) as exc:
+            return True, f"{message} (TTS scrub skipped: {exc})"
+    return ok, message
 
 
 def restore_news_backup(integration: dict[str, Any]) -> tuple[bool, str]:
