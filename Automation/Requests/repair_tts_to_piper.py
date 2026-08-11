@@ -10,16 +10,7 @@ from pathlib import Path
 
 PIPER_URL = "http://127.0.0.1:5000"
 PIPER_HEALTH = "/voices"
-
-VOICEBOX_KEYS = (
-    "voicebox_api_url",
-    "voicebox_url",
-    "voicebox_endpoint",
-    "voicebox_health_path",
-    "vb_api_url",
-    "vb_url",
-    "use_voicebox",
-)
+PIPER_VOICE = "mos-place-requests-v1"
 
 
 def repair(path: Path) -> None:
@@ -37,15 +28,24 @@ def repair(path: Path) -> None:
         "tts_api_url": PIPER_URL,
         "tts_health_path": PIPER_HEALTH,
         "voice_engine": "piper",
+        "intro_engine": "piper",
+        "intro_tts_provider": "piper",
         "use_piper": True,
+        "forbid_voicebox": True,
+        "block_voicebox": True,
         "voice_api_url": PIPER_URL,
         "piper_api_url": PIPER_URL,
         "piper_health_path": PIPER_HEALTH,
+        "piper_voice": PIPER_VOICE,
+        "piper_voice_id": PIPER_VOICE,
+        "intro_voice_model": PIPER_VOICE,
+        "intro_voice_id": PIPER_VOICE,
+        "request_voice_id": PIPER_VOICE,
     }
     data.update(piper_fields)
     for key in list(data.keys()):
         lowered = key.lower()
-        if lowered in {item.lower() for item in VOICEBOX_KEYS} or lowered.startswith("voicebox"):
+        if "voicebox" in lowered or lowered in {"vb_api_url", "vb_url", "vb_voice_id", "use_voicebox"}:
             data.pop(key, None)
             continue
         value = data.get(key)
@@ -56,14 +56,12 @@ def repair(path: Path) -> None:
                 data[key] = PIPER_HEALTH
             else:
                 data.pop(key, None)
-    data.pop("use_voicebox", None)
 
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"Repaired {path}")
     print(f"Backup: {backup}")
-    print(f"TTS is Piper-only at {PIPER_URL}")
-    print("All Voicebox fields removed.")
-    print("Restart MoRequestsWatcher now.")
+    print(f"Request intros: Piper only ({PIPER_URL}, voice={PIPER_VOICE})")
+    print("Voicebox fields removed. Restart MoRequestsWatcher now.")
 
 
 def main() -> int:
