@@ -8,8 +8,7 @@
     "radiodj_executable": "",
     "tts_provider": "piper",
     "tts_api_url": "http://127.0.0.1:5000",
-    "piper_api_url": "http://127.0.0.1:5000",
-    "voicebox_api_url": "http://127.0.0.1:5000"
+    "piper_api_url": "http://127.0.0.1:5000"
   },
   "now_playing_file": "",
   "live_paths": {

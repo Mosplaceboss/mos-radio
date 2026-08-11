@@ -43,7 +43,6 @@ DEFAULT_STATION = {
     "tts_provider": DEFAULT_TTS_PROVIDER,
     "tts_api_url": DEFAULT_PIPER_API_URL,
     "piper_api_url": DEFAULT_PIPER_API_URL,
-    "voicebox_api_url": DEFAULT_PIPER_API_URL,
 }
 
 
@@ -151,10 +150,9 @@ def build_local_from_station(station: dict[str, str], *, enabled: bool = True) -
         "tts_provider": station.get("tts_provider", DEFAULT_STATION["tts_provider"]),
         "tts_api_url": station.get(
             "tts_api_url",
-            station.get("piper_api_url", station.get("voicebox_api_url", DEFAULT_STATION["tts_api_url"])),
+            station.get("piper_api_url", DEFAULT_STATION["tts_api_url"]),
         ),
         "piper_api_url": station.get("piper_api_url", DEFAULT_STATION["piper_api_url"]),
-        "voicebox_api_url": station.get("voicebox_api_url", DEFAULT_STATION["voicebox_api_url"]),
         "live_paths": live_paths,
         "engine_scripts": engine_scripts,
     }
@@ -176,7 +174,6 @@ def ensure_local_integration_template() -> Path:
         "tts_provider": DEFAULT_TTS_PROVIDER,
         "tts_api_url": DEFAULT_PIPER_API_URL,
         "piper_api_url": DEFAULT_PIPER_API_URL,
-        "voicebox_api_url": DEFAULT_PIPER_API_URL,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
     return path

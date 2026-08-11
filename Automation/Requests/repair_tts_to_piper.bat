@@ -1,5 +1,5 @@
 @echo off
-REM Emergency repair: rewrite requests.json TTS endpoints from Voicebox to Piper.
+REM Emergency repair: rewrite requests.json to Piper-only and remove Voicebox fields.
 REM Run on the Office PC inside Automation\Requests, then restart MoRequestsWatcher.
 setlocal
 set "CFG=%~dp0requests.json"

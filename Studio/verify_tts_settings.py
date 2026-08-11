@@ -1,4 +1,4 @@
-"""Verify Piper-only TTS for Studio and requests publish (Voicebox retired)."""
+"""Verify requests TTS is Piper-only with no Voicebox fields."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ from app.core.integration_settings import DEFAULT_INTEGRATION, normalize_integra
 from app.core.requests_model import normalize_requests_data
 from app.core.tts_settings import (
     DEFAULT_PIPER_API_URL,
+    REQUEST_VOICEBOX_KEYS,
     TTS_PROVIDER_PIPER,
+    remove_voicebox_from_requests,
     resolve_tts_settings,
-    scrub_voicebox_endpoints,
     tts_fields_for_requests,
 )
 
@@ -24,56 +25,57 @@ def main() -> int:
 
     if DEFAULT_INTEGRATION.get("tts_provider") != TTS_PROVIDER_PIPER:
         errors.append("DEFAULT_INTEGRATION tts_provider is not piper")
-    if "5000" not in str(DEFAULT_INTEGRATION.get("tts_api_url", "")):
-        errors.append("DEFAULT_INTEGRATION tts_api_url is not Piper port 5000")
-    if "7860" in str(DEFAULT_INTEGRATION.get("voicebox_api_url", "")):
-        errors.append("DEFAULT_INTEGRATION still points voicebox_api_url at Voicebox :7860")
+    for key in REQUEST_VOICEBOX_KEYS:
+        if key in DEFAULT_INTEGRATION:
+            errors.append(f"DEFAULT_INTEGRATION still includes {key}")
 
-    settings = {
-        "integration": {
-            "tts_provider": "voicebox",
-            "voicebox_api_url": "http://127.0.0.1:7860",
-        }
-    }
-    integration = normalize_integration_settings(settings)
+    integration = normalize_integration_settings(
+        {"integration": {"voicebox_api_url": "http://127.0.0.1:7860", "tts_provider": "voicebox"}}
+    )
     tts = resolve_tts_settings(integration)
     if tts["provider"] != TTS_PROVIDER_PIPER:
-        errors.append(f"Forced provider={tts['provider']}, expected piper")
+        errors.append(f"provider={tts['provider']}, expected piper")
     if tts["api_url"] != DEFAULT_PIPER_API_URL.rstrip("/"):
-        errors.append(f"Forced api_url={tts['api_url']}, expected {DEFAULT_PIPER_API_URL}")
-    if "7860" in str(integration.get("voicebox_api_url", "")):
-        errors.append("apply_tts_defaults left Voicebox :7860 in voicebox_api_url")
-    if integration.get("voicebox_api_url") != DEFAULT_PIPER_API_URL.rstrip("/"):
-        errors.append("Legacy voicebox_api_url was not remapped to Piper")
+        errors.append(f"api_url={tts['api_url']}, expected Piper")
+    for key in REQUEST_VOICEBOX_KEYS:
+        if key in integration:
+            errors.append(f"apply_tts_defaults left {key} on integration")
 
     fields = tts_fields_for_requests(integration)
     if fields.get("tts_provider") != "piper":
-        errors.append("Published requests TTS provider is not piper")
-    if fields.get("use_voicebox") is not False:
-        errors.append("Published requests did not disable use_voicebox")
-    if "7860" in str(fields.get("voicebox_api_url", "")):
-        errors.append("Published voicebox_api_url still points at Voicebox")
-    if fields.get("voicebox_api_url") != fields.get("tts_api_url"):
-        errors.append("Legacy voicebox_api_url was not remapped to the Piper URL")
+        errors.append("requests TTS provider is not piper")
+    for key in REQUEST_VOICEBOX_KEYS:
+        if key in fields:
+            errors.append(f"tts_fields_for_requests still includes {key}")
+    if any("voicebox" in key.lower() for key in fields):
+        errors.append("tts_fields_for_requests still has a voicebox-named key")
 
     requests = normalize_requests_data(
         {
             "tts_provider": "voicebox",
             "voicebox_api_url": "http://127.0.0.1:7860",
+            "voicebox_url": "http://127.0.0.1:7860",
+            "use_voicebox": True,
             "allowed_formats": ["Classic Rock"],
         }
     )
     if requests.get("tts_provider") != "piper":
         errors.append("normalize_requests_data did not force piper")
-    if "7860" in str(requests.get("tts_api_url", "")) or "7860" in str(requests.get("voicebox_api_url", "")):
-        errors.append("normalize_requests_data left a Voicebox :7860 URL")
+    for key in REQUEST_VOICEBOX_KEYS:
+        if key in requests:
+            errors.append(f"normalize_requests_data left {key}")
+    if any(isinstance(v, str) and "7860" in v for v in requests.values()):
+        errors.append("normalize_requests_data left a :7860 URL")
 
-    scrubbed = scrub_voicebox_endpoints(
-        {"voicebox_api_url": "http://127.0.0.1:7860", "tts_api_url": "http://127.0.0.1:7860"},
-        DEFAULT_PIPER_API_URL,
+    scrubbed = remove_voicebox_from_requests(
+        {
+            "voicebox_api_url": "http://127.0.0.1:7860",
+            "tts_api_url": "http://127.0.0.1:5000",
+            "use_voicebox": True,
+        }
     )
-    if any("7860" in str(value) for value in scrubbed.values() if isinstance(value, str)):
-        errors.append("scrub_voicebox_endpoints left a :7860 URL")
+    if "voicebox_api_url" in scrubbed or "use_voicebox" in scrubbed:
+        errors.append("remove_voicebox_from_requests did not delete Voicebox keys")
 
     if errors:
         print("TTS SETTINGS FAILURES:")
@@ -81,9 +83,9 @@ def main() -> int:
             print(f"  - {error}")
         return 1
 
-    print("Piper-only TTS settings verified.")
+    print("Piper-only request TTS verified (no Voicebox fields).")
     print(f"Default API: {DEFAULT_PIPER_API_URL}")
-    print(f"Legacy voicebox_api_url remapped to: {fields.get('voicebox_api_url')}")
+    print(f"Published keys: {sorted(fields)}")
     return 0
 
 

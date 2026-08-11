@@ -233,7 +233,7 @@ class RequestsPage(BasePage):
             info,
             text=(
                 "Settings are written to Studio/config/requests.json and published to the live "
-                "Request Watcher. Request intros use Piper only — Voicebox is retired. "
+                "Request Watcher. Request intros use Piper only — Voicebox is not used at all. "
                 "If intros still hit Voicebox, click Fix TTS → Piper Only and restart the watcher."
             ),
             style="StudioCard.TLabel",
@@ -546,9 +546,8 @@ class RequestsPage(BasePage):
     def _repair_tts_piper(self) -> None:
         if not confirm_action(
             "Fix TTS → Piper Only",
-            "Rewrite live request TTS settings to Piper only?\n"
-            "This remaps any Voicebox (:7860) URLs to Piper and creates a backup.\n"
-            "Restart Request Watcher after this.",
+            "Rewrite live request TTS to Piper only and remove every Voicebox field?\n"
+            "A backup is created first. Restart Request Watcher after this.",
             self._settings(),
         ):
             return

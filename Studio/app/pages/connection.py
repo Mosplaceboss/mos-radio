@@ -136,7 +136,7 @@ class ConnectionSetupPage(BasePage):
                 variable.set(
                     station.get(
                         "tts_api_url",
-                        station.get("piper_api_url", station.get("voicebox_api_url", "http://127.0.0.1:5000")),
+                        station.get("piper_api_url", "http://127.0.0.1:5000"),
                     )
                 )
             else:

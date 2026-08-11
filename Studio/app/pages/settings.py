@@ -206,12 +206,16 @@ class SettingsPage(BasePage):
                 "voice_api_url": tts_url,
                 "voice_engine": "piper",
                 "use_piper": True,
-                "use_voicebox": False,
-                # Legacy key remapped to Piper so request watchers cannot call Voicebox.
-                "voicebox_api_url": tts_url,
-                "voicebox_health_path": "/voices",
             }
         )
+        for legacy_key in (
+            "voicebox_api_url",
+            "voicebox_url",
+            "voicebox_endpoint",
+            "voicebox_health_path",
+            "use_voicebox",
+        ):
+            integration.pop(legacy_key, None)
         livedj_paths["personalities"] = self._livedj_personalities.get().strip()
         requests_paths["config"] = self._requests_config.get().strip()
         news_paths["config"] = self._news_config.get().strip()

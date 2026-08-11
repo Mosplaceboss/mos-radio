@@ -1,34 +1,34 @@
-"""Resolve station TTS settings. Production uses Piper only."""
+"""Resolve station TTS settings. Production uses Piper only for requests."""
 
 from __future__ import annotations
 
 from typing import Any
 
 TTS_PROVIDER_PIPER = "piper"
-# Retained only so old configs that say "voicebox" can be remapped to Piper.
-TTS_PROVIDER_VOICEBOX = "voicebox"
 TTS_PROVIDERS = (TTS_PROVIDER_PIPER,)
 
 DEFAULT_TTS_PROVIDER = TTS_PROVIDER_PIPER
 DEFAULT_PIPER_API_URL = "http://127.0.0.1:5000"
 DEFAULT_PIPER_HEALTH_PATH = "/voices"
 
-# Service light / alert name.
 TTS_SERVICE_PIPER = "Piper"
 # Alias for older UI lookups that still ask for "Voicebox".
 TTS_SERVICE_VOICEBOX = "Piper"
 
-VOICEBOX_LEGACY_KEYS = (
+# Keys that must never appear on live requests.json.
+REQUEST_VOICEBOX_KEYS = (
     "voicebox_api_url",
     "voicebox_url",
     "voicebox_endpoint",
+    "voicebox_health_path",
     "vb_api_url",
     "vb_url",
+    "use_voicebox",
 )
 
 
 def normalize_tts_provider(value: Any) -> str:
-    """Always return piper. Voicebox is retired for Mo's Place production."""
+    """Always return piper. Voicebox is retired for request TTS."""
     _ = value
     return TTS_PROVIDER_PIPER
 
@@ -49,7 +49,6 @@ def _first_nonempty(*values: Any) -> str:
 def resolve_tts_settings(integration: dict[str, Any] | None) -> dict[str, Any]:
     """Return canonical Piper TTS settings for monitoring, UI, and request publish."""
     data = integration if isinstance(integration, dict) else {}
-    provider = TTS_PROVIDER_PIPER
 
     url = _first_nonempty(
         data.get("tts_api_url"),
@@ -57,12 +56,7 @@ def resolve_tts_settings(integration: dict[str, Any] | None) -> dict[str, Any]:
         data.get("voice_api_url"),
     )
     if not url:
-        legacy = _first_nonempty(*(data.get(key) for key in VOICEBOX_LEGACY_KEYS))
-        # Only reuse a legacy URL if it is already pointing at Piper (not :7860).
-        if legacy and not _looks_like_legacy_voicebox_url(legacy):
-            url = legacy
-        else:
-            url = DEFAULT_PIPER_API_URL
+        url = DEFAULT_PIPER_API_URL
 
     # Never keep a retired Voicebox endpoint.
     if _looks_like_legacy_voicebox_url(url):
@@ -77,7 +71,7 @@ def resolve_tts_settings(integration: dict[str, Any] | None) -> dict[str, Any]:
         health_path = f"/{health_path}"
 
     return {
-        "provider": provider,
+        "provider": TTS_PROVIDER_PIPER,
         "api_url": url.rstrip("/"),
         "health_path": health_path,
         "service_name": TTS_SERVICE_PIPER,
@@ -87,7 +81,7 @@ def resolve_tts_settings(integration: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def apply_tts_defaults(integration: dict[str, Any]) -> dict[str, Any]:
-    """Force Piper fields on an integration dict and scrub Voicebox :7860 leftovers."""
+    """Force Piper fields on Studio integration settings."""
     resolved = resolve_tts_settings(integration)
     integration["tts_provider"] = resolved["provider"]
     integration["tts_api_url"] = resolved["api_url"]
@@ -98,55 +92,54 @@ def apply_tts_defaults(integration: dict[str, Any]) -> dict[str, Any]:
     integration["voice_engine"] = TTS_PROVIDER_PIPER
     integration["use_piper"] = True
     integration["use_voicebox"] = False
-    # MoRequestsWatcher and older tools still read voicebox_api_url. Point it at
-    # Piper so request intros cannot fall back to the retired Voicebox service.
-    for key in VOICEBOX_LEGACY_KEYS:
-        integration[key] = resolved["api_url"]
-    integration["voicebox_health_path"] = resolved["health_path"]
+    # Do not keep a Voicebox URL around for anything request-related.
+    for key in REQUEST_VOICEBOX_KEYS:
+        integration.pop(key, None)
     return integration
 
 
 def tts_fields_for_requests(integration: dict[str, Any] | None) -> dict[str, Any]:
-    """Fields published into live requests.json for MoRequestsWatcher.
+    """Piper-only fields published into live requests.json.
 
-    Includes Piper-first keys plus legacy Voicebox-named keys remapped to the
-    Piper URL so engines that still look up voicebox_api_url hit Piper only.
+    Voicebox keys are intentionally omitted — requests must not call Voicebox.
     """
     resolved = resolve_tts_settings(integration)
     url = resolved["api_url"]
     health = resolved["health_path"]
-    fields = {
+    return {
         "tts_provider": TTS_PROVIDER_PIPER,
         "tts_api_url": url,
         "tts_health_path": health,
         "voice_engine": TTS_PROVIDER_PIPER,
         "use_piper": True,
-        "use_voicebox": False,
         "voice_api_url": url,
         "piper_api_url": url,
         "piper_health_path": health,
-        # Legacy name → Piper endpoint (do not leave empty; empty may trigger
-        # hard-coded Voicebox defaults inside older watchers).
-        "voicebox_api_url": url,
-        "voicebox_url": url,
-        "voicebox_endpoint": url,
-        "voicebox_health_path": health,
     }
-    return fields
 
 
-def scrub_voicebox_endpoints(data: dict[str, Any], piper_url: str) -> dict[str, Any]:
-    """Rewrite any Voicebox :7860 values in a config dict to the Piper URL."""
-    target = piper_url.rstrip("/") or DEFAULT_PIPER_API_URL.rstrip("/")
-    for key, value in list(data.items()):
-        if not isinstance(value, str):
+def remove_voicebox_from_requests(data: dict[str, Any]) -> dict[str, Any]:
+    """Delete every Voicebox field from a requests config dict."""
+    for key in list(data.keys()):
+        lowered = key.lower()
+        if lowered in {item.lower() for item in REQUEST_VOICEBOX_KEYS} or lowered.startswith("voicebox"):
+            data.pop(key, None)
             continue
-        if _looks_like_legacy_voicebox_url(value):
-            data[key] = target
-        elif key.lower() in {item.lower() for item in VOICEBOX_LEGACY_KEYS} and not value.strip():
-            data[key] = target
+        value = data.get(key)
+        if isinstance(value, str) and _looks_like_legacy_voicebox_url(value):
+            # Non-voicebox-named fields must not keep a :7860 URL either.
+            if key in {"tts_api_url", "piper_api_url", "voice_api_url", "tts_health_path", "piper_health_path"}:
+                data[key] = DEFAULT_PIPER_API_URL if "health" not in key else DEFAULT_PIPER_HEALTH_PATH
+            else:
+                data.pop(key, None)
     data["tts_provider"] = TTS_PROVIDER_PIPER
     data["voice_engine"] = TTS_PROVIDER_PIPER
     data["use_piper"] = True
-    data["use_voicebox"] = False
+    data.pop("use_voicebox", None)
     return data
+
+
+def scrub_voicebox_endpoints(data: dict[str, Any], piper_url: str = "") -> dict[str, Any]:
+    """Backward-compatible alias — strips Voicebox from request configs."""
+    _ = piper_url
+    return remove_voicebox_from_requests(data)

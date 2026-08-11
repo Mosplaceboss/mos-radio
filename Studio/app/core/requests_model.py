@@ -76,15 +76,16 @@ def normalize_requests_data(data: dict[str, Any]) -> dict[str, Any]:
     from app.core.tts_settings import (
         DEFAULT_PIPER_API_URL,
         TTS_PROVIDER_PIPER,
-        scrub_voicebox_endpoints,
+        remove_voicebox_from_requests,
         tts_fields_for_requests,
     )
 
-    # Requests always use Piper. Remap any Voicebox :7860 leftovers so intros
-    # cannot reach the retired Voicebox service.
+    # Requests use Piper only — strip every Voicebox field.
     record.update(tts_fields_for_requests(record))
-    scrub_voicebox_endpoints(record, str(record.get("tts_api_url") or DEFAULT_PIPER_API_URL))
+    remove_voicebox_from_requests(record)
     record["tts_provider"] = TTS_PROVIDER_PIPER
+    if not str(record.get("tts_api_url") or "").strip():
+        record["tts_api_url"] = DEFAULT_PIPER_API_URL
 
     formats = record.get("allowed_formats", [])
     if isinstance(formats, str):

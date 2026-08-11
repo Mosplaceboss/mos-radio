@@ -1,4 +1,4 @@
-"""Rewrite a live requests.json so every TTS URL points at Piper, not Voicebox."""
+"""Rewrite a live requests.json to Piper-only TTS and remove all Voicebox fields."""
 
 from __future__ import annotations
 
@@ -11,10 +11,15 @@ from pathlib import Path
 PIPER_URL = "http://127.0.0.1:5000"
 PIPER_HEALTH = "/voices"
 
-
-def _is_voicebox(url: str) -> bool:
-    lowered = url.lower()
-    return "7860" in lowered or "voicebox" in lowered
+VOICEBOX_KEYS = (
+    "voicebox_api_url",
+    "voicebox_url",
+    "voicebox_endpoint",
+    "voicebox_health_path",
+    "vb_api_url",
+    "vb_url",
+    "use_voicebox",
+)
 
 
 def repair(path: Path) -> None:
@@ -33,24 +38,31 @@ def repair(path: Path) -> None:
         "tts_health_path": PIPER_HEALTH,
         "voice_engine": "piper",
         "use_piper": True,
-        "use_voicebox": False,
         "voice_api_url": PIPER_URL,
         "piper_api_url": PIPER_URL,
         "piper_health_path": PIPER_HEALTH,
-        "voicebox_api_url": PIPER_URL,
-        "voicebox_url": PIPER_URL,
-        "voicebox_endpoint": PIPER_URL,
-        "voicebox_health_path": PIPER_HEALTH,
     }
     data.update(piper_fields)
-    for key, value in list(data.items()):
-        if isinstance(value, str) and _is_voicebox(value):
-            data[key] = PIPER_URL
+    for key in list(data.keys()):
+        lowered = key.lower()
+        if lowered in {item.lower() for item in VOICEBOX_KEYS} or lowered.startswith("voicebox"):
+            data.pop(key, None)
+            continue
+        value = data.get(key)
+        if isinstance(value, str) and ("7860" in value or "voicebox" in value.lower()):
+            if key in {"tts_api_url", "piper_api_url", "voice_api_url"}:
+                data[key] = PIPER_URL
+            elif "health" in key:
+                data[key] = PIPER_HEALTH
+            else:
+                data.pop(key, None)
+    data.pop("use_voicebox", None)
 
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"Repaired {path}")
     print(f"Backup: {backup}")
-    print(f"TTS now Piper-only at {PIPER_URL}")
+    print(f"TTS is Piper-only at {PIPER_URL}")
+    print("All Voicebox fields removed.")
     print("Restart MoRequestsWatcher now.")
 
 

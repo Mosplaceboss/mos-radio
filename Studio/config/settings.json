@@ -16,10 +16,7 @@
     "piper_health_path": "/voices",
     "voice_api_url": "http://127.0.0.1:5000",
     "voice_engine": "piper",
-    "use_piper": true,
-    "use_voicebox": false,
-    "voicebox_api_url": "http://127.0.0.1:5000",
-    "voicebox_health_path": "/voices"
+    "use_piper": true
   },
   "last_page": "daily_operations"
 }

@@ -23,8 +23,8 @@ Refresh status and read alerts in plain English. Note which service is red:
 |---------|----------|
 | RadioDJ not running | Open RadioDJ from Daily Operations |
 | Piper down | Restart Piper TTS on its PC, then refresh |
-| Requests still going to Voicebox | Open Requests → **Fix TTS → Piper Only**, then Restart Request Watcher |
-| Piper worked, then Voicebox returned | A Publish / Restore / Setup save rewrote `requests.json` with old `:7860` values — run Fix TTS → Piper Only and avoid restoring Voicebox-era backups |
+| Requests still going to Voicebox | Open Requests → **Fix TTS → Piper Only** (removes Voicebox fields), then Restart Request Watcher |
+| Piper worked, then Voicebox returned | A Publish / Restore rewrote `requests.json` — run Fix TTS → Piper Only; requests must not contain any `voicebox_*` keys |
 | LiveDJ watcher stopped | Restart LiveDJ Watcher (confirm when asked) |
 | LiveDJ / Requests look frozen | Restart the matching watcher; confirm Piper is up (Kathy and request intros need it) |
 | News stale | Run News Now (confirm when asked) |
