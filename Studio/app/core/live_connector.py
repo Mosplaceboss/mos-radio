@@ -221,8 +221,6 @@ def merge_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
         "tts_health_path",
         "piper_api_url",
         "piper_health_path",
-        "voicebox_api_url",
-        "voicebox_health_path",
         "now_playing_file",
     ):
         value = local.get(key)
@@ -230,7 +228,7 @@ def merge_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
             integration[key] = value.strip()
 
     if isinstance(station, dict):
-        for key in ("tts_provider", "tts_api_url", "piper_api_url", "voicebox_api_url"):
+        for key in ("tts_provider", "tts_api_url", "piper_api_url"):
             value = station.get(key, "").strip() if isinstance(station.get(key), str) else ""
             if value:
                 integration[key] = value
@@ -343,7 +341,6 @@ def test_connection_setup(settings: dict[str, Any]) -> list[ConnectionResult]:
             "tts_provider": station.get("tts_provider", DEFAULT_TTS_PROVIDER),
             "tts_api_url": station.get("tts_api_url", ""),
             "piper_api_url": station.get("piper_api_url", ""),
-            "voicebox_api_url": station.get("voicebox_api_url", ""),
         }
     )
 

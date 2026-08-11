@@ -155,7 +155,6 @@ def test_setup(data: SetupWizardData, config_manager) -> SetupWizardSnapshot:
         "tts_provider": "piper",
         "tts_api_url": data.voicebox_api_url,
         "piper_api_url": data.voicebox_api_url,
-        "voicebox_api_url": data.voicebox_api_url,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
 
@@ -166,6 +165,9 @@ def test_setup(data: SetupWizardData, config_manager) -> SetupWizardSnapshot:
     settings["integration"]["tts_api_url"] = data.voicebox_api_url
     settings["integration"]["piper_api_url"] = data.voicebox_api_url
     settings["integration"]["tts_health_path"] = "/voices"
+    settings["integration"].pop("voicebox_api_url", None)
+    settings["integration"].pop("voicebox_health_path", None)
+    settings["integration"].pop("use_voicebox", None)
     config_manager.save("settings", settings)
 
     connection_results = [
@@ -214,7 +216,6 @@ def apply_setup(data: SetupWizardData, config_manager) -> None:
         "tts_provider": "piper",
         "tts_api_url": data.voicebox_api_url,
         "piper_api_url": data.voicebox_api_url,
-        "voicebox_api_url": data.voicebox_api_url,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
 
@@ -226,6 +227,9 @@ def apply_setup(data: SetupWizardData, config_manager) -> None:
     settings["integration"]["tts_api_url"] = data.voicebox_api_url
     settings["integration"]["piper_api_url"] = data.voicebox_api_url
     settings["integration"]["tts_health_path"] = "/voices"
+    settings["integration"].pop("voicebox_api_url", None)
+    settings["integration"].pop("voicebox_health_path", None)
+    settings["integration"].pop("use_voicebox", None)
     if data.logo_path:
         settings["station_logo"] = data.logo_path
     config_manager.save("settings", settings)
