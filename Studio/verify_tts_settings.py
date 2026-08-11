@@ -47,8 +47,15 @@ def main() -> int:
     for key in REQUEST_VOICEBOX_KEYS:
         if key in fields:
             errors.append(f"tts_fields_for_requests still includes {key}")
-    if any("voicebox" in key.lower() for key in fields):
+    if any(
+        "voicebox" in key.lower() and key.lower() not in {"forbid_voicebox", "block_voicebox"}
+        for key in fields
+    ):
         errors.append("tts_fields_for_requests still has a voicebox-named key")
+    if fields.get("forbid_voicebox") is not True:
+        errors.append("tts_fields_for_requests missing forbid_voicebox=True")
+    if fields.get("intro_engine") != "piper":
+        errors.append("tts_fields_for_requests intro_engine is not piper")
 
     requests = normalize_requests_data(
         {
@@ -64,6 +71,10 @@ def main() -> int:
     for key in REQUEST_VOICEBOX_KEYS:
         if key in requests:
             errors.append(f"normalize_requests_data left {key}")
+    if requests.get("forbid_voicebox") is not True:
+        errors.append("normalize_requests_data missing forbid_voicebox")
+    if requests.get("intro_engine") != "piper":
+        errors.append("normalize_requests_data intro_engine is not piper")
     if any(isinstance(v, str) and "7860" in v for v in requests.values()):
         errors.append("normalize_requests_data left a :7860 URL")
 

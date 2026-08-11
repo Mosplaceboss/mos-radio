@@ -61,7 +61,7 @@ class RequestsPage(BasePage):
         )
         ttk.Button(
             toolbar,
-            text="Fix TTS → Piper Only",
+            text="Stop Voicebox → Piper Only",
             bootstyle="warning",
             command=self._repair_tts_piper,
         ).pack(side="left", padx=8)
@@ -545,9 +545,11 @@ class RequestsPage(BasePage):
 
     def _repair_tts_piper(self) -> None:
         if not confirm_action(
-            "Fix TTS → Piper Only",
-            "Rewrite live request TTS to Piper only and remove every Voicebox field?\n"
-            "A backup is created first. Restart Request Watcher after this.",
+            "Stop Voicebox → Piper Only",
+            "Stop Voicebox for request intros and switch to Piper only?\n"
+            "This removes every Voicebox field from live requests.json and sets\n"
+            "intro_engine/tts_provider to piper. A backup is created first.\n"
+            "Restart Request Watcher after this.",
             self._settings(),
         ):
             return
@@ -560,16 +562,16 @@ class RequestsPage(BasePage):
             if ok:
                 self.config_manager._cache.pop("requests", None)
                 self._begin_background_load()
-                Messagebox.show_info(message, "Fix TTS → Piper Only")
+                Messagebox.show_info(message, "Stop Voicebox → Piper Only")
             else:
-                Messagebox.show_error(message, "Fix TTS → Piper Only")
+                Messagebox.show_error(message, "Stop Voicebox → Piper Only")
             self.set_status(message)
 
         self._run_async_task(
             work,
             complete,
-            loading_message="Repairing live request TTS to Piper…",
-            error_title="Fix TTS → Piper Only",
+            loading_message="Switching request intros to Piper only…",
+            error_title="Stop Voicebox → Piper Only",
         )
 
     def _publish_live(self) -> None:

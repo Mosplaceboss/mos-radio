@@ -54,12 +54,10 @@ def normalize_voice(raw: dict[str, Any]) -> dict[str, Any]:
     # Request greeter and other station voices use Piper — never Voicebox.
     if not str(record.get("piper_voice_id") or "").strip():
         record["piper_voice_id"] = str(record.get("voicebox_id") or "").strip()
-    specialties = record.get("genre_specialties") or record.get("tags")
     engine = str(record.get("tts_engine") or "piper").strip().lower()
-    if engine in {"voicebox", "vb"}:
-        record["tts_engine"] = "piper"
-    else:
-        record["tts_engine"] = engine or "piper"
+    record["tts_engine"] = "piper" if engine in {"voicebox", "vb", ""} else engine
+
+    specialties = record.get("genre_specialties", [])
     if isinstance(specialties, str):
         record["genre_specialties"] = [item.strip() for item in specialties.split(",") if item.strip()]
     elif not isinstance(specialties, list):
