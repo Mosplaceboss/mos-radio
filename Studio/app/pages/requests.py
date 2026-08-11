@@ -22,7 +22,13 @@ from app.core.requests_model import (
     validate_requests_settings,
 )
 from app.core.schedule_model import TIME_OPTIONS
-from app.core.publish_manager import import_requests_from_live, integration_bundle, publish_requests, restore_requests_backup
+from app.core.publish_manager import (
+    import_requests_from_live,
+    integration_bundle,
+    publish_requests,
+    repair_live_requests_tts,
+    restore_requests_backup,
+)
 from app.pages.base_page import BasePage
 from app.ui.confirm_dialog import confirm_action
 from app.ui.theme import StudioTheme
@@ -53,6 +59,12 @@ class RequestsPage(BasePage):
         ttk.Button(toolbar, text="Import from Request System", bootstyle="secondary", command=self._import_live).pack(
             side="left"
         )
+        ttk.Button(
+            toolbar,
+            text="Fix TTS → Piper Only",
+            bootstyle="warning",
+            command=self._repair_tts_piper,
+        ).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Test Settings", bootstyle="info", command=self._test_settings).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Reload", bootstyle="secondary", command=self._load).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Restore Last Backup", bootstyle="warning", command=self._restore_live).pack(side="right")
@@ -220,8 +232,9 @@ class RequestsPage(BasePage):
         ttk.Label(
             info,
             text=(
-                "Settings are written to Studio/config/requests.json. "
-                "The Requests automation engine can consume this file when integration is enabled."
+                "Settings are written to Studio/config/requests.json and published to the live "
+                "Request Watcher. Request intros use Piper only — Voicebox is retired. "
+                "If intros still hit Voicebox, click Fix TTS → Piper Only and restart the watcher."
             ),
             style="StudioCard.TLabel",
             wraplength=760,
@@ -529,6 +542,36 @@ class RequestsPage(BasePage):
             self.set_status(message)
 
         self._run_async_task(work, complete, loading_message="Importing request settings…", error_title="Import Requests")
+
+    def _repair_tts_piper(self) -> None:
+        if not confirm_action(
+            "Fix TTS → Piper Only",
+            "Rewrite live request TTS settings to Piper only?\n"
+            "This remaps any Voicebox (:7860) URLs to Piper and creates a backup.\n"
+            "Restart Request Watcher after this.",
+            self._settings(),
+        ):
+            return
+
+        def work():
+            return repair_live_requests_tts(self.config_manager, self._integration())
+
+        def complete(result: tuple[bool, str]) -> None:
+            ok, message = result
+            if ok:
+                self.config_manager._cache.pop("requests", None)
+                self._begin_background_load()
+                Messagebox.show_info(message, "Fix TTS → Piper Only")
+            else:
+                Messagebox.show_error(message, "Fix TTS → Piper Only")
+            self.set_status(message)
+
+        self._run_async_task(
+            work,
+            complete,
+            loading_message="Repairing live request TTS to Piper…",
+            error_title="Fix TTS → Piper Only",
+        )
 
     def _publish_live(self) -> None:
         data = self._collect_data()

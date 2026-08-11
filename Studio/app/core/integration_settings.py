@@ -10,14 +10,19 @@ from app.core.paths import repo_root, studio_root
 
 DEFAULT_INTEGRATION: dict[str, Any] = {
     "radiodj_process": "RadioDJ.exe",
-    # Piper is the production TTS engine. Voicebox keys remain for legacy installs.
+    # Piper is the only production TTS engine. Legacy Voicebox-named keys are
+    # filled with the Piper URL so older request watchers cannot call :7860.
     "tts_provider": "piper",
     "tts_api_url": "http://127.0.0.1:5000",
     "tts_health_path": "/voices",
     "piper_api_url": "http://127.0.0.1:5000",
     "piper_health_path": "/voices",
-    "voicebox_api_url": "http://127.0.0.1:7860",
-    "voicebox_health_path": "/",
+    "voice_api_url": "http://127.0.0.1:5000",
+    "voice_engine": "piper",
+    "use_piper": True,
+    "use_voicebox": False,
+    "voicebox_api_url": "http://127.0.0.1:5000",
+    "voicebox_health_path": "/voices",
     "livedj_process": "MosLiveDJ.exe",
     "livedj_process_match": "",
     "livedj_process_fallbacks": [

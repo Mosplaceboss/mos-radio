@@ -85,16 +85,17 @@ def publish_livedj(config_manager, integration: dict[str, Any]) -> tuple[bool, s
 def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
     settings = config_manager.load("settings", {})
     from app.core.integration_settings import is_production_mode
-    from app.core.tts_settings import tts_fields_for_requests
+    from app.core.tts_settings import scrub_voicebox_endpoints, tts_fields_for_requests
 
     if not is_production_mode(settings):
         return False, "Live publishing is disabled in Development Mode."
 
     data = normalize_requests_data(config_manager.load("requests", {}))
-    # Always publish the active Studio TTS endpoint so Request Watcher uses Piper
-    # (or legacy Voicebox) instead of a hard-coded retired Voicebox URL.
+    # Always publish Piper endpoints. Legacy voicebox_* keys are remapped to the
+    # Piper URL so MoRequestsWatcher cannot keep calling :7860.
     data.update(tts_fields_for_requests(integration))
     data = normalize_requests_data(data)
+    scrub_voicebox_endpoints(data, str(data.get("tts_api_url") or "http://127.0.0.1:5000"))
     errors, _warnings = validate_requests_settings(data)
     if errors:
         return False, "Validation failed:\n" + "\n".join(errors)
@@ -107,7 +108,44 @@ def publish_requests(config_manager, integration: dict[str, Any]) -> tuple[bool,
 
     _write_json(destination, data)
     config_manager.save("requests", data)
-    return True, "Published request settings to live path with backup."
+    return True, (
+        "Published request settings to live path with Piper TTS "
+        f"({data.get('tts_api_url')}). Voicebox endpoints remapped."
+    )
+
+
+def repair_live_requests_tts(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:
+    """Rewrite live requests.json TTS fields to Piper-only without a full publish gate.
+
+    Safe for production recovery when today's requests are still hitting Voicebox.
+    """
+    from app.core.tts_settings import scrub_voicebox_endpoints, tts_fields_for_requests
+
+    live = requests_live_paths(integration)
+    destination = live["config"]
+    if destination.exists():
+        try:
+            with destination.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            return False, f"Could not read live requests config: {exc}"
+        create_backup("requests", {"requests": destination})
+    else:
+        data = config_manager.load("requests", {})
+
+    data = normalize_requests_data(data)
+    data.update(tts_fields_for_requests(integration))
+    data = normalize_requests_data(data)
+    scrub_voicebox_endpoints(data, str(data.get("tts_api_url") or "http://127.0.0.1:5000"))
+    _write_json(destination, data)
+    config_manager.save("requests", data)
+    logger.info("Repaired live requests TTS to Piper (%s)", data.get("tts_api_url"))
+    return True, (
+        f"Repaired live requests TTS to Piper only ({data.get('tts_api_url')}). "
+        "Restart Request Watcher so new intros use Piper."
+    )
 
 
 def publish_news(config_manager, integration: dict[str, Any]) -> tuple[bool, str]:

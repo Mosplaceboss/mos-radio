@@ -26,7 +26,6 @@ from app.core.system_status import _internet_connected, _tts_api_ok, _voicebox_a
 from app.core.tts_settings import (
     DEFAULT_PIPER_API_URL,
     DEFAULT_TTS_PROVIDER,
-    DEFAULT_VOICEBOX_API_URL,
     apply_tts_defaults,
     resolve_tts_settings,
 )
@@ -44,7 +43,7 @@ DEFAULT_STATION = {
     "tts_provider": DEFAULT_TTS_PROVIDER,
     "tts_api_url": DEFAULT_PIPER_API_URL,
     "piper_api_url": DEFAULT_PIPER_API_URL,
-    "voicebox_api_url": DEFAULT_VOICEBOX_API_URL,
+    "voicebox_api_url": DEFAULT_PIPER_API_URL,
 }
 
 
@@ -177,7 +176,7 @@ def ensure_local_integration_template() -> Path:
         "tts_provider": DEFAULT_TTS_PROVIDER,
         "tts_api_url": DEFAULT_PIPER_API_URL,
         "piper_api_url": DEFAULT_PIPER_API_URL,
-        "voicebox_api_url": DEFAULT_VOICEBOX_API_URL,
+        "voicebox_api_url": DEFAULT_PIPER_API_URL,
     }
     save_local_integration(build_local_from_station(station, enabled=True))
     return path

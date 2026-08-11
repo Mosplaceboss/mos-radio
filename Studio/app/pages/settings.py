@@ -71,7 +71,6 @@ class SettingsPage(BasePage):
         integration.pack(fill="x", pady=(16, 0))
         self._integration_frame = integration
         self._radiodj_process = ttk.StringVar()
-        self._tts_provider = ttk.StringVar(value="piper")
         self._tts_url = ttk.StringVar()
         self._livedj_personalities = ttk.StringVar()
         self._requests_config = ttk.StringVar()
@@ -79,8 +78,7 @@ class SettingsPage(BasePage):
 
         integration_fields = (
             ("RadioDJ Process", self._radiodj_process),
-            ("TTS Provider (piper/voicebox)", self._tts_provider),
-            ("Piper / TTS API URL", self._tts_url),
+            ("Piper TTS API URL", self._tts_url),
             ("LiveDJ Personalities Path", self._livedj_personalities),
             ("Requests Config Path", self._requests_config),
             ("News Config Path", self._news_config),
@@ -155,7 +153,6 @@ class SettingsPage(BasePage):
         self._auto_save.set(data.get("auto_save", True))
         self._theme.set(data.get("theme", "darkly"))
         self._radiodj_process.set(integration.get("radiodj_process", "RadioDJ.exe"))
-        self._tts_provider.set(integration.get("tts_provider", "piper"))
         self._tts_url.set(
             integration.get(
                 "tts_api_url",
@@ -196,16 +193,23 @@ class SettingsPage(BasePage):
         requests_paths = live_paths.get("requests", {})
         news_paths = live_paths.get("news", {})
 
-        provider = self._tts_provider.get().strip().lower() or "piper"
         tts_url = self._tts_url.get().strip() or "http://127.0.0.1:5000"
+        if "7860" in tts_url or "voicebox" in tts_url.lower():
+            tts_url = "http://127.0.0.1:5000"
         integration.update(
             {
                 "radiodj_process": self._radiodj_process.get().strip(),
-                "tts_provider": provider,
+                "tts_provider": "piper",
                 "tts_api_url": tts_url,
-                "tts_health_path": "/voices" if provider == "piper" else "/",
-                "piper_api_url": tts_url if provider == "piper" else integration.get("piper_api_url", ""),
-                "voicebox_api_url": tts_url if provider == "voicebox" else integration.get("voicebox_api_url", ""),
+                "tts_health_path": "/voices",
+                "piper_api_url": tts_url,
+                "voice_api_url": tts_url,
+                "voice_engine": "piper",
+                "use_piper": True,
+                "use_voicebox": False,
+                # Legacy key remapped to Piper so request watchers cannot call Voicebox.
+                "voicebox_api_url": tts_url,
+                "voicebox_health_path": "/voices",
             }
         )
         livedj_paths["personalities"] = self._livedj_personalities.get().strip()
