@@ -11,3 +11,6 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Karaoke (Dave and other hosts): never name specific songs. Ask what to sing and
+point listeners to Community at mosplaceradio.com.
