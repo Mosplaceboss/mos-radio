@@ -40,7 +40,7 @@
       "active": true,
       "default_greeting": "Here is the latest from Mo's Place Radio News.",
       "default_closing": "We'd love to hear from you — if there's anything on your mind, click Community at mosplaceradio.com.",
-      "personality_prompt": "Professional news desk delivery with clarity and authority. End newscasts with a warm Community invite at mosplaceradio.com — do not list news categories or topic buckets. For sports, if a team is not playing today, do not say there is no game — say their next game is… using supplied schedule details only.",
+      "personality_prompt": "Professional news desk delivery with clarity and authority. End newscasts with a warm Community invite at mosplaceradio.com — do not list news categories or topic buckets. For sports, if there is no news on a team, skip them and never say there is no news. If a team is not playing today, do not say there is no game — say their next game is… using supplied schedule details only.",
       "pronunciation_notes": "",
       "genre_specialties": ["News", "Announcements"],
       "default_shift": ""

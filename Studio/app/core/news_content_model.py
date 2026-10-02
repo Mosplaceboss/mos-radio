@@ -125,8 +125,17 @@ _LEGACY_SHORT_CLOSINGS = {
     "that wraps this news update.",
 }
 
-# Sports: never announce a blank day as "no game" — look ahead instead.
+# Sports: skip empty coverage; never announce a blank day as "no game".
 DEFAULT_SPORTS_GAME_RULES = (
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one."
+)
+
+# Older sports rule text (before the no-news guidance) — upgrade on load.
+_LEGACY_SPORTS_GAME_RULES = (
     "If a team does not play today, do not say there is no game or that they are off. "
     "Say something similar to: their next game is… using the supplied schedule. "
     "Only mention a next game when the date or opponent is provided — never invent one."
