@@ -39,8 +39,8 @@
       "portrait": "",
       "active": true,
       "default_greeting": "Here is the latest from Mo's Place Radio News.",
-      "default_closing": "That wraps this news update.",
-      "personality_prompt": "Professional news desk delivery with clarity and authority.",
+      "default_closing": "We'd love to hear from you — if there's anything on your mind, click Community at mosplaceradio.com.",
+      "personality_prompt": "Professional news desk delivery with clarity and authority. End newscasts with a warm Community invite at mosplaceradio.com — do not list news categories or topic buckets.",
       "pronunciation_notes": "",
       "genre_specialties": ["News", "Announcements"],
       "default_shift": ""

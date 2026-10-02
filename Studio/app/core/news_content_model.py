@@ -103,18 +103,51 @@ def default_schedule_slots() -> list[dict[str, Any]]:
     ]
 
 
+# End-of-news invite: ask for listener thoughts without listing story categories.
+DEFAULT_NEWS_CLOSING = (
+    "We'd love to hear from you — if there's anything on your mind, "
+    "click Community at mosplaceradio.com. For Mo's Place Radio, I'm {personality}."
+)
+
+# Closings that name topic buckets (weather, sports, food, …) get replaced on load.
+_LEGACY_CATEGORY_CLOSING_MARKERS = (
+    "news, weather",
+    "weather, sports",
+    "sports, music",
+    "music, food",
+    "weather, sports, music, food",
+    "whatever else is on your mind",
+)
+
+# Prior short sign-offs without the Community invite.
+_LEGACY_SHORT_CLOSINGS = {
+    "for mo's place radio, i'm {personality}.",
+    "that wraps this news update.",
+}
+
+
 def default_script_rules() -> dict[str, Any]:
     return {
         "story_order": [cat for cat in DEFAULT_CATEGORIES[:6]],
         "maximum_stories": 8,
         "personality_handoffs": True,
         "opening": "This is Mo's Place Radio news.",
-        "closing": "For Mo's Place Radio, I'm {personality}.",
+        "closing": DEFAULT_NEWS_CLOSING,
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
         "news_first_personality_rules": "Lead anchor opens every newscast.",
         "stale_hours_warning": 12,
     }
+
+
+def _should_replace_news_closing(closing: str) -> bool:
+    text = str(closing or "").strip()
+    if not text:
+        return True
+    lower = text.lower()
+    if lower in _LEGACY_SHORT_CLOSINGS:
+        return True
+    return any(marker in lower for marker in _LEGACY_CATEGORY_CLOSING_MARKERS)
 
 
 def default_voice_settings() -> dict[str, Any]:
@@ -218,6 +251,9 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
+    # Prefer Community invite over category laundry lists or the old short sign-off.
+    if _should_replace_news_closing(str(merged.get("closing", ""))):
+        merged["closing"] = DEFAULT_NEWS_CLOSING
     return merged
 
 
