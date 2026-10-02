@@ -125,6 +125,13 @@ _LEGACY_SHORT_CLOSINGS = {
     "that wraps this news update.",
 }
 
+# Sports: never announce a blank day as "no game" — look ahead instead.
+DEFAULT_SPORTS_GAME_RULES = (
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one."
+)
+
 
 def default_script_rules() -> dict[str, Any]:
     return {
@@ -136,6 +143,7 @@ def default_script_rules() -> dict[str, Any]:
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
         "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
         "stale_hours_warning": 12,
     }
 
@@ -254,6 +262,9 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     # Prefer Community invite over category laundry lists or the old short sign-off.
     if _should_replace_news_closing(str(merged.get("closing", ""))):
         merged["closing"] = DEFAULT_NEWS_CLOSING
+    sports_rules = str(merged.get("sports_game_rules", "")).strip()
+    if not sports_rules:
+        merged["sports_game_rules"] = DEFAULT_SPORTS_GAME_RULES
     return merged
 
 
