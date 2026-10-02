@@ -103,7 +103,7 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Add a light New England reference.",
         "Mention the local season, weather mood, or weekend atmosphere.",
         "Connect the music to Boston or New England life.",
-        "Recognize listeners around the Merrimack Valley.",
+        "Recognize listeners around New England.",
         "Add a familiar local touch without turning it into a news report.",
     ],
     "Requests": [
