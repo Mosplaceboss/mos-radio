@@ -21,10 +21,18 @@ EVENT_TYPES: tuple[str, ...] = (
     "Final Half Hour",
     "Listener Memory",
     "Weekend Check-In",
+    "Community Mention",
     "Format Change",
     "Handoff",
     "Show Close",
 )
+
+# Karaoke mentions (especially Dave): never name songs; send the ask to Community.
+KARAOKE_COMMUNITY_COACHING = """
+If this break mentions karaoke, do not name, suggest, or list specific songs.
+Ask something in the spirit of: what should I sing? Click on Community at mosplaceradio.com and let me know!
+Keep it natural and brief, then return to the music.
+""".strip()
 
 DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Daily Mix",
@@ -46,18 +54,26 @@ Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
 """.strip(),
-    "Check-In": """
+    "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+{KARAOKE_COMMUNITY_COACHING}
 """.strip(),
-    "Weekend Check-In": """
+    "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+{KARAOKE_COMMUNITY_COACHING}
+""".strip(),
+    "Community Mention": f"""
+Highlight a local event or community activity in a natural, conversational way.
+{KARAOKE_COMMUNITY_COACHING}
+Do not invent event details that are not supplied.
+Keep it brief and return to the music.
 """.strip(),
     "Artist Spotlight": """
 Share one verified fact about the next artist using only supplied context.
@@ -104,9 +120,10 @@ Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
 """.strip(),
-    "Listener Memory": """
+    "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
+{KARAOKE_COMMUNITY_COACHING}
 """.strip(),
     "Format Change": """
 Acknowledge the shift in format or show direction naturally.
@@ -185,6 +202,10 @@ DEFAULT_MISSIONS: dict[str, str] = {
     "Today's Countdown": "Talk about why this era of music remains memorable and tease the next song.",
     "Final Half Hour": "Preview the final half hour and tease upcoming music.",
     "Listener Memory": "Connect with listeners in a warm, personal way when appropriate.",
+    "Community Mention": (
+        "Mention a local community moment. If karaoke comes up, do not name songs — "
+        "ask what you should sing and tell listeners to click Community at mosplaceradio.com."
+    ),
     "Format Change": "Acknowledge the format change and set expectations for what is coming next.",
     "Handoff": "Wrap up briefly and hand off to the next host.",
     "Show Close": "Thank listeners, close the show, and hand off to the next host or format.",
@@ -211,6 +232,7 @@ EVENT_TO_TYPE: dict[str, str] = {
     "Today's Countdown": "check_in",
     "Final Half Hour": "check_in",
     "Listener Memory": "check_in",
+    "Community Mention": "check_in",
     "Format Change": "format_change",
     "Handoff": "handoff",
     "Show Close": "close",
@@ -294,6 +316,10 @@ def _infer_event_type_from_mission_text(mission: str) -> str | None:
         ("on this day in the 1970s", "On This Day in the 70s"),
         ("on this day in the 70s", "On This Day in the 70s"),
         ("70s on this day", "On This Day in the 70s"),
+        ("karaoke", "Community Mention"),
+        ("what should i sing", "Community Mention"),
+        ("mosplaceradio.com", "Community Mention"),
+        ("click on community", "Community Mention"),
     )
     for needle, event_type in hints:
         if needle in lower:
