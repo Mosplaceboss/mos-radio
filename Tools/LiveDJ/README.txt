@@ -11,3 +11,7 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Friday night (6pm+) Daily Mix with Kathy = spoken show name "The Friday Mix Up"
+(daytime Daily Mix stays "Daily Mix"). Johnny's handoff into Kathy uses that name too.
+Deploy livedj_events.py to D:\MPR\Engines\LiveDJ\Scripts\ for this to take effect.
