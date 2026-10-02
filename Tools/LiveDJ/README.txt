@@ -11,3 +11,6 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Song requests (all DJs): always say click "Request Song" at mosplaceradio.com.
+Never send song requests to Community.
