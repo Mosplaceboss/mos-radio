@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -103,6 +104,81 @@ def default_schedule_slots() -> list[dict[str, Any]]:
     ]
 
 
+# Spoken news should say "New England" instead of "Merrimack Valley".
+MERRIMACK_VALLEY_SAY_AS = "New England"
+MERRIMACK_VALLEY_FIND = "Merrimack Valley"
+
+
+def default_merrimack_pronunciation_rule() -> dict[str, str]:
+    return {"find": MERRIMACK_VALLEY_FIND, "say": MERRIMACK_VALLEY_SAY_AS}
+
+
+def default_merrimack_pronunciation_entry() -> dict[str, str]:
+    return {"word": MERRIMACK_VALLEY_FIND, "pronunciation": MERRIMACK_VALLEY_SAY_AS}
+
+
+def ensure_merrimack_to_new_england_rules(rules: list[Any] | None) -> list[dict[str, str]]:
+    """Keep the Merrimack Valley → New England spoken-news rule present."""
+    normalized: list[dict[str, str]] = []
+    found = False
+    for item in rules or []:
+        if isinstance(item, dict):
+            find = str(item.get("find", "")).strip()
+            say = str(item.get("say", "")).strip()
+            if find.lower() == MERRIMACK_VALLEY_FIND.lower():
+                found = True
+                normalized.append({"find": MERRIMACK_VALLEY_FIND, "say": say or MERRIMACK_VALLEY_SAY_AS})
+            elif find and say:
+                normalized.append({"find": find, "say": say})
+        elif isinstance(item, str) and item.strip():
+            normalized.append({"find": item.strip(), "say": item.strip()})
+    if not found:
+        normalized.insert(0, default_merrimack_pronunciation_rule())
+    return normalized
+
+
+def ensure_merrimack_to_new_england_dictionary(entries: list[Any] | None) -> list[dict[str, str]]:
+    """Keep Merrimack Valley mapped to New England in the pronunciation dictionary."""
+    normalized: list[dict[str, str]] = []
+    found = False
+    for item in entries or []:
+        if isinstance(item, dict):
+            word = str(item.get("word", "")).strip()
+            pronunciation = str(item.get("pronunciation", "")).strip()
+            if word.lower() == MERRIMACK_VALLEY_FIND.lower():
+                found = True
+                normalized.append(
+                    {
+                        "word": MERRIMACK_VALLEY_FIND,
+                        "pronunciation": pronunciation or MERRIMACK_VALLEY_SAY_AS,
+                    }
+                )
+            elif word and pronunciation:
+                normalized.append({"word": word, "pronunciation": pronunciation})
+        elif isinstance(item, str) and item.strip():
+            normalized.append({"word": item.strip(), "pronunciation": item.strip()})
+    if not found:
+        normalized.insert(0, default_merrimack_pronunciation_entry())
+    return normalized
+
+
+def apply_news_pronunciation_rules(text: str, rules: list[Any] | None = None) -> str:
+    """Replace written place names with what DJs should say on air."""
+    result = text or ""
+    for rule in ensure_merrimack_to_new_england_rules(rules):
+        find = rule.get("find", "")
+        say = rule.get("say", "")
+        if not find or not say:
+            continue
+        # Prefer dropping a leading "the " so "the Merrimack Valley" becomes
+        # "New England" rather than "the New England".
+        with_article = re.compile(rf"\bthe\s+{re.escape(find)}\b", re.IGNORECASE)
+        result = with_article.sub(say, result)
+        pattern = re.compile(rf"\b{re.escape(find)}\b", re.IGNORECASE)
+        result = pattern.sub(say, result)
+    return result
+
+
 def default_script_rules() -> dict[str, Any]:
     return {
         "story_order": [cat for cat in DEFAULT_CATEGORIES[:6]],
@@ -110,9 +186,12 @@ def default_script_rules() -> dict[str, Any]:
         "personality_handoffs": True,
         "opening": "This is Mo's Place Radio news.",
         "closing": "For Mo's Place Radio, I'm {personality}.",
-        "pronunciation_rules": [],
+        "pronunciation_rules": [default_merrimack_pronunciation_rule()],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": (
+            "Lead anchor opens every newscast. "
+            "Say New England instead of Merrimack Valley."
+        ),
         "stale_hours_warning": 12,
     }
 
@@ -122,7 +201,7 @@ def default_voice_settings() -> dict[str, Any]:
         "voicebox_id": "",
         "voice_volume": 100,
         "speaking_style": "conversational",
-        "pronunciation_dictionary": [],
+        "pronunciation_dictionary": [default_merrimack_pronunciation_entry()],
     }
 
 
@@ -217,7 +296,16 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
         return base
     merged = deepcopy(base)
     merged.update(data)
-    merged.setdefault("pronunciation_rules", [])
+    merged["pronunciation_rules"] = ensure_merrimack_to_new_england_rules(
+        merged.get("pronunciation_rules")
+    )
+    personality_rules = str(merged.get("news_first_personality_rules", "") or "")
+    if "New England" not in personality_rules and "Merrimack" not in personality_rules:
+        merged["news_first_personality_rules"] = (
+            f"{personality_rules.rstrip('. ')}. Say New England instead of Merrimack Valley.".strip()
+            if personality_rules.strip()
+            else base["news_first_personality_rules"]
+        )
     return merged
 
 
@@ -227,7 +315,9 @@ def normalize_voice_settings(data: dict[str, Any] | None) -> dict[str, Any]:
         return base
     merged = deepcopy(base)
     merged.update(data)
-    merged.setdefault("pronunciation_dictionary", [])
+    merged["pronunciation_dictionary"] = ensure_merrimack_to_new_england_dictionary(
+        merged.get("pronunciation_dictionary")
+    )
     return merged
 
 
@@ -313,6 +403,31 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        # Upgrade existing installs so spoken news says New England, not Merrimack Valley.
+        raw = load_news_content_bundle(config_manager)
+        bundle = normalize_bundle(raw)
+        raw_rules = (raw.get("script_rules") or {}).get("pronunciation_rules") or []
+        raw_dict = (raw.get("voice_settings") or {}).get("pronunciation_dictionary") or []
+        needs_upgrade = False
+        if not any(
+            isinstance(item, dict)
+            and str(item.get("find", "")).lower() == MERRIMACK_VALLEY_FIND.lower()
+            and str(item.get("say", "")).strip()
+            for item in raw_rules
+        ):
+            needs_upgrade = True
+        if not any(
+            isinstance(item, dict)
+            and str(item.get("word", "")).lower() == MERRIMACK_VALLEY_FIND.lower()
+            and str(item.get("pronunciation", "")).strip()
+            for item in raw_dict
+        ):
+            needs_upgrade = True
+        personality_rules = str((raw.get("script_rules") or {}).get("news_first_personality_rules", "") or "")
+        if "New England" not in personality_rules and "Merrimack" not in personality_rules:
+            needs_upgrade = True
+        if needs_upgrade:
+            save_news_content_bundle(bundle, config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
@@ -398,7 +513,10 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
     lines.append(closing)
     lines.append("")
     lines.append("— Development preview only. Not published to live News.")
-    content = "\n".join(lines)
+    content = apply_news_pronunciation_rules(
+        "\n".join(lines),
+        bundle["script_rules"].get("pronunciation_rules"),
+    )
     output_dir = news_dev_output_dir(config_manager)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
