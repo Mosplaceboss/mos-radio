@@ -37,7 +37,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
     "Welcome / Show Open": [
         "Welcome listeners and introduce the show.",
-        "Set the mood for the current music format.",
+        "Set the mood for the current music format only — do not invent other formats.",
         "Preview what listeners can expect during the show.",
         "Introduce the DJ and invite listeners to stay tuned.",
         "Open the show with energy and a clear sense of direction.",
@@ -124,7 +124,7 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Acknowledge that the music format is changing.",
         "Explain the transition to the next style of music.",
         "Reset the mood for the next programming block.",
-        "Introduce the new format without sounding formal.",
+        "Introduce only the new format named in the schedule — do not invent others.",
         "Connect the outgoing format to the incoming format.",
     ],
     "DJ Handoff": [
