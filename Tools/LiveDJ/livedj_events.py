@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 _MPR_ROOT = Path(__file__).resolve().parents[3]
@@ -37,94 +38,128 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Yacht Rock",
 )
 
+# Hosts must not name these formats/genres unless the break Format exactly matches.
+# Kathy hosts Daily Mix / Friday Mix Up — not Country. LB does not host Yacht Rock.
+HOST_FORMAT_MENTION_BANS: dict[str, tuple[str, ...]] = {
+    "kathy": ("Country",),
+    "lb": ("Yacht Rock",),
+}
+
+_HOST_BAN_ALIASES: dict[str, tuple[str, ...]] = {
+    "kathy": ("kathy",),
+    "lb": ("lb", "l.b.", "l b"),
+}
+
+_FORMAT_DISCIPLINE_COACHING = """
+Only name the music format supplied in this break's Format field.
+Do not invent other formats or genres.
+If Kathy is hosting, never mention Country or country music unless Format is exactly Country.
+If LB is hosting, never mention Yacht Rock or yacht rock unless Format is exactly Yacht Rock.
+""".strip()
+
 EVENT_COACHING: dict[str, str] = {
-    "Show Open": """
+    "Show Open": f"""
 Welcome listeners.
 Mention the day and time naturally.
-Mention the show's format.
+Mention the show's format — only the Format named for this break.
+{_FORMAT_DISCIPLINE_COACHING}
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
 """.strip(),
-    "Check-In": """
+    "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Weekend Check-In": """
+    "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Artist Spotlight": """
+    "Artist Spotlight": f"""
 Share one verified fact about the next artist using only supplied context.
 Do not invent biographical details.
 Transition naturally into the next song.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Music Story": """
+    "Music Story": f"""
 Share a brief music-related observation tied to an upcoming song or artist.
 Use only supplied context — do not invent facts.
 Keep it conversational, not encyclopedic.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "This Day in Music History": """
+    "This Day in Music History": f"""
 Open warmly and personally — something in the spirit of: you're sitting there thinking back on music history and you'd like to share a few with the listener.
 Keep that intro fun and engaging; vary the wording so it does not sound identical every day.
 Then share three This Day in Music History moments using ONLY the supplied music-history source facts.
 Do not invent dates, chart claims, album titles, birthdays, or other history.
 Invite listeners to jump into the conversation on Facebook at Mo's Place Radio Boston — ask what memory or favorite moment these bring up.
 Keep it conversational, then return to the music.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "On This Day in the 70s": """
+    "On This Day in the 70s": f"""
 Open like a warm 1970s radio host looking back on this calendar date in the seventies.
 Share three On This Day moments using ONLY the supplied 1970-1979 source facts.
 Topics can be music, movies, TV, sports, pop culture, or other popular 1970s moments — stay inside 1970-1979.
 Do not invent dates, titles, scores, or other history.
 Keep it nostalgic and conversational, then return to the music.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Coming Up": """
+    "Coming Up": f"""
 Tease several upcoming artists or songs from the supplied list.
 Do not sound repetitive or like a laundry list.
 Do not promise exact timing or order.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Coming Up Next": """
+    "Coming Up Next": f"""
 Tease what is coming up next on the show from the supplied music context.
 Mention the time of day when natural (for example noon or the final hour).
 Keep it conversational and avoid promising exact song order.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Today's Countdown": """
+    "Today's Countdown": f"""
 Talk about why this era of music remains memorable.
-Reference the show format naturally.
+Reference the show format naturally — only the Format named for this break.
 Tease the next song or artist from the supplied queue without inventing chart ranks.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Final Half Hour": """
+    "Final Half Hour": f"""
 Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Listener Memory": """
+    "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Format Change": """
+    "Format Change": f"""
 Acknowledge the shift in format or show direction naturally.
 Set expectations for what listeners will hear next.
 Keep it brief.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Handoff": """
+    "Handoff": f"""
 Wrap up briefly.
 Thank listeners if natural.
 Clearly identify who is leaving and who is taking over.
 Hand off ONLY to the Next host named in the schedule context.
 Never invent a next host and never default to Mo unless Next host is Mo.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
-    "Show Close": """
+    "Show Close": f"""
 Wrap up the shift.
 Thank listeners sincerely.
 If a Next host is named in the schedule context, hand off to that host by name.
 Never invent a next host and never default to Mo unless Next host is Mo.
+{_FORMAT_DISCIPLINE_COACHING}
 """.strip(),
 }
 
@@ -321,23 +356,120 @@ def event_type_for_row(row: dict) -> str:
     return "Check-In"
 
 
+def _person_matches(value: str, *names: str) -> bool:
+    text = re.sub(r"[\s_\-]+", " ", str(value or "").strip().lower())
+    if not text:
+        return False
+    compact = re.sub(r"[.\s]", "", text)
+    for name in names:
+        needle = str(name or "").strip().lower()
+        if not needle:
+            continue
+        needle_compact = re.sub(r"[.\s]", "", needle)
+        if text == needle or compact == needle_compact:
+            return True
+        # Short keys like "lb" must be exact — never substring matches.
+        if len(needle_compact) <= 2:
+            continue
+        if text.startswith(needle + " ") or text.endswith(" " + needle):
+            return True
+        if f" {needle} " in f" {text} ":
+            return True
+        if needle_compact in compact:
+            return True
+    return False
+
+
+def _row_format_name(row: dict) -> str:
+    return str(row.get("Format") or row.get("format") or "").strip()
+
+
+def _host_ban_key_for_person(value: str) -> str | None:
+    for ban_key, aliases in _HOST_BAN_ALIASES.items():
+        if _person_matches(value, *aliases):
+            return ban_key
+    return None
+
+
+def active_format_mention_bans(row: dict) -> list[str]:
+    """Formats/genres the host on this break must not mention."""
+    host = str(row.get("Host") or row.get("host") or "")
+    ban_key = _host_ban_key_for_person(host)
+    if not ban_key:
+        return []
+    current = _row_format_name(row).lower()
+    banned: list[str] = []
+    for fmt in HOST_FORMAT_MENTION_BANS.get(ban_key, ()):
+        if current != str(fmt).strip().lower():
+            banned.append(str(fmt).strip())
+    return banned
+
+
+def format_mention_mission_hint(row: dict) -> str:
+    banned = active_format_mention_bans(row)
+    if not banned:
+        return ""
+    host = str(row.get("Host") or row.get("host") or "").strip() or "This host"
+    parts = []
+    for fmt in banned:
+        if fmt.lower() == "country":
+            parts.append("never mention Country or country music")
+        elif fmt.lower() == "yacht rock":
+            parts.append("never mention Yacht Rock or yacht rock")
+        else:
+            parts.append(f"never mention {fmt}")
+    return f"{host}: {'; '.join(parts)} on this break."
+
+
+def apply_format_mention_bans_to_mission(row: dict, mission: str) -> str:
+    """Append host format bans to mission copy when Kathy/LB are off those formats."""
+    hint = format_mention_mission_hint(row)
+    if not hint:
+        return mission
+    text = str(mission or "").strip()
+    lower = text.lower()
+    if "never mention country" in lower or "never mention yacht rock" in lower:
+        return text
+    if not text:
+        return hint
+    return f"{text} {hint}".strip()
+
+
+def banned_format_mentions_in_text(row: dict, script: str) -> list[str]:
+    """Return banned format/genre phrases found in a generated script for this row."""
+    banned = active_format_mention_bans(row)
+    if not banned:
+        return []
+    text = str(script or "")
+    found: list[str] = []
+    for fmt in banned:
+        patterns = [re.escape(fmt)]
+        if fmt.lower() == "country":
+            patterns.append(r"country\s+music")
+        elif fmt.lower() == "yacht rock":
+            patterns.append(r"yacht\s*rock")
+        for pattern in patterns:
+            if re.search(pattern, text, flags=re.I):
+                found.append(fmt)
+                break
+    return found
+
+
 def mission_text_for_row(row: dict) -> str:
     mission = str(row.get("Mission") or row.get("mission") or "").strip()
     event_type = event_type_for_row(row)
     if not mission:
-        return default_mission_for_event_type(event_type)
+        mission = default_mission_for_event_type(event_type)
+    else:
+        legacy_key = _legacy_mission_key(mission)
+        if legacy_key in LEGACY_MISSION_TEXT:
+            mission = LEGACY_MISSION_TEXT[legacy_key]
+        elif legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
+            mission = LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
+        elif _mission_is_event_type_name(mission, event_type):
+            mission = default_mission_for_event_type(event_type)
 
-    legacy_key = _legacy_mission_key(mission)
-    if legacy_key in LEGACY_MISSION_TEXT:
-        return LEGACY_MISSION_TEXT[legacy_key]
-
-    if legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
-        return LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
-
-    if _mission_is_event_type_name(mission, event_type):
-        return default_mission_for_event_type(event_type)
-
-    return mission
+    return apply_format_mention_bans_to_mission(row, mission)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -366,7 +498,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = mission
+    result["Mission"] = apply_format_mention_bans_to_mission(result, mission)
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
@@ -379,3 +511,12 @@ def schedule_type_for_event(event_type: str) -> str:
 def event_coaching(event_type: str) -> str:
     normalized = normalize_event_type(event_type)
     return EVENT_COACHING.get(normalized, EVENT_COACHING["Check-In"])
+
+
+def event_coaching_for_row(row: dict) -> str:
+    """Coaching for a schedule row, including Kathy/LB format mention bans."""
+    base = event_coaching(event_type_for_row(row))
+    hint = format_mention_mission_hint(row)
+    if not hint:
+        return base
+    return f"{base}\n{hint}".strip()
