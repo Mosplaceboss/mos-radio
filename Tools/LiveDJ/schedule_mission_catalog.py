@@ -32,6 +32,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
     "Community Mention": "Community Mention",
     "Request Reminder": "Requests",
     "News Check-In": "General Check-In",
+    "Lottery Close": "Lottery",
 }
 
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
@@ -48,6 +49,11 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Maintain the live-radio feel between songs.",
         "Remind listeners who they are listening to.",
         "Tease upcoming music without listing too many songs.",
+        (
+            "After the news, keep the wrap brief. Before saying now back to the music, "
+            "ask if listeners have comments on today's stories or something else on their mind, "
+            "and tell them to select Community at mosplaceradio.com."
+        ),
     ],
     "Music Story": [
         "Share a short story connected to the upcoming artist or song.",
@@ -103,7 +109,7 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Add a light New England reference.",
         "Mention the local season, weather mood, or weekend atmosphere.",
         "Connect the music to Boston or New England life.",
-        "Recognize listeners around the Merrimack Valley.",
+        "Recognize listeners around New England.",
         "Add a familiar local touch without turning it into a news report.",
     ],
     "Requests": [
@@ -119,6 +125,11 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Recognize a local business, fundraiser, or organization.",
         "Encourage community support in a natural way.",
         "Share a brief local announcement and return to the music.",
+        (
+            "When mentioning karaoke, do not name or suggest specific songs. "
+            "Ask something like: what should I sing? Click on Community at "
+            "mosplaceradio.com and let me know!"
+        ),
     ],
     "Format Change": [
         "Acknowledge that the music format is changing.",
@@ -140,6 +151,14 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "End with a natural final thought.",
         "Hand off to the next show or DJ.",
         "Leave listeners with a warm station reminder.",
+    ],
+    "Lottery": [
+        (
+            "Close the lottery briefly. Do not say now back to the music — "
+            "end with something like: hope your lottery dreams came true!"
+        ),
+        "Wish listeners luck with tonight's numbers in a short, upbeat way.",
+        "Keep the lottery send-off warm and hopeful without inventing jackpot details.",
     ],
     "Custom": [
         "Write my own mission.",
@@ -180,8 +199,38 @@ def ensure_catalog_files() -> None:
                 "categories": DEFAULT_CATEGORIES,
             },
         )
+    else:
+        _sync_missing_default_missions()
     if not CUSTOM_FILE.is_file():
         _write_json(CUSTOM_FILE, {"version": 1, "missions": []})
+
+
+def _sync_missing_default_missions() -> None:
+    """Append new built-in missions without removing operator edits."""
+    data = _read_json(CATEGORIES_FILE)
+    categories = data.get("categories")
+    if not isinstance(categories, dict):
+        return
+    changed = False
+    for name, defaults in DEFAULT_CATEGORIES.items():
+        existing = categories.get(name)
+        if not isinstance(existing, list):
+            categories[name] = list(defaults)
+            changed = True
+            continue
+        known = {str(item).strip() for item in existing if str(item).strip()}
+        for text in defaults:
+            cleaned = str(text).strip()
+            if cleaned and cleaned not in known:
+                existing.append(cleaned)
+                known.add(cleaned)
+                changed = True
+        categories[name] = existing
+    if changed:
+        data["categories"] = categories
+        data.setdefault("version", 1)
+        data.setdefault("description", "LiveDJ mission categories and ready-to-use objectives.")
+        _write_json(CATEGORIES_FILE, data)
 
 
 def load_builtin_categories() -> dict[str, list[str]]:
