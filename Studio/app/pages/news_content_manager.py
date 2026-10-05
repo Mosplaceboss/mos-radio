@@ -701,6 +701,7 @@ class NewsContentManagerPage(BasePage):
             ("closing", "Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
+            ("sports_game_rules", "Sports Game Rules"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:

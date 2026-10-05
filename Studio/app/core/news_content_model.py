@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -103,16 +104,198 @@ def default_schedule_slots() -> list[dict[str, Any]]:
     ]
 
 
+# Spoken news should say "New England" instead of "Merrimack Valley".
+MERRIMACK_VALLEY_SAY_AS = "New England"
+MERRIMACK_VALLEY_FIND = "Merrimack Valley"
+
+
+def default_merrimack_pronunciation_rule() -> dict[str, str]:
+    return {"find": MERRIMACK_VALLEY_FIND, "say": MERRIMACK_VALLEY_SAY_AS}
+
+
+def default_merrimack_pronunciation_entry() -> dict[str, str]:
+    return {"word": MERRIMACK_VALLEY_FIND, "pronunciation": MERRIMACK_VALLEY_SAY_AS}
+
+
+def ensure_merrimack_to_new_england_rules(rules: list[Any] | None) -> list[dict[str, str]]:
+    """Keep the Merrimack Valley → New England spoken-news rule present."""
+    normalized: list[dict[str, str]] = []
+    found = False
+    for item in rules or []:
+        if isinstance(item, dict):
+            find = str(item.get("find", "")).strip()
+            say = str(item.get("say", "")).strip()
+            if find.lower() == MERRIMACK_VALLEY_FIND.lower():
+                found = True
+                normalized.append({"find": MERRIMACK_VALLEY_FIND, "say": say or MERRIMACK_VALLEY_SAY_AS})
+            elif find and say:
+                normalized.append({"find": find, "say": say})
+        elif isinstance(item, str) and item.strip():
+            normalized.append({"find": item.strip(), "say": item.strip()})
+    if not found:
+        normalized.insert(0, default_merrimack_pronunciation_rule())
+    return normalized
+
+
+def ensure_merrimack_to_new_england_dictionary(entries: list[Any] | None) -> list[dict[str, str]]:
+    """Keep Merrimack Valley mapped to New England in the pronunciation dictionary."""
+    normalized: list[dict[str, str]] = []
+    found = False
+    for item in entries or []:
+        if isinstance(item, dict):
+            word = str(item.get("word", "")).strip()
+            pronunciation = str(item.get("pronunciation", "")).strip()
+            if word.lower() == MERRIMACK_VALLEY_FIND.lower():
+                found = True
+                normalized.append(
+                    {
+                        "word": MERRIMACK_VALLEY_FIND,
+                        "pronunciation": pronunciation or MERRIMACK_VALLEY_SAY_AS,
+                    }
+                )
+            elif word and pronunciation:
+                normalized.append({"word": word, "pronunciation": pronunciation})
+        elif isinstance(item, str) and item.strip():
+            normalized.append({"word": item.strip(), "pronunciation": item.strip()})
+    if not found:
+        normalized.insert(0, default_merrimack_pronunciation_entry())
+    return normalized
+
+
+def apply_news_pronunciation_rules(text: str, rules: list[Any] | None = None) -> str:
+    """Replace written place names with what DJs should say on air."""
+    result = text or ""
+    for rule in ensure_merrimack_to_new_england_rules(rules):
+        find = rule.get("find", "")
+        say = rule.get("say", "")
+        if not find or not say:
+            continue
+        # Prefer dropping a leading "the " so "the Merrimack Valley" becomes
+        # "New England" rather than "the New England".
+        with_article = re.compile(rf"\bthe\s+{re.escape(find)}\b", re.IGNORECASE)
+        result = with_article.sub(say, result)
+        pattern = re.compile(rf"\b{re.escape(find)}\b", re.IGNORECASE)
+        result = pattern.sub(say, result)
+    return result
+
+
+# End-of-news invite: ask for listener thoughts, then return to music — no category laundry lists.
+DEFAULT_NEWS_CLOSING = (
+    "Do you have any comments on today's stories or something else on your mind? "
+    "Let's hear from you by selecting Community at mosplaceradio.com. "
+    "Now back to the music. For Mo's Place Radio, I'm {personality}."
+)
+
+# Closings that name topic buckets (weather, sports, food, …) get replaced on load.
+_LEGACY_CATEGORY_CLOSING_MARKERS = (
+    "news, weather",
+    "weather, sports",
+    "sports, music",
+    "music, food",
+    "weather, sports, music, food",
+    "whatever else is on your mind",
+)
+
+# Prior short sign-offs or older Community phrasing without the tight CTA + back-to-music close.
+_LEGACY_SHORT_CLOSINGS = {
+    "for mo's place radio, i'm {personality}.",
+    "that wraps this news update.",
+    "we'd love to hear from you — if there's anything on your mind, "
+    "click community at mosplaceradio.com. for mo's place radio, i'm {personality}.",
+    "we'd love to hear from you — if there's anything on your mind, "
+    "click community at mosplaceradio.com.",
+}
+
+# Sports: include notable deaths; skip empty teams; never announce a blank day as "no game".
+DEFAULT_SPORTS_GAME_RULES = (
+    "Always include notable deaths or memorial news about athletes connected to covered "
+    "teams (for example NHL/Penguins, NFL, MLB, NBA, or college) when that news appears "
+    "in supplied sources — do not skip obituaries. "
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one."
+)
+
+# Older sports rule text (before obituaries / no-news guidance) — upgrade on load.
+_LEGACY_SPORTS_GAME_RULES = (
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one.",
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one.",
+)
+
+
+def _should_replace_news_closing(closing: str) -> bool:
+    text = str(closing or "").strip()
+    if not text:
+        return True
+    lower = text.lower()
+    if lower in _LEGACY_SHORT_CLOSINGS:
+        return True
+    if "community at mosplaceradio.com" in lower and "today's stories" not in lower:
+        return True
+    if "now back to the music" not in lower and "community" not in lower:
+        # Short personality sign-off without Community invite.
+        if lower.startswith("for mo's place radio") or lower.startswith("that wraps"):
+            return True
+    return any(marker in lower for marker in _LEGACY_CATEGORY_CLOSING_MARKERS)
+
+
+def _sports_rules_need_obituary_guidance(rules: str) -> bool:
+    text = str(rules or "").strip()
+    if not text:
+        return True
+    lower = text.lower()
+    return not any(
+        needle in lower for needle in ("obituar", "died", "death", "memorial", "passed away")
+    )
+
+
+def _ensure_sports_game_rules(rules: str) -> str:
+    text = str(rules or "").strip()
+    lower = text.lower()
+    has_obituary_guidance = any(
+        needle in lower for needle in ("obituar", "died", "death", "memorial", "passed away")
+    )
+    if not text:
+        return DEFAULT_SPORTS_GAME_RULES
+    compact = " ".join(text.split())
+    legacy = {" ".join(item.split()) for item in _LEGACY_SPORTS_GAME_RULES}
+    looks_like_stock = "next game" in lower or "no news regarding a sports team" in lower
+    if compact in legacy or (looks_like_stock and not has_obituary_guidance):
+        return DEFAULT_SPORTS_GAME_RULES
+    if not has_obituary_guidance:
+        # Preserve operator custom rules, but require athlete-death coverage.
+        return (
+            "Always include notable deaths or memorial news about athletes connected to covered "
+            "teams when that news appears in supplied sources — do not skip obituaries. "
+            + text
+        )
+    return text
+
+
 def default_script_rules() -> dict[str, Any]:
     return {
         "story_order": [cat for cat in DEFAULT_CATEGORIES[:6]],
         "maximum_stories": 8,
         "personality_handoffs": True,
         "opening": "This is Mo's Place Radio news.",
-        "closing": "For Mo's Place Radio, I'm {personality}.",
-        "pronunciation_rules": [],
+        "closing": DEFAULT_NEWS_CLOSING,
+        "pronunciation_rules": [default_merrimack_pronunciation_rule()],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": (
+            "Lead anchor opens every newscast. "
+            "Say New England instead of Merrimack Valley. "
+            "Keep the close brief — invite Community comments on today's stories, "
+            "then say now back to the music. Do not ramble or list topic categories."
+        ),
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
         "stale_hours_warning": 12,
     }
 
@@ -122,7 +305,7 @@ def default_voice_settings() -> dict[str, Any]:
         "voicebox_id": "",
         "voice_volume": 100,
         "speaking_style": "conversational",
-        "pronunciation_dictionary": [],
+        "pronunciation_dictionary": [default_merrimack_pronunciation_entry()],
     }
 
 
@@ -217,7 +400,26 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
         return base
     merged = deepcopy(base)
     merged.update(data)
-    merged.setdefault("pronunciation_rules", [])
+    merged["pronunciation_rules"] = ensure_merrimack_to_new_england_rules(
+        merged.get("pronunciation_rules")
+    )
+    personality_rules = str(merged.get("news_first_personality_rules", "") or "")
+    if "New England" not in personality_rules and "Merrimack" not in personality_rules:
+        merged["news_first_personality_rules"] = (
+            f"{personality_rules.rstrip('. ')}. Say New England instead of Merrimack Valley.".strip()
+            if personality_rules.strip()
+            else base["news_first_personality_rules"]
+        )
+    if "Community" not in personality_rules and "community" not in personality_rules.lower():
+        merged["news_first_personality_rules"] = (
+            f"{str(merged.get('news_first_personality_rules', '')).rstrip('. ')}. "
+            "Keep the close brief — invite Community comments on today's stories, "
+            "then say now back to the music. Do not ramble or list topic categories."
+        ).strip()
+    # Prefer Community invite + back-to-music over category laundry lists or old short sign-offs.
+    if _should_replace_news_closing(str(merged.get("closing", ""))):
+        merged["closing"] = DEFAULT_NEWS_CLOSING
+    merged["sports_game_rules"] = _ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
     return merged
 
 
@@ -227,7 +429,9 @@ def normalize_voice_settings(data: dict[str, Any] | None) -> dict[str, Any]:
         return base
     merged = deepcopy(base)
     merged.update(data)
-    merged.setdefault("pronunciation_dictionary", [])
+    merged["pronunciation_dictionary"] = ensure_merrimack_to_new_england_dictionary(
+        merged.get("pronunciation_dictionary")
+    )
     return merged
 
 
@@ -313,6 +517,38 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        # Upgrade existing installs: New England wording, Community close, sports obituaries.
+        raw = load_news_content_bundle(config_manager)
+        bundle = normalize_bundle(raw)
+        raw_script = raw.get("script_rules") or {}
+        raw_rules = raw_script.get("pronunciation_rules") or []
+        raw_dict = (raw.get("voice_settings") or {}).get("pronunciation_dictionary") or []
+        needs_upgrade = False
+        if not any(
+            isinstance(item, dict)
+            and str(item.get("find", "")).lower() == MERRIMACK_VALLEY_FIND.lower()
+            and str(item.get("say", "")).strip()
+            for item in raw_rules
+        ):
+            needs_upgrade = True
+        if not any(
+            isinstance(item, dict)
+            and str(item.get("word", "")).lower() == MERRIMACK_VALLEY_FIND.lower()
+            and str(item.get("pronunciation", "")).strip()
+            for item in raw_dict
+        ):
+            needs_upgrade = True
+        personality_rules = str(raw_script.get("news_first_personality_rules", "") or "")
+        if "New England" not in personality_rules and "Merrimack" not in personality_rules:
+            needs_upgrade = True
+        if "Community" not in personality_rules and "community" not in personality_rules.lower():
+            needs_upgrade = True
+        if _should_replace_news_closing(str(raw_script.get("closing", ""))):
+            needs_upgrade = True
+        if _sports_rules_need_obituary_guidance(str(raw_script.get("sports_game_rules", ""))):
+            needs_upgrade = True
+        if needs_upgrade:
+            save_news_content_bundle(bundle, config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
@@ -398,7 +634,10 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
     lines.append(closing)
     lines.append("")
     lines.append("— Development preview only. Not published to live News.")
-    content = "\n".join(lines)
+    content = apply_news_pronunciation_rules(
+        "\n".join(lines),
+        bundle["script_rules"].get("pronunciation_rules"),
+    )
     output_dir = news_dev_output_dir(config_manager)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
