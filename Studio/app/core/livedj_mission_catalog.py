@@ -32,6 +32,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
     "Community Mention": "Community Mention",
     "Request Reminder": "Requests",
     "News Check-In": "General Check-In",
+    "Lottery Close": "Lottery",
 }
 
 

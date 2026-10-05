@@ -206,6 +206,15 @@ _LEGACY_SHORT_CLOSINGS = {
     "click community at mosplaceradio.com.",
 }
 
+# Lottery segment close — hopeful send-off, not "back to the music".
+DEFAULT_LOTTERY_CLOSING = "Hope your lottery dreams came true!"
+
+DEFAULT_LOTTERY_CLOSE_RULES = (
+    "When closing the lottery segment, do not say now back to the music. "
+    "End with something like: hope your lottery dreams came true! "
+    "Keep it brief and upbeat; vary the wording slightly day to day."
+)
+
 # Sports: include notable deaths; skip empty teams; never announce a blank day as "no game".
 DEFAULT_SPORTS_GAME_RULES = (
     "Always include notable deaths or memorial news about athletes connected to covered "
@@ -287,15 +296,19 @@ def default_script_rules() -> dict[str, Any]:
         "personality_handoffs": True,
         "opening": "This is Mo's Place Radio news.",
         "closing": DEFAULT_NEWS_CLOSING,
+        "lottery_closing": DEFAULT_LOTTERY_CLOSING,
         "pronunciation_rules": [default_merrimack_pronunciation_rule()],
         "pause_sound_between_stories": "news_bed.mp3",
         "news_first_personality_rules": (
             "Lead anchor opens every newscast. "
             "Say New England instead of Merrimack Valley. "
             "Keep the close brief — invite Community comments on today's stories, "
-            "then say now back to the music. Do not ramble or list topic categories."
+            "then say now back to the music. Do not ramble or list topic categories. "
+            "When closing the lottery segment, do not say now back to the music — "
+            "end with something like: hope your lottery dreams came true!"
         ),
         "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
+        "lottery_close_rules": DEFAULT_LOTTERY_CLOSE_RULES,
         "stale_hours_warning": 12,
     }
 
@@ -420,6 +433,19 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     if _should_replace_news_closing(str(merged.get("closing", ""))):
         merged["closing"] = DEFAULT_NEWS_CLOSING
     merged["sports_game_rules"] = _ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
+    personality_after = str(merged.get("news_first_personality_rules", "") or "")
+    if "lottery" not in personality_after.lower():
+        merged["news_first_personality_rules"] = (
+            f"{personality_after.rstrip('. ')}. "
+            "When closing the lottery segment, do not say now back to the music — "
+            "end with something like: hope your lottery dreams came true!"
+        ).strip()
+    lottery_close = str(merged.get("lottery_closing", "") or "").strip()
+    if not lottery_close or "back to the music" in lottery_close.lower():
+        merged["lottery_closing"] = DEFAULT_LOTTERY_CLOSING
+    lottery_rules = str(merged.get("lottery_close_rules", "") or "").strip().lower()
+    if not lottery_rules or "lottery dreams" not in lottery_rules:
+        merged["lottery_close_rules"] = DEFAULT_LOTTERY_CLOSE_RULES
     return merged
 
 
@@ -546,6 +572,14 @@ def ensure_news_content_data(config_manager=None) -> None:
         if _should_replace_news_closing(str(raw_script.get("closing", ""))):
             needs_upgrade = True
         if _sports_rules_need_obituary_guidance(str(raw_script.get("sports_game_rules", ""))):
+            needs_upgrade = True
+        if "lottery" not in personality_rules.lower():
+            needs_upgrade = True
+        lottery_close = str(raw_script.get("lottery_closing", "") or "").strip()
+        if not lottery_close or "back to the music" in lottery_close.lower():
+            needs_upgrade = True
+        lottery_rules = str(raw_script.get("lottery_close_rules", "") or "").strip().lower()
+        if not lottery_rules or "lottery dreams" not in lottery_rules:
             needs_upgrade = True
         if needs_upgrade:
             save_news_content_bundle(bundle, config_manager)

@@ -32,6 +32,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
     "Community Mention": "Community Mention",
     "Request Reminder": "Requests",
     "News Check-In": "General Check-In",
+    "Lottery Close": "Lottery",
 }
 
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
@@ -150,6 +151,14 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "End with a natural final thought.",
         "Hand off to the next show or DJ.",
         "Leave listeners with a warm station reminder.",
+    ],
+    "Lottery": [
+        (
+            "Close the lottery briefly. Do not say now back to the music — "
+            "end with something like: hope your lottery dreams came true!"
+        ),
+        "Wish listeners luck with tonight's numbers in a short, upbeat way.",
+        "Keep the lottery send-off warm and hopeful without inventing jackpot details.",
     ],
     "Custom": [
         "Write my own mission.",

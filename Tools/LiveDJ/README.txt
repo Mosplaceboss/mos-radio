@@ -17,4 +17,6 @@ point listeners to Community at mosplaceradio.com.
 
 News wrap (Mo): keep it brief. Before "now back to the music", invite comments on
 today's stories via Community at mosplaceradio.com. Say New England, not Merrimack Valley.
+Lottery close (Mo): do not say "now back to the music" — end with something like
+"hope your lottery dreams came true!"
 Sports: include notable athlete deaths when supplied; skip quiet teams without saying so.

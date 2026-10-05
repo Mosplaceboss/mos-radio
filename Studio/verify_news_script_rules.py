@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.core.news_content_model import (  # noqa: E402
+    DEFAULT_LOTTERY_CLOSING,
     DEFAULT_NEWS_CLOSING,
     DEFAULT_SPORTS_GAME_RULES,
     apply_news_pronunciation_rules,
@@ -28,8 +29,13 @@ def main() -> None:
     rules = default_script_rules()
     assert "selecting Community at mosplaceradio.com" in rules["closing"]
     assert "Now back to the music" in rules["closing"]
+    assert rules["lottery_closing"] == DEFAULT_LOTTERY_CLOSING
+    assert "lottery dreams" in rules["lottery_close_rules"].lower()
+    assert "back to the music" in rules["lottery_close_rules"].lower()  # as "do not say..."
+    assert "do not say now back to the music" in rules["lottery_close_rules"].lower()
     assert "obituar" in rules["sports_game_rules"].lower() or "death" in rules["sports_game_rules"].lower()
     assert "New England" in rules["news_first_personality_rules"]
+    assert "lottery" in rules["news_first_personality_rules"].lower()
 
     # Legacy short closing upgrades
     upgraded = normalize_script_rules(
@@ -66,7 +72,13 @@ def main() -> None:
     assert "Penguin" in sports["sports_game_rules"] or "obituar" in sports["sports_game_rules"].lower()
     assert "death" in sports["sports_game_rules"].lower() or "memorial" in sports["sports_game_rules"].lower()
 
-    print("OK: news New England, Community close, and sports obituary rules verified")
+    # Lottery close upgrades from empty / back-to-the-music habits
+    lottery = normalize_script_rules({"lottery_closing": "Now back to the music.", "lottery_close_rules": ""})
+    assert lottery["lottery_closing"] == DEFAULT_LOTTERY_CLOSING
+    assert "lottery dreams" in lottery["lottery_close_rules"].lower()
+    assert "do not say now back to the music" in lottery["lottery_close_rules"].lower()
+
+    print("OK: news New England, Community close, sports obituaries, and lottery close verified")
 
 
 if __name__ == "__main__":

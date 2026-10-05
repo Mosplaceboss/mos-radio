@@ -699,9 +699,11 @@ class NewsContentManagerPage(BasePage):
             ("maximum_stories", "Maximum Stories"),
             ("opening", "Opening"),
             ("closing", "Closing"),
+            ("lottery_closing", "Lottery Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
             ("sports_game_rules", "Sports Game Rules"),
+            ("lottery_close_rules", "Lottery Close Rules"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:

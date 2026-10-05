@@ -23,6 +23,7 @@ EVENT_TYPES: tuple[str, ...] = (
     "Weekend Check-In",
     "Community Mention",
     "News Check-In",
+    "Lottery Close",
     "Format Change",
     "Handoff",
     "Show Close",
@@ -43,6 +44,14 @@ Do you have any comments on today's stories or something else on your mind?
 Let's hear from you by selecting Community at mosplaceradio.com.
 Then say now back to the music.
 Say New England instead of Merrimack Valley.
+""".strip()
+
+# Lottery close (especially Mo): warm lottery send-off — not "back to the music".
+LOTTERY_CLOSE_COACHING = """
+Keep the lottery close brief and upbeat — do not ramble.
+Do not end with now back to the music.
+Close in the spirit of: hope your lottery dreams came true!
+Vary the wording slightly so it does not sound identical every day, but keep that hopeful lottery wish.
 """.strip()
 
 DEFAULT_STATION_FORMATS: tuple[str, ...] = (
@@ -90,6 +99,11 @@ Keep it brief and return to the music.
 Wrap after the news in the host's natural voice.
 {NEWS_WRAP_COMMUNITY_COACHING}
 Do not list news categories or invent story details.
+""".strip(),
+    "Lottery Close": f"""
+Close the lottery segment in the host's natural voice.
+{LOTTERY_CLOSE_COACHING}
+Do not invent winning numbers or jackpot amounts that are not supplied.
 """.strip(),
     "Artist Spotlight": """
 Share one verified fact about the next artist using only supplied context.
@@ -227,6 +241,10 @@ DEFAULT_MISSIONS: dict[str, str] = {
         "on today's stories or anything else on their mind and tell listeners to select "
         "Community at mosplaceradio.com."
     ),
+    "Lottery Close": (
+        "Close the lottery briefly. Do not say now back to the music — end with something "
+        "like: hope your lottery dreams came true!"
+    ),
     "Format Change": "Acknowledge the format change and set expectations for what is coming next.",
     "Handoff": "Wrap up briefly and hand off to the next host.",
     "Show Close": "Thank listeners, close the show, and hand off to the next host or format.",
@@ -255,6 +273,7 @@ EVENT_TO_TYPE: dict[str, str] = {
     "Listener Memory": "check_in",
     "Community Mention": "check_in",
     "News Check-In": "check_in",
+    "Lottery Close": "check_in",
     "Format Change": "format_change",
     "Handoff": "handoff",
     "Show Close": "close",
@@ -343,6 +362,10 @@ def _infer_event_type_from_mission_text(mission: str) -> str | None:
         ("select community", "News Check-In"),
         ("selecting community", "News Check-In"),
         ("now back to the music", "News Check-In"),
+        ("lottery dreams", "Lottery Close"),
+        ("lottery close", "Lottery Close"),
+        ("hope your lottery", "Lottery Close"),
+        ("lottery numbers", "Lottery Close"),
         ("karaoke", "Community Mention"),
         ("what should i sing", "Community Mention"),
         ("click on community", "Community Mention"),
