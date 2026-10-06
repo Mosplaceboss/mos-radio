@@ -37,62 +37,67 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Yacht Rock",
 )
 
-# Mid-show check-ins were stacking opener + song + birthday + CTA + library tease +
-# slogan closers in one cart (Kathy's last break). Keep one focused beat.
-_FOCUSED_BREAK_COACHING = """
-One clear thought only — do not sound like a laundry list.
-Do not stack a song tease, birthday shoutout, website CTA, library add, and slogan closer in the same break.
-Do not pad with multiple similar warm-filler lines (heart / love / fun / good music slogans).
-Use only songs, artists, birthdays, library adds, and listener CTAs that are explicitly supplied in context — never invent them.
-Never invent rankings such as "still ahead", chart positions, or countdown claims.
-End once — no stacked catchphrase closers.
+# DJs were stacking Request Song and Community in one cart. One listener CTA per
+# break is enough — alternate across breaks. Applies to every host.
+_LISTENER_CTA_COACHING = """
+Never mention both song requests and Community in the same break.
+Pick one listener CTA per break — Request Song or Community — and save the other for a later break.
+Alternating across breaks is fine. This applies to every host/DJ.
+Do not repeat the same CTA or closer line twice inside one break.
 """.strip()
 
-_FOCUSED_BREAK_EVENT_TYPES = frozenset(
+_LISTENER_CTA_EVENT_TYPES = frozenset(
     {
+        "Show Open",
         "Check-In",
         "Weekend Check-In",
-        "Listener Memory",
-        "Coming Up Next",
+        "Artist Spotlight",
         "Music Story",
+        "Coming Up",
+        "Coming Up Next",
+        "Today's Countdown",
+        "Final Half Hour",
+        "Listener Memory",
+        "Format Change",
     }
 )
 
 EVENT_COACHING: dict[str, str] = {
-    "Show Open": """
+    "Show Open": f"""
 Welcome listeners.
 Mention the day and time naturally.
 Mention the show's format.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
-Keep the open focused — do not stack birthday shoutouts, website CTAs, library adds, and slogan closers on top of the welcome.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
-Reference at most one previous or upcoming song from the supplied music context when it feels natural.
+Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
-{_FOCUSED_BREAK_COACHING}
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
-Reference at most one previous or upcoming song from the supplied music context when it feels natural.
+Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
-{_FOCUSED_BREAK_COACHING}
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Artist Spotlight": """
+    "Artist Spotlight": f"""
 Share one verified fact about the next artist using only supplied context.
 Do not invent biographical details.
 Transition naturally into the next song.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Music Story": f"""
 Share a brief music-related observation tied to an upcoming song or artist.
 Use only supplied context — do not invent facts.
 Keep it conversational, not encyclopedic.
-{_FOCUSED_BREAK_COACHING}
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "This Day in Music History": """
 Open warmly and personally — something in the spirit of: you're sitting there thinking back on music history and you'd like to share a few with the listener.
@@ -109,36 +114,40 @@ Topics can be music, movies, TV, sports, pop culture, or other popular 1970s mom
 Do not invent dates, titles, scores, or other history.
 Keep it nostalgic and conversational, then return to the music.
 """.strip(),
-    "Coming Up": """
+    "Coming Up": f"""
 Tease several upcoming artists or songs from the supplied list.
 Do not sound repetitive or like a laundry list.
 Do not promise exact timing or order.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Coming Up Next": f"""
 Tease what is coming up next on the show from the supplied music context.
 Mention the time of day when natural (for example noon or the final hour).
 Keep it conversational and avoid promising exact song order.
-{_FOCUSED_BREAK_COACHING}
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Today's Countdown": """
+    "Today's Countdown": f"""
 Talk about why this era of music remains memorable.
 Reference the show format naturally.
 Tease the next song or artist from the supplied queue without inventing chart ranks.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Final Half Hour": """
+    "Final Half Hour": f"""
 Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
-{_FOCUSED_BREAK_COACHING}
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Format Change": """
+    "Format Change": f"""
 Acknowledge the shift in format or show direction naturally.
 Set expectations for what listeners will hear next.
 Keep it brief.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Handoff": """
 Wrap up briefly.
@@ -180,16 +189,16 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
     "lunchtime_welcome": "Welcome listeners to the lunchtime show and set a relaxed mood.",
     "music_story": "Share a brief music-related observation tied to an upcoming song or artist.",
     "personality": (
-        "One focused check-in in the host's natural voice — "
-        "daypart mood plus at most one supplied talking point, no laundry list."
+        "Check in with listeners in the host's natural voice. "
+        "Mention Request Song or Community in this break, not both."
     ),
     "current_or_facebook": (
-        "One focused check-in on the current daypart — "
-        "do not stack CTAs, birthdays, library adds, and slogan closers."
+        "Check in with listeners and reference the current daypart naturally. "
+        "Mention Request Song or Community in this break, not both."
     ),
     "current_item": (
-        "One focused check-in tied to the current song or daypart — "
-        "at most one supplied music reference, no laundry list of slogans."
+        "Check in with listeners and reference the current song or daypart. "
+        "Mention Request Song or Community in this break, not both."
     ),
     "pre_handoff_lunch": "Wrap up briefly and hand off to the next host.",
     "signoff_to_johnny": "Thank listeners and hand off to the next host.",
@@ -203,12 +212,12 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
 DEFAULT_MISSIONS: dict[str, str] = {
     "Show Open": "Welcome listeners, mention the day, introduce the format, and tease upcoming music.",
     "Check-In": (
-        "One focused check-in: daypart mood plus at most one supplied song or talking point — "
-        "no laundry list of CTAs, birthdays, library adds, or slogan closers."
+        "Check in with listeners and reference the current daypart naturally. "
+        "Mention Request Song or Community in this break, not both — alternating later is fine."
     ),
     "Weekend Check-In": (
-        "One focused weekend check-in; mention at most two upcoming artists from supplied context — "
-        "no stacked slogans or invented shoutouts."
+        "Weekend check-in and mention two upcoming artists. "
+        "Mention Request Song or Community in this break, not both."
     ),
     "Artist Spotlight": "Share one brief verified fact about an upcoming artist.",
     "Music Story": "Share a brief music-related observation tied to an upcoming song or artist.",
@@ -363,92 +372,79 @@ def event_type_for_row(row: dict) -> str:
     return "Check-In"
 
 
-def focused_break_mission_hint(row: dict) -> str:
-    """Remind check-ins and similar mid-show breaks to stay one focused beat."""
+def listener_cta_mission_hint(row: dict) -> str:
+    """Remind speaking breaks: Request Song or Community — not both in one cart."""
     event_type = event_type_for_row(row)
-    if event_type not in _FOCUSED_BREAK_EVENT_TYPES:
+    if event_type not in _LISTENER_CTA_EVENT_TYPES:
         return ""
     return (
-        "Keep one clear thought only — no laundry list of song teases, birthdays, "
-        "website CTAs, library adds, or stacked slogan closers."
+        "Mention Request Song or Community in this break, not both — "
+        "alternating across breaks is fine for every DJ."
     )
 
 
-def apply_focused_break_rules_to_mission(row: dict, mission: str) -> str:
-    hint = focused_break_mission_hint(row)
+def apply_listener_cta_rules_to_mission(row: dict, mission: str) -> str:
+    hint = listener_cta_mission_hint(row)
     text = str(mission or "").strip()
     if not hint:
         return text
     lower = text.lower()
-    if "one clear thought only" in lower:
+    if "request song or community" in lower and "not both" in lower:
         return text
     if not text:
         return hint
     return f"{text} {hint}".strip()
 
 
-def laundry_list_symptoms(script: str) -> list[str]:
-    """Flag stacked beats that make a single cart sound repetitive/padded.
+def _script_mentions_song_request(script: str) -> bool:
+    lower = str(script or "").lower()
+    needles = (
+        "request song",
+        "song request",
+        "request a song",
+        "requests are open",
+        "submit a request",
+        "send a request",
+        "make a request",
+        "listener request",
+    )
+    return any(needle in lower for needle in needles)
 
-    Used to spot scripts like Kathy's last Check-In that piled song + birthday +
-    Community CTA + library tease + multiple slogan closers into one break.
-    """
+
+def _script_mentions_community(script: str) -> bool:
+    lower = str(script or "").lower()
+    needles = (
+        "click community",
+        "community to share",
+        "through community",
+        "on community",
+        " community ",
+        "community.",
+        "community!",
+        "community,",
+    )
+    if "community" not in lower:
+        return False
+    # Avoid false hits on "community radio" style phrases without a CTA.
+    return any(needle in lower for needle in needles) or lower.strip().startswith("community")
+
+
+def dual_listener_cta_symptoms(script: str) -> list[str]:
+    """Flag scripts that mention both song requests and Community in one break."""
     text = str(script or "").strip()
     if not text:
         return []
-    lower = text.lower()
     symptoms: list[str] = []
-
-    topic_flags = {
-        "song_or_artist_tease": any(
-            needle in lower
-            for needle in (
-                "sunny afternoon",
-                "still ahead",
-                "coming up",
-                "we've got",
-                "we have got",
-                "track in the library",
-                "in the library",
-            )
-        ),
-        "birthday_shoutout": "happy birthday" in lower or "birthday" in lower,
-        "website_or_community_cta": any(
-            needle in lower
-            for needle in ("click community", "community to share", "mosplaceradio.com", "request song")
-        ),
-        "library_add": "in the library" in lower or "new " in lower and "track" in lower,
-    }
-    active_topics = [name for name, hit in topic_flags.items() if hit]
-    if len(active_topics) >= 3:
-        symptoms.append(
-            "stacked_unrelated_beats:" + ",".join(active_topics)
-        )
-
-    filler_hits = [
-        needle
-        for needle in (
-            "in my heart",
-            "one more thing to love",
-            "life is too short",
-            "laughs and good music",
-            "have a little fun",
-            "day full of laughs",
-        )
-        if needle in lower
-    ]
-    if len(filler_hits) >= 2:
-        symptoms.append("stacked_warm_filler:" + ",".join(filler_hits))
-
-    if "still ahead" in lower or "#1" in lower or "number one" in lower:
-        symptoms.append("invented_ranking_language")
-
+    has_request = _script_mentions_song_request(text)
+    has_community = _script_mentions_community(text)
+    if has_request and has_community:
+        symptoms.append("request_and_community_same_break")
     return symptoms
 
 
-def script_sounds_like_laundry_list(script: str) -> bool:
-    """True when a break stacks enough unrelated beats or slogan filler to sound repetitive."""
-    return bool(laundry_list_symptoms(script))
+def script_mentions_request_and_community(script: str) -> bool:
+    """True when one break pitches both Request Song and Community."""
+    return "request_and_community_same_break" in dual_listener_cta_symptoms(script)
 
 
 def mission_text_for_row(row: dict) -> str:
@@ -465,7 +461,7 @@ def mission_text_for_row(row: dict) -> str:
         elif _mission_is_event_type_name(mission, event_type):
             mission = default_mission_for_event_type(event_type)
 
-    return apply_focused_break_rules_to_mission(row, mission)
+    return apply_listener_cta_rules_to_mission(row, mission)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -494,7 +490,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = apply_focused_break_rules_to_mission(result, mission)
+    result["Mission"] = apply_listener_cta_rules_to_mission(result, mission)
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
@@ -510,9 +506,9 @@ def event_coaching(event_type: str) -> str:
 
 
 def event_coaching_for_row(row: dict) -> str:
-    """Coaching for a schedule row, including focused-break (no laundry-list) rules."""
+    """Coaching for a schedule row, including Request Song / Community alternate rules."""
     base = event_coaching(event_type_for_row(row))
-    hint = focused_break_mission_hint(row)
+    hint = listener_cta_mission_hint(row)
     if not hint or hint.lower() in base.lower():
         return base
     return f"{base}\n{hint}".strip()
