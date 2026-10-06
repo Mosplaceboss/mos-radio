@@ -34,6 +34,7 @@ Every action asks for confirmation first.
 | Watcher stopped | Restart the approved watcher from Daily Operations |
 | Missing audio | Check the Audio Monitoring tab in Broadcasting |
 | Stale news | Run News Now or check the News automation folder |
+| Generated Voice carts look stale / host cart repeating | Restart LiveDJ Watcher, confirm a new file appears under `Audio\Generated`, and check RadioDJ is not looping that host's cart |
 
 ## Staff Mode
 

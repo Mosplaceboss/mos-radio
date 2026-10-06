@@ -11,3 +11,7 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Host carts (Kathy, Mo, etc.) share one RadioDJ CartId/WAV. LiveDJ must regenerate
+fresh audio each break; coaching now forbids near-repeat wording so afternoon carts
+do not sound like the previous break.

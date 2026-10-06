@@ -37,37 +37,66 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Yacht Rock",
 )
 
+# Hosts share one RadioDJ cart/WAV per personality. Each new break must sound fresh
+# so a regenerated cart never airs like a replay of the previous break.
+_FRESH_BREAK_COACHING = """
+This break must sound fresh and distinct from your previous break.
+Do not reuse the same opening line, jokes, song teases, structure, or closing beat from earlier today.
+Vary the wording every time — never deliver a near-repeat of the last cart.
+""".strip()
+
+_FRESH_BREAK_EVENT_TYPES = frozenset(
+    {
+        "Show Open",
+        "Check-In",
+        "Weekend Check-In",
+        "Artist Spotlight",
+        "Music Story",
+        "Coming Up",
+        "Coming Up Next",
+        "Today's Countdown",
+        "Final Half Hour",
+        "Listener Memory",
+        "Format Change",
+    }
+)
+
 EVENT_COACHING: dict[str, str] = {
-    "Show Open": """
+    "Show Open": f"""
 Welcome listeners.
 Mention the day and time naturally.
 Mention the show's format.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Check-In": """
+    "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Weekend Check-In": """
+    "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Artist Spotlight": """
+    "Artist Spotlight": f"""
 Share one verified fact about the next artist using only supplied context.
 Do not invent biographical details.
 Transition naturally into the next song.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Music Story": """
+    "Music Story": f"""
 Share a brief music-related observation tied to an upcoming song or artist.
 Use only supplied context — do not invent facts.
 Keep it conversational, not encyclopedic.
+{_FRESH_BREAK_COACHING}
 """.strip(),
     "This Day in Music History": """
 Open warmly and personally — something in the spirit of: you're sitting there thinking back on music history and you'd like to share a few with the listener.
@@ -84,34 +113,40 @@ Topics can be music, movies, TV, sports, pop culture, or other popular 1970s mom
 Do not invent dates, titles, scores, or other history.
 Keep it nostalgic and conversational, then return to the music.
 """.strip(),
-    "Coming Up": """
+    "Coming Up": f"""
 Tease several upcoming artists or songs from the supplied list.
 Do not sound repetitive or like a laundry list.
 Do not promise exact timing or order.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Coming Up Next": """
+    "Coming Up Next": f"""
 Tease what is coming up next on the show from the supplied music context.
 Mention the time of day when natural (for example noon or the final hour).
 Keep it conversational and avoid promising exact song order.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Today's Countdown": """
+    "Today's Countdown": f"""
 Talk about why this era of music remains memorable.
 Reference the show format naturally.
 Tease the next song or artist from the supplied queue without inventing chart ranks.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Final Half Hour": """
+    "Final Half Hour": f"""
 Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Listener Memory": """
+    "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
+{_FRESH_BREAK_COACHING}
 """.strip(),
-    "Format Change": """
+    "Format Change": f"""
 Acknowledge the shift in format or show direction naturally.
 Set expectations for what listeners will hear next.
 Keep it brief.
+{_FRESH_BREAK_COACHING}
 """.strip(),
     "Handoff": """
 Wrap up briefly.
@@ -321,23 +356,44 @@ def event_type_for_row(row: dict) -> str:
     return "Check-In"
 
 
+def fresh_break_mission_hint(row: dict) -> str:
+    """Remind mid-show and open breaks not to replay the previous cart's wording."""
+    event_type = event_type_for_row(row)
+    if event_type not in _FRESH_BREAK_EVENT_TYPES:
+        return ""
+    return (
+        "Sound fresh and distinct from your previous break — "
+        "do not reuse earlier wording, jokes, song teases, or structure."
+    )
+
+
+def apply_fresh_break_rules_to_mission(row: dict, mission: str) -> str:
+    hint = fresh_break_mission_hint(row)
+    text = str(mission or "").strip()
+    if not hint:
+        return text
+    if "sound fresh and distinct from your previous break" in text.lower():
+        return text
+    if not text:
+        return hint
+    return f"{text} {hint}".strip()
+
+
 def mission_text_for_row(row: dict) -> str:
     mission = str(row.get("Mission") or row.get("mission") or "").strip()
     event_type = event_type_for_row(row)
     if not mission:
-        return default_mission_for_event_type(event_type)
+        mission = default_mission_for_event_type(event_type)
+    else:
+        legacy_key = _legacy_mission_key(mission)
+        if legacy_key in LEGACY_MISSION_TEXT:
+            mission = LEGACY_MISSION_TEXT[legacy_key]
+        elif legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
+            mission = LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
+        elif _mission_is_event_type_name(mission, event_type):
+            mission = default_mission_for_event_type(event_type)
 
-    legacy_key = _legacy_mission_key(mission)
-    if legacy_key in LEGACY_MISSION_TEXT:
-        return LEGACY_MISSION_TEXT[legacy_key]
-
-    if legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
-        return LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
-
-    if _mission_is_event_type_name(mission, event_type):
-        return default_mission_for_event_type(event_type)
-
-    return mission
+    return apply_fresh_break_rules_to_mission(row, mission)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -366,7 +422,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = mission
+    result["Mission"] = apply_fresh_break_rules_to_mission(result, mission)
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
@@ -379,3 +435,12 @@ def schedule_type_for_event(event_type: str) -> str:
 def event_coaching(event_type: str) -> str:
     normalized = normalize_event_type(event_type)
     return EVENT_COACHING.get(normalized, EVENT_COACHING["Check-In"])
+
+
+def event_coaching_for_row(row: dict) -> str:
+    """Coaching for a schedule row, including fresh-break (no cart-repeat) rules."""
+    base = event_coaching(event_type_for_row(row))
+    hint = fresh_break_mission_hint(row)
+    if not hint or hint.lower() in base.lower():
+        return base
+    return f"{base}\n{hint}".strip()

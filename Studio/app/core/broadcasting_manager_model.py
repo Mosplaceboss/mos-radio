@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -24,6 +25,7 @@ from app.core.platform_manager import platform_path, test_platform_path
 from app.core.programming_model import load_programming_bundle, normalize_bundle as normalize_programming
 from app.core.schedule_model import DAYS, normalize_schedule_data, time_to_minutes
 from app.core.hidden_process import path_is_accessible
+from app.core.system_status import build_live_system_status, service_lookup
 
 logger = logging.getLogger("moplace.studio.broadcasting")
 
@@ -51,6 +53,10 @@ RADIODJ_TEXT_CANDIDATES = (
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
 AUDIO_SCAN_TIMEOUT_SECONDS = 3.0
 AUDIO_SCAN_FILE_LIMIT = 400
+# Hosts share one RadioDJ cart WAV. If Generated Voice stops updating during the day,
+# RadioDJ can keep airing the previous break ("Kathy's cart is repeating").
+GENERATED_VOICE_STALE_MINUTES = 90
+GENERATED_VOICE_ACTIVE_HOURS = range(6, 23)
 
 
 @dataclass
@@ -414,6 +420,46 @@ def _build_radiodj_snapshot(settings: dict[str, Any], config_manager, dashboard)
     )
 
 
+def _generated_voice_stale_message(
+    audio_folders: list[AudioFolderSummary],
+    live_status,
+) -> str | None:
+    """Warn when LiveDJ looks running but Generated Voice carts are not refreshing."""
+    hour = datetime.now().hour
+    if hour not in GENERATED_VOICE_ACTIVE_HOURS:
+        return None
+
+    livedj = service_lookup(live_status, "LiveDJ Watcher")
+    if not livedj or not livedj.running:
+        return None
+
+    generated = next((folder for folder in audio_folders if folder.key == "audio_generated"), None)
+    if generated is None:
+        return None
+    if generated.status == HEALTH_ERROR:
+        return None
+    if not generated.newest_files:
+        if "No audio files found" in generated.issues:
+            return (
+                "Generated Voice has no cart audio — LiveDJ may be replaying an empty/previous host cart. "
+                "Restart LiveDJ Watcher and confirm new files appear under Audio\\Generated."
+            )
+        return None
+
+    # newest_files entries look like: "kathy.wav · 420.0 KB · 2.5h ago"
+    newest = generated.newest_files[0]
+    match = re.search(r"([\d.]+)h ago", newest)
+    if not match:
+        return None
+    age_hours = float(match.group(1))
+    if age_hours * 60 < GENERATED_VOICE_STALE_MINUTES:
+        return None
+    return (
+        f"Generated Voice carts look stale ({newest}) — LiveDJ may be replaying the previous break. "
+        "Restart LiveDJ Watcher and check RadioDJ is not looping the host cart."
+    )
+
+
 def _build_alerts(
     config_manager,
     settings: dict[str, Any],
@@ -449,6 +495,10 @@ def _build_alerts(
     stale_news = _news_stale_message(settings)
     if stale_news:
         alerts.append(stale_news)
+
+    stale_generated = _generated_voice_stale_message(audio_folders, live_status)
+    if stale_generated:
+        alerts.append(stale_generated)
 
     requests = service_lookup(live_status, "Request Watcher")
     if requests and not requests.running:
