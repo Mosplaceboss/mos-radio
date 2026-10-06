@@ -11,3 +11,6 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Check-In / Weekend Check-In coaching keeps one focused beat — no laundry-list carts that
+stack song + birthday + Community CTA + library tease + slogan closers (Kathy symptom).

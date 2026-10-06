@@ -43,11 +43,11 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Open the show with energy and a clear sense of direction.",
     ],
     "General Check-In": [
-        "Reconnect with listeners and keep the show moving.",
-        "Give a natural time check and look ahead.",
-        "Maintain the live-radio feel between songs.",
-        "Remind listeners who they are listening to.",
-        "Tease upcoming music without listing too many songs.",
+        "One focused reconnect with listeners — keep the show moving without stacking topics.",
+        "Give a natural time check and look ahead with at most one supplied music tease.",
+        "Maintain the live-radio feel between songs in one clear thought.",
+        "Remind listeners who they are listening to without slogan padding.",
+        "Tease upcoming music without listing too many songs or stacking CTAs.",
     ],
     "Music Story": [
         "Share a short story connected to the upcoming artist or song.",
