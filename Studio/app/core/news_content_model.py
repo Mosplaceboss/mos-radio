@@ -103,6 +103,77 @@ def default_schedule_slots() -> list[dict[str, Any]]:
     ]
 
 
+# Dave / sports desk: cover MLB playoffs; skip empty teams; never announce a blank day as "no game".
+DEFAULT_SPORTS_GAME_RULES = (
+    "During the MLB postseason, always include MLB playoff news from supplied sources "
+    "(series results, scores, upcoming playoff games, and notable storylines) — "
+    "do not skip baseball just because a local team is not playing. "
+    "Prefer New England or Red Sox angles when available, but still cover the broader "
+    "MLB playoffs (Wild Card, Division Series, Championship Series, and World Series). "
+    "Always include notable deaths or memorial news about athletes connected to covered "
+    "teams (for example NHL/Penguins, NFL, MLB, NBA, or college) when that news appears "
+    "in supplied sources — do not skip obituaries. "
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one."
+)
+
+# Older sports rule text (before playoff / obituary guidance) — upgrade on load.
+_LEGACY_SPORTS_GAME_RULES = (
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one.",
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one.",
+    "Always include notable deaths or memorial news about athletes connected to covered "
+    "teams (for example NHL/Penguins, NFL, MLB, NBA, or college) when that news appears "
+    "in supplied sources — do not skip obituaries. "
+    "If there is no news regarding a sports team, do not mention that team and "
+    "do not say there is no news. Skip them quietly. "
+    "If a team does not play today, do not say there is no game or that they are off. "
+    "Say something similar to: their next game is… using the supplied schedule. "
+    "Only mention a next game when the date or opponent is provided — never invent one.",
+)
+
+_MLB_PLAYOFF_SPORTS_PREFIX = (
+    "During the MLB postseason, always include MLB playoff news from supplied sources "
+    "(series results, scores, upcoming playoff games, and notable storylines) — "
+    "do not skip baseball just because a local team is not playing. "
+    "Prefer New England or Red Sox angles when available, but still cover the broader "
+    "MLB playoffs (Wild Card, Division Series, Championship Series, and World Series). "
+)
+
+
+def _sports_rules_need_mlb_playoff_guidance(rules: str) -> bool:
+    text = str(rules or "").strip()
+    if not text:
+        return True
+    lower = text.lower()
+    return not any(
+        needle in lower
+        for needle in ("mlb playoff", "mlb postseason", "baseball playoff", "world series")
+    )
+
+
+def _ensure_sports_game_rules(rules: str) -> str:
+    text = str(rules or "").strip()
+    if not text:
+        return DEFAULT_SPORTS_GAME_RULES
+    compact = " ".join(text.split())
+    legacy = {" ".join(item.split()) for item in _LEGACY_SPORTS_GAME_RULES}
+    if compact in legacy:
+        return DEFAULT_SPORTS_GAME_RULES
+    if _sports_rules_need_mlb_playoff_guidance(text):
+        # Preserve operator custom rules, but require MLB playoff coverage in season.
+        return (_MLB_PLAYOFF_SPORTS_PREFIX + text).strip()
+    return text
+
+
 def default_script_rules() -> dict[str, Any]:
     return {
         "story_order": [cat for cat in DEFAULT_CATEGORIES[:6]],
@@ -112,7 +183,12 @@ def default_script_rules() -> dict[str, Any]:
         "closing": "For Mo's Place Radio, I'm {personality}.",
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": (
+            "Lead anchor opens every newscast. "
+            "Dave covers sports — during the MLB postseason, include MLB playoff news "
+            "from supplied sources even when a local team is not playing."
+        ),
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
         "stale_hours_warning": 12,
     }
 
@@ -218,6 +294,14 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
+    personality_rules = str(merged.get("news_first_personality_rules", "") or "")
+    if "MLB" not in personality_rules and "playoff" not in personality_rules.lower():
+        merged["news_first_personality_rules"] = (
+            f"{personality_rules.rstrip('. ')}. "
+            "Dave covers sports — during the MLB postseason, include MLB playoff news "
+            "from supplied sources even when a local team is not playing."
+        ).strip()
+    merged["sports_game_rules"] = _ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
     return merged
 
 
@@ -313,6 +397,18 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        # Upgrade existing installs: Dave sports must cover MLB playoffs.
+        raw = load_news_content_bundle(config_manager)
+        bundle = normalize_bundle(raw)
+        raw_script = raw.get("script_rules") or {}
+        needs_upgrade = False
+        personality_rules = str(raw_script.get("news_first_personality_rules", "") or "")
+        if "MLB" not in personality_rules and "playoff" not in personality_rules.lower():
+            needs_upgrade = True
+        if _sports_rules_need_mlb_playoff_guidance(str(raw_script.get("sports_game_rules", ""))):
+            needs_upgrade = True
+        if needs_upgrade:
+            save_news_content_bundle(bundle, config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
