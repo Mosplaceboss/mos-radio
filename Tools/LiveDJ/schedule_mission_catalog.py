@@ -105,6 +105,11 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Connect the music to Boston or New England life.",
         "Recognize listeners around the Merrimack Valley.",
         "Add a familiar local touch without turning it into a news report.",
+        (
+            "Do the normal check-in first. If a today-only local news aside is supplied, "
+            "casually mention one story without naming the outlet. Do not ramble or turn "
+            "it into a newscast — skip the aside if nothing fits."
+        ),
     ],
     "Requests": [
         "Remind listeners that requests are open.",
@@ -170,6 +175,27 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _merge_default_categories(stored: dict[str, list[str]]) -> tuple[dict[str, list[str]], bool]:
+    """Keep operator edits; append any new default missions that are missing."""
+    changed = False
+    merged: dict[str, list[str]] = {}
+    for name, defaults in DEFAULT_CATEGORIES.items():
+        existing = list(stored.get(name) or [])
+        existing_norm = {item.strip().lower() for item in existing if item.strip()}
+        for text in defaults:
+            key = text.strip().lower()
+            if key and key not in existing_norm:
+                existing.append(text)
+                existing_norm.add(key)
+                changed = True
+        merged[name] = existing
+    for name, items in stored.items():
+        if name not in merged:
+            merged[name] = list(items)
+            changed = True
+    return merged, changed
+
+
 def ensure_catalog_files() -> None:
     if not CATEGORIES_FILE.is_file():
         _write_json(
@@ -180,6 +206,22 @@ def ensure_catalog_files() -> None:
                 "categories": DEFAULT_CATEGORIES,
             },
         )
+    else:
+        data = _read_json(CATEGORIES_FILE)
+        stored_raw = data.get("categories") or {}
+        stored: dict[str, list[str]] = {}
+        for name, items in stored_raw.items():
+            if isinstance(items, list):
+                stored[str(name)] = [str(item).strip() for item in items if str(item).strip()]
+        merged, changed = _merge_default_categories(stored)
+        if changed:
+            data["categories"] = merged
+            data.setdefault("version", 1)
+            data.setdefault(
+                "description",
+                "LiveDJ mission categories and ready-to-use objectives.",
+            )
+            _write_json(CATEGORIES_FILE, data)
     if not CUSTOM_FILE.is_file():
         _write_json(CUSTOM_FILE, {"version": 1, "missions": []})
 

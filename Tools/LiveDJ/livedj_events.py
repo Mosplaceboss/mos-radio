@@ -45,12 +45,19 @@ Mention the show's format.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
+If a TODAY'S LOCAL NEWS ASIDE SOURCE block is supplied, you may weave in at most one short
+casual mention of a single today-only story. Do not name the news outlet, do not ramble,
+and do not invent details. If that source says none are available, skip any news mention.
 """.strip(),
     "Check-In": """
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+If a TODAY'S LOCAL NEWS ASIDE SOURCE block is supplied, you may add at most one short
+casual mention of a single today-only story after the normal check-in. Do not name the
+news outlet, do not ramble, and do not invent details. If that source says none are
+available, skip any news mention entirely.
 """.strip(),
     "Weekend Check-In": """
 Mention the current time of day.
@@ -58,6 +65,10 @@ Comment on the weekend mood naturally using the CURRENT calendar in STATION CONT
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+If a TODAY'S LOCAL NEWS ASIDE SOURCE block is supplied, you may add at most one short
+casual mention of a single today-only story after the normal check-in. Do not name the
+news outlet, do not ramble, and do not invent details. If that source says none are
+available, skip any news mention entirely.
 """.strip(),
     "Artist Spotlight": """
 Share one verified fact about the next artist using only supplied context.
