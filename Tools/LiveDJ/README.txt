@@ -11,3 +11,7 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Check-In / Show Open: if an awareness month or cause is supplied, say it once in one respectful sentence.
+Reject the cart when awareness_break_problems() is non-empty (repeated mention, "I do not know what it means,"
+"but I like it," the awarness misspelling, or Moe's Place). The station name is Mo's Place Radio.
