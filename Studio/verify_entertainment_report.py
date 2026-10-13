@@ -14,11 +14,14 @@ sys.path.insert(0, str(ROOT))
 from app.core.entertainment_report import (  # noqa: E402
     DAVE_SPORTS_CLOSE,
     DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    ENTERTAINMENT_FIRST_AIRING,
     ENTERTAINMENT_SOURCES,
+    LOCKED_HANDOFF_LINES,
     MICHAEL_BEAT,
     MICHAEL_G_BIO,
     MICHAEL_G_VOICEBOX_ID,
     MICHAEL_G_VOICEBOX_PROFILE,
+    MICHAEL_HANDOFF,
     MICHAEL_STRAIGHT_OPEN,
     MO_THANKS,
     EntertainmentStory,
@@ -44,7 +47,8 @@ from app.core.news_content_model import (  # noqa: E402
 
 DEADLINE_URL = "https://deadline.com/feed/atom/"
 TMZ_URL = "https://www.tmz.com/rss.xml"
-VARIETY_NEWS_URL = "https://variety.com/v/film/feed/"
+VARIETY_NEWS_URL = "https://feeds.feedburner.com/variety/headlines"
+OLD_VARIETY_FILM_URL = "https://variety.com/v/film/feed/"
 RETIRED_REVIEWS_URL = "https://variety.com/v/film/reviews/feed/"
 
 MOVIE_SUMMARY = (
@@ -118,7 +122,9 @@ def test_filters() -> None:
 
 def test_selection_and_feeds() -> None:
     urls = [source["url"] for source in ENTERTAINMENT_SOURCES]
-    _check("three feeds", urls == [TMZ_URL, DEADLINE_URL, VARIETY_NEWS_URL])
+    _check("three feeds", urls == [DEADLINE_URL, TMZ_URL, VARIETY_NEWS_URL])
+    _check("variety headlines feed", VARIETY_NEWS_URL == "https://feeds.feedburner.com/variety/headlines")
+    _check("old variety film feed is not a source", OLD_VARIETY_FILM_URL not in urls)
     _check("reviews feed is not a source", RETIRED_REVIEWS_URL not in urls)
     _check("no reviews path in the source list", all("variety.com/v/film/reviews" not in url for url in urls))
     module_source = (ROOT / "app/core/entertainment_report.py").read_text(encoding="utf-8")
@@ -232,18 +238,17 @@ def test_selection_and_feeds() -> None:
             retired_review,
         ]
     )
-    _check("four slots when every feed has a story", len(picked) == 4)
+    _check("four stories when every feed has a story", len(picked) == 4)
+    _check("a movie leads when there is no death", picked[0].title == "Ocean Light trailer" and picked[0].slot == SLOT_FILM_NEWS)
     _check(
-        "slot order is celebrity, news, movie news, one more entertainment item",
-        [story.slot for story in picked] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA],
+        "other stories follow the movie by freshness",
+        [story.title for story in picked[1:]]
+        == [
+            "Weekend ticket sales climb again",
+            "Studio renews the drama for two more seasons",
+            "Singer spotted leaving a downtown diner",
+        ],
     )
-    _check("slot 1 is the TMZ sighting, not the fresher ticket item", picked[0].source_id == "tmz")
-    _check("slot 1 title is the sighting", picked[0].title.startswith("Singer spotted"))
-    _check("slot 2 is Deadline", picked[1].source_id == "deadline" and picked[1].title.startswith("Studio renews"))
-    _check("slot 3 is the film-news feed", picked[2].source_id == "variety_film" and picked[2].slot == SLOT_FILM_NEWS)
-    _check("slot 3 is the trailer, not a review headline or a memo", picked[2].title == "Ocean Light trailer")
-    _check("slot 4 is another TMZ or Deadline item", picked[3].source_id in {"tmz", "deadline"} and picked[3].slot == SLOT_EXTRA)
-    _check("slot 4 is the freshest leftover entertainment item", picked[3].title == "Weekend ticket sales climb again")
     _check("a review headline did not air", all(not story.title.startswith("Review:") for story in picked))
     _check("retired review story did not air", all(story.source_id != "variety_reviews" for story in picked))
     _check("volunteer memo did not take a slot", all("volunteer" not in story.title.lower() for story in picked))
@@ -312,7 +317,7 @@ def test_selection_and_feeds() -> None:
     _check("deadline item does not say exclusive", "exclusive" not in deadline_line.lower())
     _check("deadline item does not say according to", "according to" not in deadline_line.lower())
 
-    trailer_line = spoken_story(picked[2])
+    trailer_line = spoken_story(picked[0])
     _check("movie slot matches the fixture sentence", trailer_line == MOVIE_LINE)
     _check("movie slot starts with In movie news", trailer_line.startswith("In movie news,"))
     _check("movie slot names the movie", "Ocean Light fans, get ready!" in trailer_line)
@@ -395,15 +400,16 @@ def test_selection_and_feeds() -> None:
     )
     named_only = select_entertainment_stories([sighting, deadline, spec_deal, named_movie])
     _check(
-        "a titled movie beats a newer spec deal",
-        [story.slot for story in named_only] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS],
+        "a titled movie leads when there is no death",
+        named_only[0].slot == SLOT_FILM_NEWS and named_only[0].title.startswith("Parker Posey"),
     )
-    _check("movie slot uses the titled film, not the spec", named_only[2].title.startswith("Parker Posey"))
-    named_line = spoken_story(named_only[2])
+    _check("spec deal does not take a story", all("Black Bear" not in story.title for story in named_only))
+    named_line = spoken_story(named_only[0])
     _check(
         "titled movie uses the film title",
         named_line.startswith("In movie news, Sleepover fans, get ready!"),
     )
+    _check("titled movie keeps the supplied star", "Parker Posey" in named_line)
     _check("titled movie keeps the supplied theater date", "Oct. 8, 2027" in named_line)
     _check("titled movie does not invent Friday", "friday" not in named_line.lower())
     _check("titled movie does not read the acquisition headline", "Black Bear" not in named_line)
@@ -422,26 +428,31 @@ def test_selection_and_feeds() -> None:
 
     deals_only = select_entertainment_stories([sighting, deadline, spec_deal, writers_lab, cast_list])
     _check(
-        "deals and labs skip the movie slot",
-        [story.slot for story in deals_only] == [SLOT_TMZ, SLOT_DEADLINE],
+        "deals and labs do not take a movie slot",
+        [story.title for story in deals_only]
+        == [
+            "Studio renews the drama for two more seasons",
+            "Singer spotted leaving a downtown diner",
+        ],
     )
 
     without_deadline = select_entertainment_stories(
         [sighting, gossip, box_office, trailer, retired_review, graphic, sexual]
     )
-    _check(
-        "deadline gap uses a second TMZ item and still fills slot 4",
-        [story.slot for story in without_deadline] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA],
-    )
-    _check("fallback slot stays a TMZ story", without_deadline[1].source_id == "tmz")
-    _check("fallback is not the same celebrity item", without_deadline[1].title != without_deadline[0].title)
-    _check("slot 4 after a deadline gap is still TMZ or Deadline", without_deadline[3].source_id in {"tmz", "deadline"})
-    _check("a retired review does not fill the deadline gap", "warm adventure" not in spoken_story(without_deadline[3]))
+    _check("deadline gap still fills four stories", len(without_deadline) == 4)
+    _check("deadline gap still leads with the movie", without_deadline[0].title == "Ocean Light trailer")
+    _check("deadline gap fills with TMZ items", all(story.source_id == "tmz" for story in without_deadline[1:]))
+    _check("a retired review does not fill the deadline gap", all("warm adventure" not in story.summary.lower() for story in without_deadline))
 
     no_extra = select_entertainment_stories([sighting, deadline, trailer, retired_review, film_review_on_news_feed])
     _check(
-        "a review does not fill slot 4",
-        [story.slot for story in no_extra] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS],
+        "a review does not fill a story",
+        [story.title for story in no_extra]
+        == [
+            "Ocean Light trailer",
+            "Studio renews the drama for two more seasons",
+            "Singer spotted leaving a downtown diner",
+        ],
     )
 
     second_deadline = _story(
@@ -452,19 +463,20 @@ def test_selection_and_feeds() -> None:
         kind="entertainment_news",
     )
     deadline_extra = select_entertainment_stories([sighting, deadline, second_deadline, trailer])
-    _check(
-        "second Deadline item can take slot 4",
-        [story.slot for story in deadline_extra] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA],
-    )
-    _check("slot 4 can be Deadline", deadline_extra[3].source_id == "deadline")
-    _check("slot 4 is not the Deadline item already used", deadline_extra[3].title != deadline_extra[1].title)
+    _check("movie leads and both Deadline items can still air", len(deadline_extra) == 4)
+    _check("second Deadline item is not dropped", any(story.title.startswith("Network orders") for story in deadline_extra))
+    _check("the two Deadline items stay distinct", len({story.title for story in deadline_extra if story.source_id == "deadline"}) == 2)
 
     film_down = select_entertainment_stories([sighting, deadline, retired_review])
     _check(
-        "missing film-news feed skips the movie slot",
-        [story.slot for story in film_down] == [SLOT_TMZ, SLOT_DEADLINE],
+        "missing movie still reads the other entertainment",
+        [story.title for story in film_down]
+        == [
+            "Studio renews the drama for two more seasons",
+            "Singer spotted leaving a downtown diner",
+        ],
     )
-    _check("a review does not become the movie slot", all(story.slot != SLOT_FILM_NEWS for story in film_down))
+    _check("a review does not become the movie", all(story.slot != SLOT_FILM_NEWS for story in film_down))
 
     deadline_xml = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -540,15 +552,10 @@ def test_selection_and_feeds() -> None:
             RETIRED_REVIEWS_URL: reviews_xml,
         }
     )
-    _check(
-        "fixtures keep the four-slot order",
-        [story.slot for story in from_feeds] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA],
-    )
-    _check("fixture slot 3 is film news", from_feeds[2].source_id == "variety_film")
-    _check("fixture slot 3 title is the trailer", from_feeds[2].title == "Ocean Light trailer")
-    _check("fixture movie sentence", spoken_story(from_feeds[2]) == MOVIE_LINE)
-    _check("fixture slot 4 is TMZ or Deadline", from_feeds[3].source_id in {"tmz", "deadline"})
-    _check("fixture slot 4 is not the retired review", from_feeds[3].title != "Ocean Light")
+    _check("fixtures keep four stories", len(from_feeds) == 4)
+    _check("fixture movie leads", from_feeds[0].title == "Ocean Light trailer" and from_feeds[0].source_id == "variety")
+    _check("fixture movie sentence", spoken_story(from_feeds[0]) == MOVIE_LINE)
+    _check("fixture fill is not the retired review", all(story.title != "Ocean Light" or "trailer" in story.title.lower() for story in from_feeds))
     _check("reviews xml is ignored", all(story.source_id != "variety_reviews" for story in from_feeds))
     _check("warm-adventure review stays off the air", all("warm adventure" not in story.summary.lower() for story in from_feeds))
     _check("assault story dropped", all("assault" not in story.title.lower() for story in from_feeds))
@@ -564,13 +571,10 @@ def test_selection_and_feeds() -> None:
             RETIRED_REVIEWS_URL: reviews_xml,
         }
     )
-    _check(
-        "deadline down keeps four slots from TMZ and film news",
-        [story.slot for story in deadline_down] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA],
-    )
-    _check("deadline down uses a second TMZ item", deadline_down[1].source_id == "tmz")
-    _check("deadline down does not invent a Deadline story", "summer release" not in deadline_down[1].title.lower())
-    _check("second TMZ item is not the first celebrity story", deadline_down[1].title != deadline_down[0].title)
+    _check("deadline down still fills four stories", len(deadline_down) == 4)
+    _check("deadline down still leads with the movie", deadline_down[0].title == "Ocean Light trailer")
+    _check("deadline down fills from TMZ", all(story.source_id == "tmz" for story in deadline_down[1:]))
+    _check("deadline down does not invent a Deadline story", all("summer release" not in story.title.lower() for story in deadline_down))
     _check("deadline down does not air the reviews feed", all(story.source_id != "variety_reviews" for story in deadline_down))
 
 
@@ -669,9 +673,40 @@ def test_handoff_flow() -> None:
         "normal-day prompt does not force today's open straight",
         "a supplied story is a death, obituary, or mourning item" not in flow["michael_g_prompt"].lower(),
     )
-    _check("michael hands to DJ Mo", flow["michael_g_script"].strip().endswith("DJ Mo, back to you."))
+    _check("michael hands to DJ Mo", flow["michael_g_script"].strip().endswith(MICHAEL_HANDOFF))
     _check("mo thanks Michael G", flow["mo_thanks"] == MO_THANKS)
-    _check("script thanks Michael G", script.strip().endswith("Thanks, Michael G."))
+    _check("mo may mention weekdays at 7:15", "Weekdays at 7:15 on Mo's Place Radio." in flow["mo_thanks"])
+    _check("script ends with Mo's thanks", script.strip().endswith(MO_THANKS))
+    dave_line, michael_thanks, michael_to_mo, mo_thanks = LOCKED_HANDOFF_LINES
+    _check(
+        "four handoff lines are Dave, Michael thanks Dave, Michael to Mo, Mo thanks Michael",
+        LOCKED_HANDOFF_LINES
+        == (
+            "That's sports for this morning. Michael G has the entertainment report.",
+            "Thanks, Dave. Michael G here with the entertainment report.",
+            "DJ Mo, back to you.",
+            "Thanks, Michael G. Weekdays at 7:15 on Mo's Place Radio.",
+        ),
+    )
+    dave_at = script.index(dave_line)
+    thanks_at = script.index(michael_thanks)
+    to_mo_at = script.index(michael_to_mo)
+    mo_at_line = script.index(mo_thanks)
+    _check("dave hands to michael before michael speaks", dave_at < thanks_at < to_mo_at < mo_at_line)
+    _check("michael opens by thanking dave", flow["michael_g_script"].startswith("Thanks, Dave."))
+    _check(
+        "michael does not thank mo at the start",
+        not flow["michael_g_script"].lower().startswith("thanks, mo")
+        and not flow["michael_g_script"].lower().startswith("thanks, dj mo"),
+    )
+    _check(
+        "michael never thanks mo",
+        "thanks, mo" not in flow["michael_g_script"].lower()
+        and "thanks, dj mo" not in flow["michael_g_script"].lower(),
+    )
+    before_handoff = flow["michael_g_script"].split(MICHAEL_HANDOFF)[0]
+    _check("stories follow the thanks to dave", before_handoff.index("Thanks, Dave.") < before_handoff.index("November"))
+    _check("stories come before michael turns it over to mo", "Ocean Light" in before_handoff)
     _check("spoken script has no outlet names", all(name not in flow["michael_g_script"] for name in ("Deadline", "TMZ", "Variety")))
     _check("prompt forbids inventing", "do not invent" in flow["michael_g_prompt"].lower())
     _check("prompt reads exactly four", "exactly these four" in flow["michael_g_prompt"].lower())
@@ -696,7 +731,7 @@ def test_handoff_flow() -> None:
     _check("empty report keeps the conversational beat", empty["michael_g_script"].splitlines()[1] == MICHAEL_BEAT)
     _check("empty report still hands off", "DJ Mo, back to you." in empty["michael_g_script"])
     _check("empty prompt forbids gossip", "do not invent" in empty["michael_g_prompt"].lower())
-    _check("mo still thanks Michael G", empty["mo_thanks"] == "Thanks, Michael G.")
+    _check("mo still thanks Michael G", empty["mo_thanks"] == MO_THANKS)
 
     death = _story(
         "Beloved actor dies at 88",
@@ -856,9 +891,14 @@ def test_handoff_flow() -> None:
             ),
         ]
     )
+    death_script_lines = death_flow["michael_g_script"].splitlines()
     _check(
         "death-day package open is straight",
-        death_flow["michael_g_script"].splitlines()[0] == MICHAEL_STRAIGHT_OPEN,
+        death_script_lines[0] == MICHAEL_STRAIGHT_OPEN,
+    )
+    _check(
+        "a death leads the stories",
+        death_script_lines.index("The actor died Thursday.") < death_script_lines.index(next(line for line in death_script_lines if "Ocean Light" in line)),
     )
     _check(
         "death-day package has no joke",
@@ -954,6 +994,12 @@ def test_news_rules_upgrade() -> None:
     _check("rules ban coffee and rock on a death day", "no coffee" in rules and "no classic rock" in rules)
     _check("rules do not require the same sentence every day", "not the same sentence every day" in rules)
     _check("rules say he does not read his biography", "does not read his biography" in rules)
+    _check("rules lock the handoff", "does not thank mo at the start" in rules and "dave is the person he thanks" in rules)
+    _check("rules turn the show over to mo", "turns it over to mo" in rules)
+    _check("rules let mo mention 7:15", "weekdays at 7:15" in rules)
+    _check("rules name the first airing", ENTERTAINMENT_FIRST_AIRING.lower() in rules)
+    _check("rules say a death leads", "a death, obituary, or mourning item leads" in rules)
+    _check("rules keep each movie as its own paragraph", "its own short paragraph" in rules)
     legacy_rules = normalize_script_rules(
         {
             "entertainment_report_rules": (
@@ -968,6 +1014,7 @@ def test_news_rules_upgrade() -> None:
             ),
             "entertainment_feeds": [
                 RETIRED_REVIEWS_URL,
+                OLD_VARIETY_FILM_URL,
                 VARIETY_NEWS_URL,
                 "https://station.example/extra.xml",
             ],
@@ -986,7 +1033,8 @@ def test_news_rules_upgrade() -> None:
         RETIRED_REVIEWS_URL not in legacy_rules["entertainment_feeds"]
         and all("variety.com/v/film/reviews" not in url for url in legacy_rules["entertainment_feeds"]),
     )
-    _check("film news feed stays in the saved list", VARIETY_NEWS_URL in legacy_rules["entertainment_feeds"])
+    _check("variety headlines feed stays in the saved list", VARIETY_NEWS_URL in legacy_rules["entertainment_feeds"])
+    _check("old variety film feed is removed", OLD_VARIETY_FILM_URL not in legacy_rules["entertainment_feeds"])
     _check("extra saved feed stays", "https://station.example/extra.xml" in legacy_rules["entertainment_feeds"])
     stale_open = normalize_script_rules(
         {
@@ -1124,6 +1172,9 @@ def test_config_files() -> None:
     _check("voice prompt straightens a death open", "whole open is straight" in prompt.lower())
     _check("voice prompt has the exact straight open", MICHAEL_STRAIGHT_OPEN in prompt)
     _check("voice prompt bars popcorn on a death day", "no popcorn joke" in prompt.lower())
+    _check("voice prompt does not thank mo at the start", "does not thank mo at the start" in prompt.lower())
+    _check("voice prompt says a death leads", "a death leads" in prompt.lower())
+    _check("voice prompt keeps each movie as its own paragraph", "its own short paragraph" in prompt.lower())
     _check("voice prompt has no reviews feed", "reviews/feed" not in prompt and "Star Wars" not in prompt)
     personalities = json.loads((config / "personalities.json").read_text(encoding="utf-8"))
     michael = next(person for person in personalities["personalities"] if person["display_name"] == "Michael G")
@@ -1169,10 +1220,15 @@ def test_config_files() -> None:
         "personality straightens a death open",
         "whole open is straight" in michael["personality_description"].lower(),
     )
+    _check(
+        "personality thanks dave and not mo",
+        "thanks dave, not mo" in michael["personality_description"].lower(),
+    )
     _check("personality voicebox id", michael["voicebox_voice_id"] == MICHAEL_G_VOICEBOX_ID)
     _check("personality stores the UNC profile", MICHAEL_G_VOICEBOX_PROFILE in michael["voice_description"])
     mo = next(person for person in personalities["personalities"] if person["id"] == "mo-main")
     _check("Mo thanks Michael G in the personality note", "thank Michael G" in mo["personality_description"])
+    _check("mo may mention the weekday airtime", "weekdays at 7:15" in mo["personality_description"].lower())
     news_desk = next(voice for voice in voices["voices"] if voice["id"] == "vb-news-desk")
     _check("news desk hands to Michael G", "hands to Michael G" in news_desk["personality_prompt"])
     mo_voice = next(voice for voice in voices["voices"] if voice["id"] == "vb-mo-primary")

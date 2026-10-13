@@ -1,23 +1,20 @@
 """Morning entertainment report for Michael G.
 
-Runs after Dave's sports in the morning newscast. Michael G thanks Dave
-and says he has the entertainment report. On a normal day he adds one
-short conversational beat that sounds like him talking, using coffee or
-classic rock. He does not read his biography. If any story is a death,
-obituary, or mourning item, the whole open stays straight, with no coffee,
-rock, dog, grandkids, or popcorn joke. Then he reads four slots, in order,
-and hands to DJ Mo. DJ Mo thanks Michael G by name. The death story itself
-stays respectful.
+Runs after Dave's sports in the morning newscast. The handoff is locked:
 
-1. A TMZ celebrity item: a death, gossip, or a sighting, as one or two
-   plain sentences. The headline is not read and then repeated as the lede.
-2. One bigger Deadline entertainment story, in one or two sentences. If
-   Deadline is empty or down, a second usable TMZ item may fill this slot.
-3. Movie news from the Variety film feed only, in the "In movie news" shape.
-   The film title is used, and only when the item actually names one.
-   A theater day is spoken only when the item gives one. The plot comes from
-   the blurb. Nothing is invented.
-4. One more entertainment item from TMZ or Deadline, in the same plain speech.
+1. Dave hands the morning news to Michael.
+2. Michael thanks Dave, then does the entertainment report. He does not
+   thank Mo at the start.
+3. After the report, Michael turns it over to Mo.
+4. Mo thanks Michael, and may mention weekdays at 7:15 on Mo's Place Radio.
+
+On a normal day Michael adds one short conversational beat that sounds like
+him talking, using coffee or classic rock. He does not read his biography.
+A death, obituary, or mourning item leads, and that open stays straight.
+Other stories are new movies when the feeds have them. Each movie is its
+own short paragraph: a hook, the title, the opening day only if supplied,
+the stars only if supplied, and what it is about. Four stories, refreshed
+every morning. The first airing is October 14, 2026 at 7:15.
 
 Spec-script sales, writers labs, agency moves, cast laundry lists, and
 untitled projects with no film title are skipped. There is no reviews feed.
@@ -65,13 +62,6 @@ SLOT_ORDER = (SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA)
 
 ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
     {
-        "id": "tmz",
-        "name": "TMZ",
-        "kind": "celebrity",
-        "slot": SLOT_TMZ,
-        "url": "https://www.tmz.com/rss.xml",
-    },
-    {
         "id": "deadline",
         "name": "Deadline",
         "kind": "entertainment_news",
@@ -79,16 +69,26 @@ ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
         "url": "https://deadline.com/feed/atom/",
     },
     {
-        "id": "variety_film",
-        "name": "Variety Film",
-        "kind": "film_news",
+        "id": "tmz",
+        "name": "TMZ",
+        "kind": "celebrity",
+        "slot": SLOT_TMZ,
+        "url": "https://www.tmz.com/rss.xml",
+    },
+    {
+        "id": "variety",
+        "name": "Variety",
+        "kind": "headlines",
         "slot": SLOT_FILM_NEWS,
-        "url": "https://variety.com/v/film/feed/",
+        "url": "https://feeds.feedburner.com/variety/headlines",
     },
 )
 
-# Retired on purpose. Do not fetch or speak this feed.
-_RETIRED_FEED_MARKERS = ("variety.com/v/film/reviews",)
+# Retired on purpose. Do not fetch or speak these feeds.
+_RETIRED_FEED_MARKERS = (
+    "variety.com/v/film/reviews",
+    "variety.com/v/film/feed",
+)
 
 DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertainment report."
 MICHAEL_G_BIO = (
@@ -110,10 +110,25 @@ MICHAEL_WARM_OPEN = f"{MICHAEL_STRAIGHT_OPEN} {MICHAEL_BEAT}"
 MICHAEL_INTRO = MICHAEL_WARM_OPEN
 MICHAEL_HANDOFF = "DJ Mo, back to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
-MO_THANKS = "Thanks, Michael G."
+MO_THANKS = "Thanks, Michael G. Weekdays at 7:15 on Mo's Place Radio."
+ENTERTAINMENT_FIRST_AIRING = "October 14, 2026 at 7:15"
+# Dave, Michael thanks Dave, Michael turns it over to Mo, Mo thanks Michael.
+LOCKED_HANDOFF_LINES = (
+    DAVE_SPORTS_CLOSE,
+    MICHAEL_STRAIGHT_OPEN,
+    MICHAEL_HANDOFF,
+    MO_THANKS,
+)
 
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports. "
+    "Handoff order is locked. Dave hands the morning news to Michael. "
+    "Michael thanks Dave, then reads the entertainment report. "
+    "Michael does not thank Mo at the start. Dave is the person he thanks. "
+    "After the report, Michael turns it over to Mo. Mo thanks Michael. "
+    "Mo may mention weekdays at 7:15 on Mo's Place Radio. "
+    "The first airing is October 14, 2026 at 7:15. "
+    "Four stories, refreshed every morning. "
     "His on-air name is Michael G. He does not read his biography. "
     "His personality is comical: light and warm, one short beat, then the stories. "
     "Not sarcastic about death or illness. Not a long monologue. "
@@ -121,34 +136,35 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Then one short conversational beat that sounds like him talking, using coffee or classic rock. "
     "One sentence. Not a disconnected gag. "
     "One short beat. Not a biography. Not the degrees or the universities. Not the same sentence every day. "
-    "If any story is a death, obituary, or mourning item, the whole open is straight. "
+    "A death, obituary, or mourning item leads, and the whole open is straight. "
     'Open with exactly "Thanks, Dave. Michael G here with the entertainment report." '
     "No coffee, no classic rock, no popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
-    "The death story itself stays respectful. "
+    "The death story itself stays straight. "
     "Do not invent a movie title or a person's death for the joke. "
-    "Use only the supplied stories, in this order: "
-    "a celebrity item about a death, gossip, or a sighting, in one or two plain sentences; "
-    "one bigger entertainment-news item, or a second celebrity item if that news feed has nothing, in one or two sentences; "
-    "movie news that starts with In movie news, names the movie with a short get-ready only when a film title is supplied, "
+    "Other stories are new movies when the feeds have them. "
+    "Each movie is its own short paragraph: a hook, the title, the opening day only if it is supplied, "
+    "the stars only if they are supplied, and what it is about. "
+    "Movie news that starts with In movie news, names the movie with a short get-ready only when a film title is supplied, "
     "says when it hits theaters only if the item gives a day or date, "
-    "then one or two sentences on the story from the supplied blurb, then a short closer; "
-    "then one more entertainment item from the celebrity or entertainment-news items. "
+    "then one or two sentences on the story from the supplied blurb, then a short closer. "
     "Do not read the headline and then the lede. "
     "Do not say exclusive, according to, or a list of parenthetical credits. "
     "Do not say review, critics say, or a star rating. "
-    "Do not invent a plot, a release day, a cast, or a Friday. "
+    "Do not invent a plot, a release day, a cast, a star, or a Friday. "
     "Skip spec-script sales, writers labs, agency moves, cast laundry lists, and untitled projects with no film title. "
     "If a feed is down or a slot has nothing usable, skip that slot and do not invent gossip, quotes, or extra stories. "
     "Skip graphic crime, sexual content, and birthdays. "
     "Do not name the outlets on the air. "
-    "Thank Dave, then read the supplied slots, then hand the show to DJ Mo. "
+    "Thank Dave, then read the supplied stories, then turn the show over to DJ Mo. "
+    "Do not open with thanks to Mo. "
     "DJ Mo's next line thanks Michael G by name."
 )
 
 ENTERTAINMENT_PERSONALITY_CLAUSE = (
-    "After Dave finishes sports, he hands to Michael G for the entertainment report "
-    "instead of going straight to DJ Mo. Michael G reads up to four supplied entertainment "
-    "stories, then hands to DJ Mo. DJ Mo thanks Michael G by name."
+    "Dave hands to Michael G for the entertainment report "
+    "instead of going straight to DJ Mo. Michael thanks Dave, then reads up to four supplied entertainment "
+    "stories. He does not thank Mo at the start. Michael turns it over to DJ Mo. "
+    "DJ Mo thanks Michael G by name and may mention weekdays at 7:15 on Mo's Place Radio."
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -466,76 +482,77 @@ def _with_slot(story: EntertainmentStory, slot: str) -> EntertainmentStory:
     )
 
 
+def _is_movie_item(story: EntertainmentStory) -> bool:
+    """A new movie the morning report can read as its own short paragraph."""
+    if _is_review_item(story) or _is_unlistenable(story):
+        return False
+    if is_death_obituary_or_mourning(story):
+        return False
+    if _movie_name(story.title):
+        return True
+    blob = f"{story.title} {story.summary}"
+    movie_source = story.kind in {"film_news", "film"} or story.source_id in {"variety_film", "variety"}
+    return bool(movie_source and _FILM_NEWS_PREFER_RE.search(blob))
+
+
+def _is_fill_entertainment(story: EntertainmentStory) -> bool:
+    """A usable non-movie item when the feeds do not have four movies."""
+    if _is_review_item(story) or _is_unlistenable(story) or _is_movie_item(story):
+        return False
+    if is_death_obituary_or_mourning(story):
+        return False
+    if story.kind in {"film_news", "film"} and not _movie_name(story.title):
+        return False
+    if story.source_id in {"variety_reviews"}:
+        return False
+    return story.source_id in {"tmz", "deadline", "variety", "variety_film"} or story.kind in {
+        "celebrity",
+        "entertainment_news",
+        "headlines",
+    }
+
+
 def select_entertainment_stories(
     stories: list[EntertainmentStory],
     *,
     limit: int = ENTERTAINMENT_STORY_COUNT,
 ) -> list[EntertainmentStory]:
-    """Fill the four morning slots in order. Missing slots are skipped.
+    """Up to four stories, refreshed from the morning feeds.
 
-    Slot 1 is a TMZ celebrity item (death, gossip, or sighting preferred).
-    Slot 2 is Deadline. A second TMZ item fills slot 2 only when Deadline
-    has nothing usable. Slot 3 is a Variety film item that names a movie
-    people could see, with a trailer or opening preferred over a deal.
-    Slot 4 is one more TMZ or Deadline item. Reviews, spec sales, writers
-    labs, agency moves, and cast laundry lists are not used.
+    A death, obituary, or mourning item leads. Other stories are new movies
+    when the feeds have them. Remaining room is filled with other usable
+    entertainment items. Reviews, spec sales, writers labs, agency moves,
+    and cast laundry lists are not used.
     """
-    grouped: dict[str, list[EntertainmentStory]] = {
-        "tmz": [],
-        "deadline": [],
-        "film_news": [],
-        "extra": [],
-    }
-    for story in stories:
-        pool = _story_pool(story)
-        if pool:
-            grouped[pool].append(story)
-
-    tmz = [story for story in _deduped_safe(grouped["tmz"]) if not _is_unlistenable(story)]
-    celebrity = [story for story in tmz if _CELEBRITY_RE.search(f"{story.title} {story.summary}")]
-    tmz_order = celebrity or tmz
-    if len(celebrity) > 1:
-        tmz_fallback = celebrity[1:]
-    else:
-        used_title = _dedupe_key(tmz_order[0].title) if tmz_order else ""
-        tmz_fallback = [story for story in tmz if _dedupe_key(story.title) != used_title]
-
-    deadline = [story for story in _deduped_safe(grouped["deadline"]) if not _is_unlistenable(story)]
-    film_news = [
+    if limit < 1:
+        return []
+    safe = [
         story
-        for story in _deduped_safe(grouped["film_news"])
-        if not _is_review_item(story) and not _is_unlistenable(story) and _movie_name(story.title)
+        for story in _deduped_safe(stories)
+        if not _is_review_item(story) and not _is_unlistenable(story)
     ]
-    film_preferred = [
-        story for story in film_news if _FILM_NEWS_PREFER_RE.search(f"{story.title} {story.summary}")
-    ]
-    film_order = film_preferred or film_news
+    deaths = [story for story in safe if is_death_obituary_or_mourning(story)]
+    movies = [story for story in safe if _is_movie_item(story)]
+    filler = [story for story in safe if _is_fill_entertainment(story)]
 
     chosen: list[EntertainmentStory] = []
     used: set[str] = set()
-    if tmz_order:
-        chosen.append(_with_slot(tmz_order[0], SLOT_TMZ))
-        used.add(_dedupe_key(tmz_order[0].title))
-    if deadline:
-        chosen.append(_with_slot(deadline[0], SLOT_DEADLINE))
-        used.add(_dedupe_key(deadline[0].title))
-    elif tmz_fallback:
-        chosen.append(_with_slot(tmz_fallback[0], SLOT_DEADLINE))
-        used.add(_dedupe_key(tmz_fallback[0].title))
-    if film_order:
-        chosen.append(_with_slot(film_order[0], SLOT_FILM_NEWS))
-    extras = list(grouped["extra"])
-    for story in tmz + deadline:
+
+    def take(story: EntertainmentStory, slot: str) -> None:
         key = _dedupe_key(story.title)
-        if not key or key in used or _is_review_item(story):
-            continue
-        extras.append(story)
-    extras = _deduped_safe(extras)
-    if extras:
-        chosen.append(_with_slot(extras[0], SLOT_EXTRA))
-    if limit < 1:
-        return []
-    return chosen[:limit]
+        if not key or key in used or len(chosen) >= limit:
+            return
+        used.add(key)
+        chosen.append(_with_slot(story, slot))
+
+    for story in deaths:
+        take(story, SLOT_TMZ)
+    for story in movies:
+        take(story, SLOT_FILM_NEWS)
+    for story in filler:
+        slot = SLOT_DEADLINE if story.source_id == "deadline" or story.kind == "entertainment_news" else SLOT_EXTRA
+        take(story, slot)
+    return chosen
 
 
 def collect_entertainment_stories(
@@ -866,7 +883,14 @@ def spoken_story(story: EntertainmentStory) -> str:
     """On-air beat for one slot. Outlet names are not added."""
     if _is_unlistenable(story):
         return ""
-    if story.slot == SLOT_FILM_NEWS or story.kind in {"film_news", "film"} or story.source_id == "variety_film":
+    if is_death_obituary_or_mourning(story):
+        spoken = _spoken_general(story)
+    elif (
+        story.slot == SLOT_FILM_NEWS
+        or story.kind in {"film_news", "film"}
+        or story.source_id == "variety_film"
+        or _is_movie_item(story)
+    ):
         spoken = _spoken_film_news(story)
     else:
         spoken = _spoken_general(story)
@@ -913,27 +937,15 @@ def michael_g_script(stories: list[EntertainmentStory]) -> str:
     return "\n".join(lines)
 
 
-_SLOT_PROMPT = (
-    (SLOT_TMZ, "Celebrity item about a death, gossip, or a sighting."),
-    (
-        SLOT_DEADLINE,
-        "Bigger entertainment-news item. A second celebrity item belongs here only when the news feed had nothing.",
-    ),
-    (
-        SLOT_FILM_NEWS,
-        "Movie news only. Start with In movie news. Say fans, get ready only when a film title is supplied. "
-        "Say when it hits theaters only if a day or date is supplied, "
-        "then one or two sentences from the blurb, then a short closer. "
-        "Do not read the headline and then the lede. "
-        "Do not say exclusive, according to, review, critics say, or a star rating. "
-        "Do not invent a plot, day, or cast.",
-    ),
-    (
-        SLOT_EXTRA,
-        "One more entertainment item from the celebrity or entertainment-news stories already supplied. "
-        "Do not say review, critics say, or a star rating.",
-    ),
-)
+def _prompt_label(story: EntertainmentStory) -> str:
+    if is_death_obituary_or_mourning(story):
+        return "Death, obituary, or mourning item. It leads. Read it straight. No joke."
+    if _is_movie_item(story) or story.slot == SLOT_FILM_NEWS or story.kind in {"film_news", "film"}:
+        return (
+            "New movie. Its own short paragraph: a hook, the title, "
+            "the opening day only if supplied, the stars only if supplied, and what it is about."
+        )
+    return "Entertainment item in one or two plain sentences."
 
 
 def format_entertainment_prompt(
@@ -941,17 +953,19 @@ def format_entertainment_prompt(
     *,
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
 ) -> str:
-    """Local-AI prompt: sports-style rules plus only the supplied slots."""
-    by_slot = {story.slot: story for story in stories if story.slot}
+    """Local-AI prompt: sports-style rules plus only the supplied stories."""
+    selected = list(stories)[:ENTERTAINMENT_STORY_COUNT]
     lines = [rules.strip(), "", "SUPPLIED STORIES:"]
     filled = 0
-    for index, (slot, label) in enumerate(_SLOT_PROMPT, start=1):
-        story = by_slot.get(slot)
-        if story is None:
-            lines.append(f"{index}. {label} (skipped — do not invent this slot.)")
+    if not selected:
+        lines.append("1. (skipped — do not invent this slot.)")
+    for index, story in enumerate(selected, start=1):
+        spoken = spoken_story(story)
+        if not spoken:
+            lines.append(f"{index}. {_prompt_label(story)} (skipped — do not invent this slot.)")
             continue
         filled += 1
-        lines.append(f"{index}. {label} {spoken_story(story)}")
+        lines.append(f"{index}. {_prompt_label(story)} {spoken}")
     lines.append("")
     if filled >= ENTERTAINMENT_STORY_COUNT:
         lines.append(
@@ -986,13 +1000,19 @@ def format_entertainment_prompt(
             "Not sarcastic about death or illness. Not a long monologue. "
             "Do not invent a movie title or a person's death for the joke."
         )
-    lines.append("After the stories, hand the show to DJ Mo.")
+    lines.append(
+        "Thank Dave. Do not thank Mo at the start. Dave is the person he thanks. "
+        "After the stories, turn the show over to DJ Mo."
+    )
     lines.append(f"DJ Mo's next line is: {MO_THANKS}")
     return "\n".join(lines)
 
 
 def mo_thanks_line(thanks: str = "") -> str:
+    """Mo thanks Michael. A bare thanks picks up the weekday 7:15 mention."""
     text = _WS_RE.sub(" ", str(thanks or "")).strip()
+    if not text or re.fullmatch(r"(?i)thanks,?\s+michael\s+g\.?", text):
+        return MO_THANKS
     if re.search(r"(?i)\bmichael\s+g\b", text) and re.search(r"(?i)\bthanks\b", text):
         return text
     return MO_THANKS
@@ -1043,7 +1063,7 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
         "",
         "[Michael G]",
         *michael_open_lines([]),
-        "[Four slots when the feeds supply them: celebrity item, entertainment news, movie news, one more entertainment item. Do not invent stories in this preview.]",
+        "[Four stories when the feeds supply them. A death leads. Other stories are new movies when the feeds have them. Do not invent stories in this preview.]",
         MICHAEL_HANDOFF,
         "",
         "[DJ Mo]",
@@ -1125,12 +1145,19 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
         and "does not read his biography" in lowered_rules
         and "not the same sentence every day" in lowered_rules
     )
+    has_locked_handoff = (
+        "does not thank mo at the start" in lowered_rules
+        and "dave is the person he thanks" in lowered_rules
+        and "turns it over to mo" in lowered_rules
+        and "weekdays at 7:15" in lowered_rules
+    )
     if (
         not has_movie_shape
         or mentions_reviews_feed
         or not has_intro
         or not has_straight_death_open
         or not has_conversational_beat
+        or not has_locked_handoff
     ):
         rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
 
