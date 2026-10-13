@@ -276,6 +276,24 @@ def test_selection_and_feeds() -> None:
     )
     _check("cottage sale does not read the raw headline", "Former Solvang Cottage Sells" not in dolly)
     _check("cottage sale does not name the outlet", "TMZ" not in dolly)
+    dolly_bad_blurb = spoken_story(
+        _story(
+            "Dolly Parton's Former Solvang Cottage Sells for $2 Million",
+            summary=(
+                "The Solvang cottage that once belonged to Dolly Parton is officially off the market. "
+                "The late legend's former retreat sold this month for $1,945,150, "
+                "weeks after the singer's late August death."
+            ),
+            source_id="tmz",
+            kind="celebrity",
+        )
+    )
+    _check(
+        "a sale blurb cannot add a death the headline never reported",
+        dolly_bad_blurb == "The Solvang cottage that once belonged to Dolly Parton is officially off the market.",
+    )
+    _check("sale blurb does not say the late", "late" not in dolly_bad_blurb.lower())
+    _check("sale blurb does not say death", "death" not in dolly_bad_blurb.lower())
 
     sighting_line = spoken_story(sighting)
     _check(

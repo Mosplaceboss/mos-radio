@@ -704,6 +704,21 @@ def _theater_when(text: str) -> str:
     return ""
 
 
+_DEATH_CLAIM_RE = re.compile(
+    r"(?i)\b(?:the late|died|dies|passes away|passed away|has died|was killed)\b|\bdeath\b"
+)
+_HEADLINE_DEATH_RE = re.compile(
+    r"(?i)\b(?:dead|dies|died|death|mourns|obituary|killed|passes|passed away)\b"
+)
+
+
+def _death_not_in_headline(sentence: str, title: str) -> bool:
+    """A blurb must not declare a death the headline never reported."""
+    if not _DEATH_CLAIM_RE.search(sentence or ""):
+        return False
+    return _HEADLINE_DEATH_RE.search(title or "") is None
+
+
 def _story_sentences(text: str, limit: int = 2) -> list[str]:
     kept: list[str] = []
     for sentence in _take_sentences(text, 8):
@@ -762,6 +777,8 @@ def _spoken_general(story: EntertainmentStory) -> str:
         if _dedupe_key(sentence.rstrip(".")) == title_key:
             continue
         if re.search(r"(?i)\b(?:exclusive|according to)\b", sentence):
+            continue
+        if _death_not_in_headline(sentence, story.title):
             continue
         kept.append(sentence)
     if kept:
