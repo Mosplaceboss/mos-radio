@@ -1,7 +1,10 @@
 """Morning entertainment report for Michael G.
 
-Runs after Dave's sports in the morning newscast. Michael G reads four slots,
-in order, then hands to DJ Mo. DJ Mo thanks Michael G by name.
+Runs after Dave's sports in the morning newscast. Michael G thanks Dave,
+says he has the entertainment report, adds one short light comical beat,
+then reads four slots, in order, and hands to DJ Mo. DJ Mo thanks Michael G
+by name. The comical beat stays in that open. It is not a punchline on a
+death or illness story.
 
 1. A TMZ celebrity item: a death, gossip, or a sighting, as one or two
    plain sentences. The headline is not read and then repeated as the lede.
@@ -86,12 +89,20 @@ _RETIRED_FEED_MARKERS = ("variety.com/v/film/reviews",)
 
 DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertainment report."
 MICHAEL_OPEN = "Thanks, Dave."
+MICHAEL_BEAT = "I brought the popcorn, and I will keep this shorter than the previews."
+MICHAEL_INTRO = f"Michael G here with the entertainment report. {MICHAEL_BEAT}"
 MICHAEL_HANDOFF = "DJ Mo, back to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
 MO_THANKS = "Thanks, Michael G."
 
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports. "
+    "His personality is comical: light and warm, one or two sentences, then the stories. "
+    "Not sarcastic about death or illness. Not a long monologue. "
+    'Open with "Thanks, Dave. Michael G here with the entertainment report." '
+    "then one short comical beat, then the supplied stories, then hand to DJ Mo. "
+    "Do not put that comical beat on a death or illness story. "
+    "Do not invent a movie title or a person's death for the joke. "
     "Use only the supplied stories, in this order: "
     "a celebrity item about a death, gossip, or a sighting, in one or two plain sentences; "
     "one bigger entertainment-news item, or a second celebrity item if that news feed has nothing, in one or two sentences; "
@@ -822,7 +833,8 @@ def sports_close_hands_to_michael(close: str) -> str:
 
 
 def michael_g_script(stories: list[EntertainmentStory]) -> str:
-    lines = [MICHAEL_OPEN]
+    """Spoken fallback. The introduction is here even when OpenAI is not called."""
+    lines = [MICHAEL_OPEN, MICHAEL_INTRO]
     if stories:
         lines.extend(
             line
@@ -888,6 +900,13 @@ def format_entertainment_prompt(
     else:
         lines.append("No usable stories were supplied. Do not invent any. Hand off to DJ Mo.")
     lines.append("Do not name Deadline, TMZ, or Variety on the air.")
+    lines.append(
+        'Open with "Thanks, Dave. Michael G here with the entertainment report." '
+        "Then one short light, warm comical beat, then the stories. "
+        "Not sarcastic about death or illness. Not a long monologue. "
+        "Do not put that comical beat on a death or illness story. "
+        "Do not invent a movie title or a person's death for the joke."
+    )
     lines.append("After the stories, hand the show to DJ Mo.")
     lines.append(f"DJ Mo's next line is: {MO_THANKS}")
     return "\n".join(lines)
@@ -945,6 +964,7 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
         "",
         "[Michael G]",
         MICHAEL_OPEN,
+        MICHAEL_INTRO,
         "[Four slots when the feeds supply them: celebrity item, entertainment news, movie news, one more entertainment item. Do not invent stories in this preview.]",
         MICHAEL_HANDOFF,
         "",
@@ -1015,7 +1035,8 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     lowered_rules = report_rules.lower()
     has_movie_shape = "in movie news" in lowered_rules and "do not say review" in lowered_rules
     mentions_reviews_feed = "variety reviews" in lowered_rules or "reviews/feed" in lowered_rules
-    if not has_movie_shape or mentions_reviews_feed:
+    has_intro = "michael g here with the entertainment report" in lowered_rules
+    if not has_movie_shape or mentions_reviews_feed or not has_intro:
         rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
 
     feeds = rules.get("entertainment_feeds")

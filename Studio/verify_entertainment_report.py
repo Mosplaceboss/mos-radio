@@ -15,8 +15,10 @@ from app.core.entertainment_report import (  # noqa: E402
     DAVE_SPORTS_CLOSE,
     DEFAULT_ENTERTAINMENT_REPORT_RULES,
     ENTERTAINMENT_SOURCES,
+    MICHAEL_BEAT,
     MICHAEL_G_VOICEBOX_ID,
     MICHAEL_G_VOICEBOX_PROFILE,
+    MICHAEL_INTRO,
     MO_THANKS,
     EntertainmentStory,
     build_morning_flow,
@@ -635,12 +637,21 @@ def test_handoff_flow() -> None:
     _check("dave does not hand straight to Mo", "Back to you, Mo." not in script.split("[Michael G]")[0])
     _check("dave close is the entertainment handoff", DAVE_SPORTS_CLOSE in script)
     _check("michael script thanks Dave", flow["michael_g_script"].startswith("Thanks, Dave."))
+    _check(
+        "introduction follows Thanks, Dave",
+        flow["michael_g_script"].startswith(f"Thanks, Dave.\n{MICHAEL_INTRO}"),
+    )
     _check("michael hands to DJ Mo", flow["michael_g_script"].strip().endswith("DJ Mo, back to you."))
     _check("mo thanks Michael G", flow["mo_thanks"] == MO_THANKS)
     _check("script thanks Michael G", script.strip().endswith("Thanks, Michael G."))
     _check("spoken script has no outlet names", all(name not in flow["michael_g_script"] for name in ("Deadline", "TMZ", "Variety")))
     _check("prompt forbids inventing", "do not invent" in flow["michael_g_prompt"].lower())
     _check("prompt reads exactly four", "exactly these four" in flow["michael_g_prompt"].lower())
+    _check(
+        "prompt introduces the entertainment report",
+        "michael g here with the entertainment report" in flow["michael_g_prompt"].lower(),
+    )
+    _check("prompt is not sarcastic about death", "not sarcastic about death" in flow["michael_g_prompt"].lower())
     _check("supplied tour fact kept", "November" in flow["michael_g_script"])
     _check("movie fixture is in the spoken script", MOVIE_LINE in flow["michael_g_script"])
     _check("retired review stays out of the spoken script", "warm adventure" not in flow["michael_g_script"])
@@ -649,13 +660,33 @@ def test_handoff_flow() -> None:
     short = build_morning_flow(stories[:2])
     _check("short report does not pad", short["story_count"] == 2)
     _check("short prompt says not to pad", "do not invent stories to reach four" in short["michael_g_prompt"].lower())
-    _check("short script has two beats", michael_g_script(stories[:2]).count("\n") == 3)
+    _check("short script has two beats", michael_g_script(stories[:2]).count("\n") == 4)
 
     empty = build_morning_flow([])
     _check("empty report invents nothing", "Thanks, Dave." in empty["michael_g_script"])
+    _check("empty report still introduces Michael", MICHAEL_INTRO in empty["michael_g_script"])
     _check("empty report still hands off", "DJ Mo, back to you." in empty["michael_g_script"])
     _check("empty prompt forbids gossip", "do not invent" in empty["michael_g_prompt"].lower())
     _check("mo still thanks Michael G", empty["mo_thanks"] == "Thanks, Michael G.")
+
+    death = _story(
+        "Beloved actor dies at 88",
+        summary="The actor died Thursday.",
+        source_id="tmz",
+        kind="celebrity",
+    )
+    death_script = michael_g_script([death])
+    death_lines = death_script.splitlines()
+    _check("death script thanks Dave first", death_lines[0] == "Thanks, Dave.")
+    _check("death script introduction is next", death_lines[1] == MICHAEL_INTRO)
+    death_stories = death_lines[2:-1]
+    _check("death story is still read", any("died" in line.lower() for line in death_stories))
+    _check(
+        "comical intro is not a death punchline",
+        death_stories
+        and all(MICHAEL_BEAT not in line and "entertainment report" not in line.lower() for line in death_stories),
+    )
+    _check("spoken death story has no comical beat", MICHAEL_BEAT not in spoken_story(death))
 
 
 def test_news_rules_upgrade() -> None:
@@ -686,6 +717,8 @@ def test_news_rules_upgrade() -> None:
     _check("rules forbid saying review", "do not say review" in rules)
     _check("rules do not invent a friday", "do not invent a plot" in rules)
     _check("rules do not name a reviews feed", "variety reviews" not in rules and "reviews/feed" not in rules)
+    _check("rules introduce the entertainment report", "michael g here with the entertainment report" in rules)
+    _check("rules keep comedy off death", "not sarcastic about death" in rules)
     legacy_rules = normalize_script_rules(
         {
             "entertainment_report_rules": (
@@ -720,6 +753,25 @@ def test_news_rules_upgrade() -> None:
     )
     _check("film news feed stays in the saved list", VARIETY_NEWS_URL in legacy_rules["entertainment_feeds"])
     _check("extra saved feed stays", "https://station.example/extra.xml" in legacy_rules["entertainment_feeds"])
+    stale_open = normalize_script_rules(
+        {
+            "entertainment_report_rules": (
+                "Michael G reads the entertainment report after Dave's sports. "
+                "Use only the supplied stories. "
+                "Movie news that starts with In movie news. "
+                "Do not say review. "
+                "Do not invent a plot."
+            ),
+        }
+    )
+    _check(
+        "saved rules gain the entertainment introduction",
+        "michael g here with the entertainment report" in stale_open["entertainment_report_rules"].lower(),
+    )
+    _check(
+        "saved rules gain the death boundary",
+        "not sarcastic about death" in stale_open["entertainment_report_rules"].lower(),
+    )
     again = normalize_script_rules(upgraded)
     _check("rules upgrade is stable", again["entertainment_report_rules"] == upgraded["entertainment_report_rules"])
     _check("personality clause is not duplicated", again["news_first_personality_rules"].lower().count("hands to michael g") == 1)
@@ -782,6 +834,7 @@ def test_news_rules_upgrade() -> None:
     _check("preview order", text.index("[Dave]") < text.index("[Michael G]") < text.index("[DJ Mo]"))
     _check("preview thanks Michael G", "Thanks, Michael G." in text)
     _check("preview does not invent a headline", "Do not invent stories in this preview." in text)
+    _check("preview introduces the entertainment report", MICHAEL_INTRO in text)
     _check("preview still signs off", "For Mo's Place Radio, I'm DJ Mo." in text)
 
 
@@ -794,9 +847,15 @@ def test_config_files() -> None:
     prompt = michael_voice["personality_prompt"]
     _check("voice prompt uses movie news", "In movie news" in prompt)
     _check("voice prompt forbids saying review", "Do not say review" in prompt)
+    _check("voice prompt introduces the entertainment report", "Michael G here with the entertainment report" in prompt)
+    _check("voice prompt is not sarcastic about death", "Not sarcastic about death" in prompt)
     _check("voice prompt has no reviews feed", "reviews/feed" not in prompt and "Star Wars" not in prompt)
     personalities = json.loads((config / "personalities.json").read_text(encoding="utf-8"))
     michael = next(person for person in personalities["personalities"] if person["display_name"] == "Michael G")
+    _check(
+        "personality description introduces the report",
+        "Michael G here with the entertainment report" in michael["personality_description"],
+    )
     _check("personality voicebox id", michael["voicebox_voice_id"] == MICHAEL_G_VOICEBOX_ID)
     _check("personality stores the UNC profile", MICHAEL_G_VOICEBOX_PROFILE in michael["bio"])
     mo = next(person for person in personalities["personalities"] if person["id"] == "mo-main")
