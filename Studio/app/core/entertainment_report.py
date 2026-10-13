@@ -3,17 +3,21 @@
 Runs after Dave's sports in the morning newscast. Michael G reads four slots,
 in order, then hands to DJ Mo. DJ Mo thanks Michael G by name.
 
-1. A TMZ celebrity item: a death, gossip, or a sighting.
-2. One bigger Deadline entertainment story. If Deadline is empty or down, a
-   second usable TMZ item may fill this slot.
+1. A TMZ celebrity item: a death, gossip, or a sighting, as one or two
+   plain sentences. The headline is not read and then repeated as the lede.
+2. One bigger Deadline entertainment story, in one or two sentences. If
+   Deadline is empty or down, a second usable TMZ item may fill this slot.
 3. Movie news from the Variety film feed only, in the "In movie news" shape.
+   The film title is used, and only when the item actually names one.
    A theater day is spoken only when the item gives one. The plot comes from
    the blurb. Nothing is invented.
-4. One more entertainment item from TMZ or Deadline.
+4. One more entertainment item from TMZ or Deadline, in the same plain speech.
 
-There is no reviews feed. Michael does not say "review," "critics say," or a
-star rating. A down or empty feed skips that slot. Graphic crime, explicit
-sexual content, and birthdays are dropped.
+Spec-script sales, writers labs, agency moves, cast laundry lists, and
+untitled projects with no film title are skipped. There is no reviews feed.
+Michael does not say "exclusive," "according to," "review," "critics say,"
+or a star rating. A down or empty feed skips that slot. Graphic crime,
+explicit sexual content, and birthdays are dropped.
 
 The prompt block matches the sports-desk style: rules plus supplied facts for
 Local AI, with a speakable fallback script when generation is not available.
@@ -89,14 +93,17 @@ MO_THANKS = "Thanks, Michael G."
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports. "
     "Use only the supplied stories, in this order: "
-    "a celebrity item about a death, gossip, or a sighting; "
-    "one bigger entertainment-news item, or a second celebrity item if that news feed has nothing; "
-    "movie news that starts with In movie news, names the movie with a short get-ready, "
+    "a celebrity item about a death, gossip, or a sighting, in one or two plain sentences; "
+    "one bigger entertainment-news item, or a second celebrity item if that news feed has nothing, in one or two sentences; "
+    "movie news that starts with In movie news, names the movie with a short get-ready only when a film title is supplied, "
     "says when it hits theaters only if the item gives a day or date, "
     "then one or two sentences on the story from the supplied blurb, then a short closer; "
     "then one more entertainment item from the celebrity or entertainment-news items. "
+    "Do not read the headline and then the lede. "
+    "Do not say exclusive, according to, or a list of parenthetical credits. "
     "Do not say review, critics say, or a star rating. "
     "Do not invent a plot, a release day, a cast, or a Friday. "
+    "Skip spec-script sales, writers labs, agency moves, cast laundry lists, and untitled projects with no film title. "
     "If a feed is down or a slot has nothing usable, skip that slot and do not invent gossip, quotes, or extra stories. "
     "Skip graphic crime, sexual content, and birthdays. "
     "Do not name the outlets on the air. "
@@ -125,7 +132,37 @@ _CELEBRITY_RE = re.compile(
 )
 _REVIEW_ITEM_RE = re.compile(r"(?i)^review\b|\breviews?\b|\b(?:movie|film)\s+review\b")
 _FILM_NEWS_PREFER_RE = re.compile(
-    r"(?i)\b(?:trailer|teaser|movie|film|opens|opening|premiere|premieres|theaters|theatres)\b"
+    r"(?i)\b(?:trailer|teaser|first look|opens|opening|premiere|premieres|hits theaters|in theaters|in theatres)\b"
+)
+_QUOTED_TITLE_RE = re.compile(
+    r"[\"“]([^\"”]{2,80})[\"”]|(?:^|[\s(\[])['‘]([^'’]{2,80})['’](?=$|[\s,.:;!?)\]])"
+)
+_TRAILER_NAME_RE = re.compile(
+    r"(?i)^(.+?)\s+(?:official\s+)?(?:trailer|teaser|first look)\b"
+)
+_EXCLUSIVE_RE = re.compile(r"(?i)\bexclusive\b\s*:?\s*")
+_PAREN_RE = re.compile(r"\s*\([^)]*\)")
+_ELLIPSIS_RE = re.compile(r"\s*(?:\.{3}|…)+\s*")
+_OUTLET_CLAUSE_RE = re.compile(
+    r"(?i),?\s*(?:deadline|tmz|variety)(?:\s+film)?\s+"
+    r"(?:has learned|can reveal(?:\s+exclusively)?|reports|reported|says|writes|is reporting)\b[:,]?\s*"
+)
+_ACCORDING_RE = re.compile(r"(?i)\baccording to\b(?:\s+[^,.]{0,80},)?\s*")
+_SPEC_RE = re.compile(
+    r"(?i)\b(?:spec scripts?|comedy spec|horror spec|script spec|"
+    r"acquir\w+\s+the rights to a\s+[^.]{0,40}\bspec)\b"
+)
+_WRITERS_LAB_RE = re.compile(r"(?i)\bwriters?\s+labs?\b")
+_CAST_LIST_RE = re.compile(r"(?i)\bround(?:s|ed|ing)? out (?:the )?cast\b")
+_AGENCY_RE = re.compile(r"(?i)\b(?:signs|signed) with\b")
+_COMPANY_LAUNCH_RE = re.compile(
+    r"(?i)\b(?:launch(?:es|ed)?|form(?:s|ed)?)\b.{0,40}\bproduction compan(?:y|ies)\b|"
+    r"\bproduction compan(?:y|ies)\b.{0,40}\b(?:launch(?:es|ed)?|form(?:s|ed)?)\b"
+)
+_UNTITLED_RE = re.compile(r"(?i)\buntitled\b")
+_THEATER_CUE_RE = re.compile(
+    r"(?i)\b(?:opens|opening|premieres|premiering|hits theaters|in theaters|in theatres|"
+    r"arrives in theaters|coming to theaters|debuts in theaters)\b"
 )
 _ARRIVAL_RE = re.compile(
     r"(?i)\b("
@@ -353,6 +390,18 @@ def _is_review_item(story: EntertainmentStory) -> bool:
     return _REVIEW_ITEM_RE.search(story.title) is not None
 
 
+def _is_unlistenable(story: EntertainmentStory) -> bool:
+    """Industry copy that does not belong on a morning music-radio show."""
+    blob = f"{story.title} {story.summary}"
+    if _WRITERS_LAB_RE.search(blob) or _CAST_LIST_RE.search(blob):
+        return True
+    if _AGENCY_RE.search(blob) or _COMPANY_LAUNCH_RE.search(blob) or _SPEC_RE.search(blob):
+        return True
+    if _UNTITLED_RE.search(blob) and not _movie_name(story.title):
+        return True
+    return False
+
+
 def _deduped_safe(stories: list[EntertainmentStory]) -> list[EntertainmentStory]:
     usable: list[EntertainmentStory] = []
     seen: set[str] = set()
@@ -392,8 +441,10 @@ def select_entertainment_stories(
 
     Slot 1 is a TMZ celebrity item (death, gossip, or sighting preferred).
     Slot 2 is Deadline. A second TMZ item fills slot 2 only when Deadline
-    has nothing usable. Slot 3 is Variety film news, spoken as movie news.
-    Slot 4 is one more TMZ or Deadline item. Reviews are not used.
+    has nothing usable. Slot 3 is a Variety film item that names a movie
+    people could see, with a trailer or opening preferred over a deal.
+    Slot 4 is one more TMZ or Deadline item. Reviews, spec sales, writers
+    labs, agency moves, and cast laundry lists are not used.
     """
     grouped: dict[str, list[EntertainmentStory]] = {
         "tmz": [],
@@ -406,7 +457,7 @@ def select_entertainment_stories(
         if pool:
             grouped[pool].append(story)
 
-    tmz = _deduped_safe(grouped["tmz"])
+    tmz = [story for story in _deduped_safe(grouped["tmz"]) if not _is_unlistenable(story)]
     celebrity = [story for story in tmz if _CELEBRITY_RE.search(f"{story.title} {story.summary}")]
     tmz_order = celebrity or tmz
     if len(celebrity) > 1:
@@ -415,11 +466,11 @@ def select_entertainment_stories(
         used_title = _dedupe_key(tmz_order[0].title) if tmz_order else ""
         tmz_fallback = [story for story in tmz if _dedupe_key(story.title) != used_title]
 
-    deadline = _deduped_safe(grouped["deadline"])
+    deadline = [story for story in _deduped_safe(grouped["deadline"]) if not _is_unlistenable(story)]
     film_news = [
         story
         for story in _deduped_safe(grouped["film_news"])
-        if not _is_review_item(story)
+        if not _is_review_item(story) and not _is_unlistenable(story) and _movie_name(story.title)
     ]
     film_preferred = [
         story for story in film_news if _FILM_NEWS_PREFER_RE.search(f"{story.title} {story.summary}")
@@ -507,28 +558,85 @@ _OUTLET_SAYS_RE = re.compile(
 )
 
 
-def _summary_body(summary: str) -> str:
-    """Outlet-cleaned summary text. Kept long enough for one or two sentences."""
+def _plain_body(summary: str) -> str:
+    """Summary text with outlet names, exclusives, and credit lists removed."""
     text = _strip_outlet_prefix(summary)
+    text = re.sub(r"\s*\[(?:…|\.{3})\]\s*", " ", text)
+    # Feed ellipses are pauses or cutoffs, not new sentences.
+    text = _ELLIPSIS_RE.sub(", ", text)
+    text = _EXCLUSIVE_RE.sub("", text)
+    text = _PAREN_RE.sub("", text)
+    text = _OUTLET_CLAUSE_RE.sub("", text)
     text = _ATTRIBUTION_RE.sub("", text)
     text = _OUTLET_SAYS_RE.sub("", text)
+    text = _ACCORDING_RE.sub("", text)
+    text = _OUTLET_WORD_RE.sub("", text)
+    text = re.sub(r"\s+,", ",", text)
+    text = re.sub(r"(?:,\s*)+$", "", text)
     text = _clean_text(text)
-    if not text or _OUTLET_WORD_RE.search(text):
-        return ""
+    return text.strip(" ,;:-")
+
+
+def _cap_sentence(sentence: str) -> str:
+    text = _WS_RE.sub(" ", sentence).strip()
+    if text and text[0].isalpha() and text[0].islower():
+        text = text[0].upper() + text[1:]
     return text
 
 
+def _protect_initials(text: str) -> str:
+    """Keep C.S. and Mr. from looking like the end of a sentence."""
+    protected = re.sub(
+        r"\b(Mr|Mrs|Ms|Dr|St|Jr|Sr|Prof|Gen|Rep|Sen|Rev|vs|etc|Inc|Ltd)\.",
+        r"\1<dot>",
+        text,
+        flags=re.IGNORECASE,
+    )
+    protected = re.sub(r"\b([A-Z])\.(?=[A-Z]\.)", r"\1<dot>", protected)
+    protected = re.sub(r"<dot>([A-Z])\.(?=\s)", r"<dot>\1<dot>", protected)
+    return protected
+
+
+def _restore_initials(text: str) -> str:
+    return text.replace("<dot>", ".")
+
+
+_DANGLING_END_RE = re.compile(
+    r"(?i)\b(?:in|on|of|to|for|with|by|from|and|or|the|a|an|between|who|that|which|into)\s*$"
+)
+
+
+def _is_speakable_sentence(sentence: str) -> bool:
+    words = re.findall(r"[A-Za-z0-9'’$]+", sentence)
+    if len(words) < 3:
+        return False
+    core = re.sub(r"[\"'”’]+$", "", sentence.rstrip(".!? ")).rstrip()
+    return _DANGLING_END_RE.search(core) is None
+
+
 def _take_sentences(text: str, count: int) -> list[str]:
-    cleaned = _clean_text(text)
+    cleaned = _protect_initials(_clean_text(text))
     if not cleaned or count < 1:
         return []
     sentences: list[str] = []
-    for part in re.findall(r"[^.!?]+[.!?]?", cleaned):
-        sentence = _WS_RE.sub(" ", part).strip()
+    for match in re.finditer(r"[^.!?]*[.!?]+[\"'”’]*|[^.!?]+$", cleaned):
+        raw = match.group(0).strip()
+        if not raw:
+            continue
+        core = raw.rstrip("\"'”’ ")
+        truncated = core[-1:] not in ".!?"
+        sentence = _cap_sentence(_restore_initials(raw))
+        if truncated:
+            cut = sentence.rfind(",")
+            if cut >= 40:
+                sentence = sentence[:cut].rstrip()
+        sentence = sentence.strip(" ,;:-")
         if not sentence:
             continue
-        if sentence[-1:] not in ".!?":
+        if sentence.rstrip("\"'”’ ")[-1:] not in ".!?":
             sentence += "."
+        if not _is_speakable_sentence(sentence):
+            continue
         sentences.append(sentence)
         if len(sentences) >= count:
             break
@@ -545,27 +653,55 @@ def _is_arrival_only(sentence: str) -> bool:
     return len(leftover) < 4
 
 
+def _looks_like_title(name: str) -> bool:
+    text = _clean_text(name).strip(" '\"“”‘’:-|,")
+    if len(text) < 2 or len(text) > 60:
+        return False
+    words = text.split()
+    if not words or len(words) > 8:
+        return False
+    if re.search(r"(?i)\b(?:acquires|exclusive|spec|round out|writers lab|signs with)\b", text):
+        return False
+    return True
+
+
 def _movie_name(title: str) -> str:
-    """Pull the movie name from a film-news headline. Do not invent one."""
+    """Pull a film title from a headline. Never the whole acquisition headline."""
     text = _strip_outlet_prefix(title)
-    quoted = re.search(r"['\"“]([^'\"”]{2,80})['\"”]", text)
-    if quoted and quoted.group(1).strip():
-        return _clean_text(quoted.group(1))
-    text = re.sub(r"(?i)\b(?:official\s+)?(?:trailer|teaser|first look)\b", " ", text)
-    text = re.sub(
-        r"(?i)\b(?:hits theaters|in theaters|in theatres|opens|premieres|sets a|set for)\b.*$",
-        " ",
-        text,
-    )
-    return _clean_text(text).strip(" -:|")
+    text = _EXCLUSIVE_RE.sub("", text)
+    text = _PAREN_RE.sub("", text)
+    text = _clean_text(text)
+    quoted_name = ""
+    quoted = _QUOTED_TITLE_RE.search(text)
+    if quoted:
+        candidate = _clean_text(quoted.group(1) or quoted.group(2) or "").strip(" -:|")
+        if _looks_like_title(candidate):
+            quoted_name = candidate
+    trailer_name = ""
+    trailer = _TRAILER_NAME_RE.match(text)
+    if trailer:
+        candidate = _clean_text(trailer.group(1)).strip(" '\"“”‘’:-|")
+        if _looks_like_title(candidate):
+            trailer_name = candidate
+    if (
+        trailer_name
+        and quoted_name
+        and trailer_name.startswith(quoted_name)
+        and len(trailer_name) > len(quoted_name)
+    ):
+        return trailer_name
+    return quoted_name or trailer_name
 
 
 def _theater_when(text: str) -> str:
-    """A day or date copied from the item. Never a made-up Friday."""
-    match = _WHEN_RE.search(text or "")
-    if not match:
-        return ""
-    return _clean_text(match.group(1)).strip(" .,;")
+    """A theater day copied from an opening line. Never a made-up Friday."""
+    source = text or ""
+    for cue in _THEATER_CUE_RE.finditer(source):
+        window = source[cue.end(): cue.end() + 48]
+        match = _WHEN_RE.search(window)
+        if match:
+            return _clean_text(match.group(1)).strip(" .,;")
+    return ""
 
 
 def _story_sentences(text: str, limit: int = 2) -> list[str]:
@@ -581,44 +717,62 @@ def _story_sentences(text: str, limit: int = 2) -> list[str]:
     return kept
 
 
-def _spoken_film_news(story: EntertainmentStory) -> str:
-    """In movie news: name, optional theater date, blurb sentences, short closer."""
-    name = _movie_name(story.title) or _strip_outlet_prefix(story.title)
-    name = _clean_text(_FORBIDDEN_SPOKEN_RE.sub(" ", name)).strip(" -:|,")
-    if not name:
+def _headline_sentence(title: str) -> str:
+    """One sentence from a headline, used only when the item has no blurb."""
+    text = _strip_outlet_prefix(title)
+    text = _EXCLUSIVE_RE.sub("", text)
+    text = _PAREN_RE.sub("", text)
+    text = _OUTLET_WORD_RE.sub("", text)
+    text = _clean_text(text).strip(" -:|")
+    if not text:
         return ""
-    body = _summary_body(story.summary)
-    source_text = f"{story.title} {body}"
-    when = _theater_when(source_text)
-    parts = [f"In movie news, {name} fans, get ready!"]
+    if text[-1:] not in ".!?":
+        text += "."
+    return text
+
+
+def _spoken_film_news(story: EntertainmentStory) -> str:
+    """In movie news: title when we have one, optional theater day, blurb, closer."""
+    if _is_unlistenable(story):
+        return ""
+    name = _clean_text(_FORBIDDEN_SPOKEN_RE.sub(" ", _movie_name(story.title))).strip(" -:|,")
+    body = _plain_body(story.summary)
+    when = _theater_when(f"{story.title} {body}") if name else ""
+    sentences = _story_sentences(body, 2)
+    if name:
+        parts = [f"In movie news, {name} fans, get ready!"]
+    elif sentences:
+        parts = ["In movie news."]
+    else:
+        return ""
     if when:
         parts.append(f"It hits theaters {when}.")
-    parts.extend(_story_sentences(body, 2))
+    parts.extend(sentences)
     parts.append(MOVIE_CLOSER)
     return " ".join(part for part in parts if part)
 
 
 def _spoken_general(story: EntertainmentStory) -> str:
-    title = _strip_outlet_prefix(story.title)
-    if _FORBIDDEN_SPOKEN_RE.search(title):
-        title = _FORBIDDEN_SPOKEN_RE.sub("", title)
-        title = _clean_text(title)
-    summary = ""
-    for sentence in _story_sentences(_summary_body(story.summary), 1):
-        if sentence.lower() not in title.lower() and title.lower() not in sentence.lower():
-            summary = sentence
-            break
-    if summary:
-        if summary[0].isalpha() and summary[0].islower():
-            summary = summary[0].upper() + summary[1:]
-        if title and title[-1:] not in ".!?":
-            return f"{title}. {summary}"
-        return f"{title} {summary}".strip()
-    return title
+    """One or two plain sentences. The headline is not read in front of the lede."""
+    if _is_unlistenable(story):
+        return ""
+    title_key = _dedupe_key(_headline_sentence(story.title).rstrip("."))
+    kept: list[str] = []
+    for sentence in _story_sentences(_plain_body(story.summary), 2):
+        if _dedupe_key(sentence.rstrip(".")) == title_key:
+            continue
+        if re.search(r"(?i)\b(?:exclusive|according to)\b", sentence):
+            continue
+        kept.append(sentence)
+    if kept:
+        return " ".join(kept)
+    return _headline_sentence(story.title)
 
 
 def spoken_story(story: EntertainmentStory) -> str:
     """On-air beat for one slot. Outlet names are not added."""
+    if _is_unlistenable(story):
+        return ""
     if story.slot == SLOT_FILM_NEWS or story.kind in {"film_news", "film"} or story.source_id == "variety_film":
         spoken = _spoken_film_news(story)
     else:
@@ -626,7 +780,14 @@ def spoken_story(story: EntertainmentStory) -> str:
     if _FORBIDDEN_SPOKEN_RE.search(spoken):
         kept = [sentence for sentence in _take_sentences(spoken, 8) if not _FORBIDDEN_SPOKEN_RE.search(sentence)]
         spoken = " ".join(kept)
-    return spoken
+    return (
+        spoken.replace("“", '"')
+        .replace("”", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
 
 
 def sports_close_hands_to_michael(close: str) -> str:
@@ -665,10 +826,12 @@ _SLOT_PROMPT = (
     ),
     (
         SLOT_FILM_NEWS,
-        "Movie news only. Start with In movie news, name the movie, get ready, "
-        "say when it hits theaters only if a day or date is supplied, "
+        "Movie news only. Start with In movie news. Say fans, get ready only when a film title is supplied. "
+        "Say when it hits theaters only if a day or date is supplied, "
         "then one or two sentences from the blurb, then a short closer. "
-        "Do not say review, critics say, or a star rating. Do not invent a plot, day, or cast.",
+        "Do not read the headline and then the lede. "
+        "Do not say exclusive, according to, review, critics say, or a star rating. "
+        "Do not invent a plot, day, or cast.",
     ),
     (
         SLOT_EXTRA,

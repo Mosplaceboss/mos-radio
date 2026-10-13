@@ -167,6 +167,33 @@ def test_selection_and_feeds() -> None:
         source_id="variety_film",
         kind="film_news",
     )
+    spec_deal = _story(
+        "Black Bear Acquires Love Triangle Comedy Spec From Writing Duo Cassidy Alla and Read Masino (EXCLUSIVE)",
+        summary=(
+            "Black Bear has acquired the rights to a comedy spec script, Variety can reveal exclusively. "
+            'According to an official logline, the untitled film "tells the story of a family mix-up."'
+        ),
+        published=_dt(21),
+        source_id="variety_film",
+        kind="film_news",
+    )
+    writers_lab = _story(
+        "The Black List Names 2026 Writers Lab Participants",
+        summary="EXCLUSIVE: The Black List has named the six writers chosen for its writers lab.",
+        published=_dt(19),
+        source_id="deadline",
+        kind="entertainment_news",
+    )
+    cast_list = _story(
+        "Callan Farris, Lexi Minetree and Josh Macqueen Round Out Cast Of Sony Comedy 'Narcs'",
+        summary=(
+            "EXCLUSIVE: Sony Pictures has rounded out the cast for its comedy, with "
+            "Callan Farris (Grimcutty) and Lexi Minetree (Elle)."
+        ),
+        published=_dt(18),
+        source_id="deadline",
+        kind="entertainment_news",
+    )
     memo = _story(
         "Festival posts its volunteer memo",
         summary="Staff should arrive early for badges.",
@@ -195,6 +222,9 @@ def test_selection_and_feeds() -> None:
             deadline,
             film_review_on_news_feed,
             trailer,
+            spec_deal,
+            writers_lab,
+            cast_list,
             memo,
             retired_review,
         ]
@@ -214,6 +244,52 @@ def test_selection_and_feeds() -> None:
     _check("a review headline did not air", all(not story.title.startswith("Review:") for story in picked))
     _check("retired review story did not air", all(story.source_id != "variety_reviews" for story in picked))
     _check("volunteer memo did not take a slot", all("volunteer" not in story.title.lower() for story in picked))
+    _check("spec-script sale did not air", all("comedy spec" not in story.title.lower() for story in picked))
+    _check("writers lab did not air", all("writers lab" not in story.title.lower() for story in picked))
+    _check("cast laundry list did not air", all("round out cast" not in story.title.lower() for story in picked))
+    spec_line = spoken_story(spec_deal)
+    _check("spec deal is not spoken", spec_line == "")
+    _check("spec headline is not the movie name", "fans, get ready" not in spec_line.lower())
+    _check("spec headline is not read aloud", "Black Bear Acquires" not in spec_line)
+    cast_line = spoken_story(cast_list)
+    _check("cast list is not spoken", cast_line == "")
+    _check("cast list does not say exclusive", "exclusive" not in cast_line.lower())
+    _check("cast list does not read parenthetical credits", "Grimcutty" not in cast_line)
+    _check("cast list does not paste the headline", "Round Out Cast" not in cast_line)
+    lab_line = spoken_story(writers_lab)
+    _check("writers lab is not spoken", lab_line == "")
+
+    dolly = spoken_story(
+        _story(
+            "Dolly Parton's Former Solvang Cottage Sells for $2 Million",
+            summary=(
+                "The Solvang cottage that once belonged to Dolly Parton is officially off the market, "
+                "TMZ has learned."
+            ),
+            source_id="tmz",
+            kind="celebrity",
+        )
+    )
+    _check(
+        "cottage sale is one plain sentence",
+        dolly == "The Solvang cottage that once belonged to Dolly Parton is officially off the market.",
+    )
+    _check("cottage sale does not read the raw headline", "Former Solvang Cottage Sells" not in dolly)
+    _check("cottage sale does not name the outlet", "TMZ" not in dolly)
+
+    sighting_line = spoken_story(sighting)
+    _check(
+        "sighting is the blurb, not the headline plus the lede",
+        sighting_line == "Fans saw the singer just after midnight.",
+    )
+    _check("sighting does not repeat the headline", "Singer spotted" not in sighting_line)
+    deadline_line = spoken_story(deadline)
+    _check(
+        "deadline item is one sentence, not the headline plus the lede",
+        deadline_line == "The series returns in November with the same cast.",
+    )
+    _check("deadline item does not say exclusive", "exclusive" not in deadline_line.lower())
+    _check("deadline item does not say according to", "according to" not in deadline_line.lower())
 
     trailer_line = spoken_story(picked[2])
     _check("movie slot matches the fixture sentence", trailer_line == MOVIE_LINE)
@@ -284,6 +360,50 @@ def test_selection_and_feeds() -> None:
     _check("preview is not treated as a review", "preview" in preview_line.lower())
     _assert_no_review_language(preview_line)
     _check("critics sentence stays off the preview read", "shines" not in preview_line.lower())
+    _check("preview without a film title does not say fans get ready", "fans, get ready" not in preview_line.lower())
+
+    named_movie = _story(
+        "Parker Posey to Star in 'Sleepover'",
+        summary=(
+            "Parker Posey will star in the upcoming horror movie. "
+            "The film hits theaters on Oct. 8, 2027."
+        ),
+        published=_dt(4),
+        source_id="variety_film",
+        kind="film_news",
+    )
+    named_only = select_entertainment_stories([sighting, deadline, spec_deal, named_movie])
+    _check(
+        "a titled movie beats a newer spec deal",
+        [story.slot for story in named_only] == [SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS],
+    )
+    _check("movie slot uses the titled film, not the spec", named_only[2].title.startswith("Parker Posey"))
+    named_line = spoken_story(named_only[2])
+    _check(
+        "titled movie uses the film title",
+        named_line.startswith("In movie news, Sleepover fans, get ready!"),
+    )
+    _check("titled movie keeps the supplied theater date", "Oct. 8, 2027" in named_line)
+    _check("titled movie does not invent Friday", "friday" not in named_line.lower())
+    _check("titled movie does not read the acquisition headline", "Black Bear" not in named_line)
+    _assert_no_review_language(named_line)
+
+    screening = spoken_story(
+        _story(
+            "Director attends a fest for 'Once Upon a Time in Hollywood'",
+            summary="The screening takes place on Friday, Oct. 23. He will talk about the movie.",
+            source_id="variety_film",
+            kind="film_news",
+        )
+    )
+    _check("a screening date is not turned into a theater day", "hits theaters" not in screening.lower())
+    _check("screening still names the movie", "Once Upon a Time in Hollywood fans, get ready!" in screening)
+
+    deals_only = select_entertainment_stories([sighting, deadline, spec_deal, writers_lab, cast_list])
+    _check(
+        "deals and labs skip the movie slot",
+        [story.slot for story in deals_only] == [SLOT_TMZ, SLOT_DEADLINE],
+    )
 
     without_deadline = select_entertainment_stories(
         [sighting, gossip, box_office, trailer, retired_review, graphic, sexual]
