@@ -640,23 +640,29 @@ def test_handoff_flow() -> None:
     _check("michael script thanks Dave", flow["michael_g_script"].startswith("Thanks, Dave."))
     normal_lines = flow["michael_g_script"].splitlines()
     _check("normal-day open is straight plus one beat", normal_lines[0] == MICHAEL_STRAIGHT_OPEN)
-    _check("normal-day open adds one light beat", normal_lines[1] == MICHAEL_BEAT)
+    _check("normal-day open adds one conversational beat", normal_lines[1] == MICHAEL_BEAT)
     _check(
-        "fallback beat mentions home, husband, grandkids, or the dog",
-        any(
-            touch in MICHAEL_BEAT.lower()
-            for touch in ("southeast massachusetts", "husband", "grandkids", "the dog")
-        ),
+        "fallback beat sounds like coffee and classic rock",
+        "coffee" in MICHAEL_BEAT.lower() and "classic rock" in MICHAEL_BEAT.lower(),
+    )
+    _check(
+        "fallback beat is not the dog chair gag",
+        "good chair" not in MICHAEL_BEAT.lower() and "dog" not in MICHAEL_BEAT.lower(),
     )
     _check("normal-day beat is one sentence", MICHAEL_BEAT.endswith(".") and MICHAEL_BEAT.count(".") == 1)
     _check("normal-day script uses that beat once", flow["michael_g_script"].count(MICHAEL_BEAT) == 1)
     _check("normal-day script does not read the biography", "Roger Williams" not in flow["michael_g_script"])
     _check("normal-day script does not say Mike Gleason", "Mike Gleason" not in flow["michael_g_script"])
+    _check(
+        "normal-day script does not read the bio coffee line",
+        "sub genres" not in flow["michael_g_script"].lower()
+        and "golden age" not in flow["michael_g_script"].lower(),
+    )
     _check("normal-day script has no popcorn joke", "popcorn" not in flow["michael_g_script"].lower())
     _check(
-        "normal-day prompt asks for one light beat",
-        "one short warm comical beat" in flow["michael_g_prompt"].lower()
-        and "southeast massachusetts" in flow["michael_g_prompt"].lower()
+        "normal-day prompt asks for one conversational beat",
+        "coffee or classic rock" in flow["michael_g_prompt"].lower()
+        and "not a disconnected gag" in flow["michael_g_prompt"].lower()
         and "not the same sentence every day" in flow["michael_g_prompt"].lower(),
     )
     _check(
@@ -687,7 +693,7 @@ def test_handoff_flow() -> None:
     empty = build_morning_flow([])
     _check("empty report invents nothing", "Thanks, Dave." in empty["michael_g_script"])
     _check("empty report still introduces Michael", MICHAEL_STRAIGHT_OPEN in empty["michael_g_script"])
-    _check("empty report keeps the light beat", empty["michael_g_script"].splitlines()[1] == MICHAEL_BEAT)
+    _check("empty report keeps the conversational beat", empty["michael_g_script"].splitlines()[1] == MICHAEL_BEAT)
     _check("empty report still hands off", "DJ Mo, back to you." in empty["michael_g_script"])
     _check("empty prompt forbids gossip", "do not invent" in empty["michael_g_prompt"].lower())
     _check("mo still thanks Michael G", empty["mo_thanks"] == "Thanks, Michael G.")
@@ -706,21 +712,31 @@ def test_handoff_flow() -> None:
     )
     _check("death-day open matches the straight line", death_lines[0] == MICHAEL_STRAIGHT_OPEN)
     _check("death-day open has no joke after it", death_lines[1] != MICHAEL_BEAT)
+    _check("death-day open is only the straight line", len(death_lines[0]) == len(MICHAEL_STRAIGHT_OPEN))
     death_stories = death_lines[1:-1]
     _check("death story is still read", any("died" in line.lower() for line in death_stories))
     _check(
         "death story stays respectful",
         death_stories
         and all(
-            MICHAEL_BEAT not in line and "popcorn" not in line.lower() and "grandkids" not in line.lower()
+            MICHAEL_BEAT not in line
+            and "popcorn" not in line.lower()
+            and "grandkids" not in line.lower()
+            and "coffee" not in line.lower()
+            and "classic rock" not in line.lower()
             for line in death_stories
         ),
     )
     _check("death-day script has no comical beat", MICHAEL_BEAT not in death_script)
     _check("death-day script has no popcorn joke", "popcorn" not in death_script.lower())
+    _check("death-day script has no coffee", "coffee" not in death_script.lower())
+    _check("death-day script has no classic rock", "classic rock" not in death_script.lower())
+    _check("death-day open has no coffee", "coffee" not in death_lines[0].lower())
+    _check("death-day open has no rock", "rock" not in death_lines[0].lower())
     _check("death-day open has no grandkids joke", "grandkids" not in death_lines[0].lower())
     _check("death-day open has no dog joke", "dog" not in death_lines[0].lower())
     _check("death-day open has no husband joke", "husband" not in death_lines[0].lower())
+    _check("death-day open has no popcorn joke", "popcorn" not in death_lines[0].lower())
     _check("spoken death story has no comical beat", MICHAEL_BEAT not in spoken_story(death))
     _check("spoken death story stays respectful", spoken_story(death) == "The actor died Thursday.")
 
@@ -748,7 +764,11 @@ def test_handoff_flow() -> None:
         ]
     )
     _check("a death in any slot straightens the whole open", mixed.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
-    _check("a death day does not keep the light beat", MICHAEL_BEAT not in mixed and "popcorn" not in mixed.lower())
+    _check(
+        "a death day open has no coffee or rock",
+        "coffee" not in mixed.splitlines()[0].lower() and "rock" not in mixed.splitlines()[0].lower(),
+    )
+    _check("a death day does not keep the conversational beat", MICHAEL_BEAT not in mixed and "popcorn" not in mixed.lower())
     _check("a death day still reads the other stories", "Ocean Light" in mixed and "family comedy" in mixed)
     _check("a death day still reads the death", "died" in mixed.lower())
 
@@ -763,7 +783,8 @@ def test_handoff_flow() -> None:
         ]
     )
     _check("a mourning item straightens the open", mourning.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
-    _check("a mourning day has no light beat", MICHAEL_BEAT not in mourning)
+    _check("a mourning day has no conversational beat", MICHAEL_BEAT not in mourning)
+    _check("a mourning day has no coffee or rock", "coffee" not in mourning.lower() and "classic rock" not in mourning.lower())
 
     obituary = michael_g_script(
         [
@@ -846,8 +867,10 @@ def test_handoff_flow() -> None:
     _check(
         "death-day prompt forbids the joke",
         "a supplied story is a death, obituary, or mourning item" in death_flow["michael_g_prompt"].lower()
-        and "do not add a comical beat" in death_flow["michael_g_prompt"].lower()
-        and "no popcorn joke" in death_flow["michael_g_prompt"].lower(),
+        and         "do not add a comical beat" in death_flow["michael_g_prompt"].lower()
+        and "no popcorn joke" in death_flow["michael_g_prompt"].lower()
+        and "no coffee" in death_flow["michael_g_prompt"].lower()
+        and "no classic rock" in death_flow["michael_g_prompt"].lower(),
     )
     _check("death-day prompt keeps the exact open", MICHAEL_STRAIGHT_OPEN in death_flow["michael_g_prompt"])
 
@@ -926,7 +949,9 @@ def test_news_rules_upgrade() -> None:
         "rules name the exact straight open",
         "thanks, dave. michael g here with the entertainment report." in rules,
     )
-    _check("rules keep the light touch", "southeast massachusetts" in rules)
+    _check("rules use coffee or classic rock on a normal day", "coffee or classic rock" in rules)
+    _check("rules reject a disconnected gag", "not a disconnected gag" in rules)
+    _check("rules ban coffee and rock on a death day", "no coffee" in rules and "no classic rock" in rules)
     _check("rules do not require the same sentence every day", "not the same sentence every day" in rules)
     _check("rules say he does not read his biography", "does not read his biography" in rules)
     legacy_rules = normalize_script_rules(
@@ -1088,8 +1113,12 @@ def test_config_files() -> None:
     _check("voice prompt is not sarcastic about death", "Not sarcastic about death" in prompt)
     _check("voice prompt does not read the biography every morning", "does not read his biography" in prompt.lower())
     _check(
-        "voice prompt keeps a light touch",
-        "southeast massachusetts" in prompt.lower() and "grandkids" in prompt.lower() and "the dog" in prompt.lower(),
+        "voice prompt uses coffee or classic rock",
+        "coffee or classic rock" in prompt.lower() and "not a disconnected gag" in prompt.lower(),
+    )
+    _check(
+        "voice prompt bars coffee and rock on a death day",
+        "no coffee" in prompt.lower() and "no classic rock" in prompt.lower(),
     )
     _check("voice prompt does not put the degrees on the air", "roger williams" not in prompt.lower())
     _check("voice prompt straightens a death open", "whole open is straight" in prompt.lower())
@@ -1114,14 +1143,27 @@ def test_config_files() -> None:
         and "grandkids" in michael["bio"]
         and "their dog" in michael["bio"],
     )
+    _check(
+        "bio appends the coffee and classic rock line",
+        michael["bio"].endswith(
+            "Oh, right. I drink a lot of coffee and enjoy listening to classic rock "
+            "and talking about all the different sub genres of rock music going back to the golden age."
+        ),
+    )
     _check("on-air name stays Michael G", michael["display_name"] == "Michael G")
     _check(
         "personality does not read the bio every morning",
         "does not read his biography" in michael["personality_description"].lower(),
     )
     _check(
-        "personality keeps a light touch",
-        "southeast massachusetts" in michael["personality_description"].lower(),
+        "personality uses coffee or classic rock",
+        "coffee or classic rock" in michael["personality_description"].lower()
+        and "not a disconnected gag" in michael["personality_description"].lower(),
+    )
+    _check(
+        "personality bars coffee and rock on a death day",
+        "no coffee" in michael["personality_description"].lower()
+        and "no classic rock" in michael["personality_description"].lower(),
     )
     _check(
         "personality straightens a death open",

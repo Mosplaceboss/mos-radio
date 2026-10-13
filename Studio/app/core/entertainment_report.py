@@ -2,12 +2,12 @@
 
 Runs after Dave's sports in the morning newscast. Michael G thanks Dave
 and says he has the entertainment report. On a normal day he adds one
-short warm comical beat: a light touch of Southeast Massachusetts, his
-husband, the grandkids, or the dog. He does not read his biography.
-If any story is a death, obituary, or mourning item, the whole open stays
-straight, with no joke. Then he reads four slots, in order, and hands to
-DJ Mo. DJ Mo thanks Michael G by name. The death story itself stays
-respectful.
+short conversational beat that sounds like him talking, using coffee or
+classic rock. He does not read his biography. If any story is a death,
+obituary, or mourning item, the whole open stays straight, with no coffee,
+rock, dog, grandkids, or popcorn joke. Then he reads four slots, in order,
+and hands to DJ Mo. DJ Mo thanks Michael G by name. The death story itself
+stays respectful.
 
 1. A TMZ celebrity item: a death, gossip, or a sighting, as one or two
    plain sentences. The headline is not read and then repeated as the lede.
@@ -94,14 +94,18 @@ DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertain
 MICHAEL_G_BIO = (
     "Mike Gleason has a BA in Communications-Journalism from Roger Williams University "
     "and an MA in Professional Writing & Communication from the University of Massachusetts-Dartmouth. "
-    "He and his husband live in Southeast Massachusetts where they spoil their grandkids and their dog."
+    "He and his husband live in Southeast Massachusetts where they spoil their grandkids and their dog. "
+    "Oh, right. I drink a lot of coffee and enjoy listening to classic rock and talking about all the different sub genres of rock music going back to the golden age."
 )
 MICHAEL_OPEN = "Thanks, Dave."
 MICHAEL_REPORT = "Michael G here with the entertainment report."
 MICHAEL_STRAIGHT_OPEN = f"{MICHAEL_OPEN} {MICHAEL_REPORT}"
 # Stable fallback for a normal day. The model may vary the sentence.
-# This one mentions the dog and Southeast Massachusetts, not the biography.
-MICHAEL_BEAT = "Out in Southeast Massachusetts, the dog already claimed the good chair."
+# This one sounds like him talking about coffee and classic rock.
+# It is not the biography, and it is not a disconnected gag.
+MICHAEL_BEAT = (
+    "I have had enough coffee to get us through this, and I am still not done talking about classic rock."
+)
 MICHAEL_WARM_OPEN = f"{MICHAEL_STRAIGHT_OPEN} {MICHAEL_BEAT}"
 MICHAEL_INTRO = MICHAEL_WARM_OPEN
 MICHAEL_HANDOFF = "DJ Mo, back to you."
@@ -114,12 +118,12 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "His personality is comical: light and warm, one short beat, then the stories. "
     "Not sarcastic about death or illness. Not a long monologue. "
     'On a normal day, open with "Thanks, Dave. Michael G here with the entertainment report." '
-    "Then one short warm comical beat. "
-    "That beat may lightly mention Southeast Massachusetts, his husband, the grandkids, or the dog. "
+    "Then one short conversational beat that sounds like him talking, using coffee or classic rock. "
+    "One sentence. Not a disconnected gag. "
     "One short beat. Not a biography. Not the degrees or the universities. Not the same sentence every day. "
     "If any story is a death, obituary, or mourning item, the whole open is straight. "
     'Open with exactly "Thanks, Dave. Michael G here with the entertainment report." '
-    "No popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
+    "No coffee, no classic rock, no popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
     "The death story itself stays respectful. "
     "Do not invent a movie title or a person's death for the joke. "
     "Use only the supplied stories, in this order: "
@@ -967,16 +971,16 @@ def format_entertainment_prompt(
             "A supplied story is a death, obituary, or mourning item. "
             'Open with exactly "Thanks, Dave. Michael G here with the entertainment report." '
             "Do not add a comical beat. "
-            "No popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
-            "Do not follow the normal-day comical beat. This open has no joke. "
+            "No coffee, no classic rock, no popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
+            "Do not follow the normal-day conversational beat. This open has no joke. "
             "The death story itself stays respectful. "
             "Not sarcastic about death or illness."
         )
     else:
         lines.append(
             'Open with "Thanks, Dave. Michael G here with the entertainment report." '
-            "Then one short warm comical beat. "
-            "That beat may lightly mention Southeast Massachusetts, his husband, the grandkids, or the dog. "
+            "Then one short conversational beat that sounds like him talking, using coffee or classic rock. "
+            "One sentence. Not a disconnected gag. "
             "One short beat. Not a biography. Do not read the degrees or the universities. "
             "Not the same sentence every day. "
             "Not sarcastic about death or illness. Not a long monologue. "
@@ -1110,9 +1114,14 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     has_movie_shape = "in movie news" in lowered_rules and "do not say review" in lowered_rules
     mentions_reviews_feed = "variety reviews" in lowered_rules or "reviews/feed" in lowered_rules
     has_intro = "michael g here with the entertainment report" in lowered_rules
-    has_straight_death_open = "whole open is straight" in lowered_rules
-    has_light_touch = (
-        "southeast massachusetts" in lowered_rules
+    has_straight_death_open = (
+        "whole open is straight" in lowered_rules
+        and "no coffee" in lowered_rules
+        and "no classic rock" in lowered_rules
+    )
+    has_conversational_beat = (
+        "coffee or classic rock" in lowered_rules
+        and "not a disconnected gag" in lowered_rules
         and "does not read his biography" in lowered_rules
         and "not the same sentence every day" in lowered_rules
     )
@@ -1121,7 +1130,7 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
         or mentions_reviews_feed
         or not has_intro
         or not has_straight_death_open
-        or not has_light_touch
+        or not has_conversational_beat
     ):
         rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
 
