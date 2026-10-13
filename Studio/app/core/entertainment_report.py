@@ -1,12 +1,18 @@
 """Morning entertainment report for Michael G.
 
-Runs after Dave's sports in the morning newscast. Michael G reads up to four
-stories from Deadline, TMZ, and the Variety film feed, then hands to DJ Mo.
-DJ Mo thanks Michael G by name.
+Runs after Dave's sports in the morning newscast. Michael G reads four slots,
+in order, then hands to DJ Mo. DJ Mo thanks Michael G by name.
 
-Story selection is fail-soft: a down feed is skipped, graphic crime and sexual
-items are dropped, and fewer than four usable stories are read as-is. Nothing
-here invents gossip.
+1. A TMZ celebrity item: a death, gossip, or a sighting.
+2. One bigger Deadline entertainment story. If Deadline is empty or down, a
+   second usable TMZ item may fill this slot.
+3. One new movie or trailer from Variety film news only: title, when it arrives
+   if the item says so, and one sentence on what it is.
+4. A few words from Variety reviews: title plus one or two sentences. The news
+   feeds are not turned into a review.
+
+A down or empty feed skips that slot. Graphic crime, explicit sexual content,
+and birthdays are dropped. Nothing here invents gossip.
 
 The prompt block matches the sports-desk style: rules plus supplied facts for
 Local AI, with a speakable fallback script when generation is not available.
@@ -40,24 +46,40 @@ MICHAEL_G_VOICEBOX_PROFILE = (
 
 ENTERTAINMENT_STORY_COUNT = 4
 
+SLOT_TMZ = "tmz_celebrity"
+SLOT_DEADLINE = "deadline_news"
+SLOT_FILM_NEWS = "variety_film_news"
+SLOT_REVIEW = "variety_review"
+SLOT_ORDER = (SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_REVIEW)
+
 ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
-    {
-        "id": "deadline",
-        "name": "Deadline",
-        "kind": "general",
-        "url": "https://deadline.com/feed/atom/",
-    },
     {
         "id": "tmz",
         "name": "TMZ",
-        "kind": "general",
+        "kind": "celebrity",
+        "slot": SLOT_TMZ,
         "url": "https://www.tmz.com/rss.xml",
+    },
+    {
+        "id": "deadline",
+        "name": "Deadline",
+        "kind": "entertainment_news",
+        "slot": SLOT_DEADLINE,
+        "url": "https://deadline.com/feed/atom/",
     },
     {
         "id": "variety_film",
         "name": "Variety Film",
-        "kind": "film",
+        "kind": "film_news",
+        "slot": SLOT_FILM_NEWS,
         "url": "https://variety.com/v/film/feed/",
+    },
+    {
+        "id": "variety_reviews",
+        "name": "Variety Reviews",
+        "kind": "film_review",
+        "slot": SLOT_REVIEW,
+        "url": "https://variety.com/v/film/reviews/feed/",
     },
 )
 
@@ -69,12 +91,17 @@ MO_THANKS = "Thanks, Michael G."
 
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports. "
-    "Use only the supplied stories. Read four when four usable stories are supplied; "
-    "if fewer are supplied, read only those and do not invent gossip, quotes, or extra stories. "
-    "Deadline and TMZ items are general entertainment. Variety film items are new movies and reviews. "
-    "Skip graphic crime, sexual content, and anything that does not fit a morning music-radio show. "
+    "Use only the supplied stories, in this order: "
+    "a celebrity item about a death, gossip, or a sighting; "
+    "one bigger entertainment-news item, or a second celebrity item if that news feed has nothing; "
+    "one new movie or trailer from the film-news feed, with the title, when it arrives if the item says so, "
+    "and one sentence on what it is; "
+    "then a few words about a movie from Variety reviews: the title plus one or two sentences, not the whole review. "
+    "Do not invent a review from the news feeds. "
+    "If a feed is down or a slot has nothing usable, skip that slot and do not invent gossip, quotes, or extra stories. "
+    "Skip graphic crime, sexual content, and birthdays. "
     "Do not name the outlets on the air. "
-    "Thank Dave, then read the stories in short conversational beats, then hand the show to DJ Mo. "
+    "Thank Dave, then read the supplied slots, then hand the show to DJ Mo. "
     "DJ Mo's next line thanks Michael G by name."
 )
 
@@ -88,6 +115,26 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 _OUTLET_PREFIX_RE = re.compile(r"(?i)^(deadline|tmz|variety(?:\s+film)?)\s*[:|\-—–]\s*")
 _KILLED_IT_RE = re.compile(r"(?i)\bkilled it\b")
+_BIRTHDAY_RE = re.compile(r"(?i)\b(?:birthdays?|born on this day|turns \d{1,3})\b")
+_CELEBRITY_RE = re.compile(
+    r"(?i)\b("
+    r"dies|died|dead at|passes away|passed away|obituary|"
+    r"gossip|rumou?rs?|dating|split|splits|breakup|broke up|engaged|engagement|wedding|divorc\w*|"
+    r"spotted|sighting|sightings|seen with|steps out|"
+    r"celebrity|actor|actress|singer|rapper|star"
+    r")\b"
+)
+_REVIEW_ITEM_RE = re.compile(r"(?i)^review\b|\b(?:movie|film)\s+review\b")
+_FILM_NEWS_PREFER_RE = re.compile(
+    r"(?i)\b(?:trailer|teaser|movie|film|opens|opening|premiere|premieres|theaters|theatres)\b"
+)
+_ARRIVAL_RE = re.compile(
+    r"(?i)\b("
+    r"(?:opens|opening|premieres|premiering|arrives|arriving|debuts|hits theaters|in theaters|in theatres|"
+    r"set for|coming to theaters)"
+    r"(?:\s+\w+){0,6}"
+    r")"
+)
 _UNSAFE_RE = re.compile(
     r"(?i)\b("
     r"murder(?:ed|s|ing)?|homicide|manslaughter|"
@@ -126,6 +173,7 @@ class EntertainmentStory:
     source_name: str
     kind: str
     published: datetime | None = None
+    slot: str = ""
 
 
 def entertainment_feed_urls() -> list[str]:
@@ -208,6 +256,8 @@ def is_morning_safe(title: str, summary: str = "") -> bool:
         return False
     blob = f"{title_text} {_clean_text(summary)}"
     blob = _KILLED_IT_RE.sub(" ", blob)
+    if _BIRTHDAY_RE.search(blob):
+        return False
     return _UNSAFE_RE.search(blob) is None
 
 
@@ -245,8 +295,8 @@ def parse_feed_xml(xml_text: str, source: dict[str, str]) -> list[EntertainmentS
         published = _parse_datetime(
             _child_text(item, ("pubDate", "published", "updated", "date"))
         )
-        if len(summary) > 280:
-            summary = summary[:277].rstrip() + "..."
+        if len(summary) > 900:
+            summary = summary[:897].rstrip() + "..."
         stories.append(
             EntertainmentStory(
                 title=title,
@@ -267,17 +317,24 @@ def _freshness_key(story: EntertainmentStory) -> tuple[int, float, str]:
     return (0, -story.published.timestamp(), story.title.lower())
 
 
-def select_entertainment_stories(
-    stories: list[EntertainmentStory],
-    *,
-    limit: int = ENTERTAINMENT_STORY_COUNT,
-) -> list[EntertainmentStory]:
-    """Pick up to `limit` fresh, morning-safe stories.
+def _story_pool(story: EntertainmentStory) -> str | None:
+    """Which slot pool a story belongs to. Slot wins so a TMZ fallback stays put."""
+    if story.slot == SLOT_REVIEW or story.source_id == "variety_reviews" or story.kind == "film_review":
+        return "reviews"
+    if story.slot == SLOT_FILM_NEWS or story.source_id == "variety_film" or story.kind in {"film_news", "film"}:
+        return "film_news"
+    if story.slot == SLOT_DEADLINE or story.source_id == "deadline" or story.kind == "entertainment_news":
+        return "deadline"
+    if story.slot == SLOT_TMZ or story.source_id == "tmz" or story.kind == "celebrity":
+        return "tmz"
+    return None
 
-    Variety film items cover new movies and reviews. When the freshest items
-    would otherwise leave film out, the newest film story replaces the oldest
-    pick so a movie or review still airs.
-    """
+
+def _is_review_item(story: EntertainmentStory) -> bool:
+    return _REVIEW_ITEM_RE.search(story.title) is not None
+
+
+def _deduped_safe(stories: list[EntertainmentStory]) -> list[EntertainmentStory]:
     usable: list[EntertainmentStory] = []
     seen: set[str] = set()
     for story in stories:
@@ -288,22 +345,83 @@ def select_entertainment_stories(
             continue
         seen.add(key)
         usable.append(story)
-
     usable.sort(key=_freshness_key)
-    if limit < 1 or not usable:
-        return []
-    if len(usable) <= limit:
-        return usable
+    return usable
 
-    chosen = usable[:limit]
-    if any(story.kind == "film" for story in chosen):
-        return chosen
-    film = next((story for story in usable if story.kind == "film"), None)
-    if film is None:
-        return chosen
-    chosen = chosen[:-1] + [film]
-    chosen.sort(key=_freshness_key)
-    return chosen
+
+def _with_slot(story: EntertainmentStory, slot: str) -> EntertainmentStory:
+    if story.slot == slot:
+        return story
+    return EntertainmentStory(
+        title=story.title,
+        summary=story.summary,
+        url=story.url,
+        source_id=story.source_id,
+        source_name=story.source_name,
+        kind=story.kind,
+        published=story.published,
+        slot=slot,
+    )
+
+
+def select_entertainment_stories(
+    stories: list[EntertainmentStory],
+    *,
+    limit: int = ENTERTAINMENT_STORY_COUNT,
+) -> list[EntertainmentStory]:
+    """Fill the four morning slots in order. Missing slots are skipped.
+
+    Slot 1 is a TMZ celebrity item (death, gossip, or sighting preferred).
+    Slot 2 is Deadline. A second TMZ item fills slot 2 only when Deadline
+    has nothing usable. Slot 3 is Variety film news, never a review.
+    Slot 4 is the Variety reviews feed only.
+    """
+    grouped: dict[str, list[EntertainmentStory]] = {
+        "tmz": [],
+        "deadline": [],
+        "film_news": [],
+        "reviews": [],
+    }
+    for story in stories:
+        pool = _story_pool(story)
+        if pool:
+            grouped[pool].append(story)
+
+    tmz = _deduped_safe(grouped["tmz"])
+    celebrity = [story for story in tmz if _CELEBRITY_RE.search(f"{story.title} {story.summary}")]
+    tmz_order = celebrity or tmz
+    if len(celebrity) > 1:
+        tmz_fallback = celebrity[1:]
+    else:
+        used_title = _dedupe_key(tmz_order[0].title) if tmz_order else ""
+        tmz_fallback = [story for story in tmz if _dedupe_key(story.title) != used_title]
+
+    deadline = _deduped_safe(grouped["deadline"])
+    film_news = [
+        story
+        for story in _deduped_safe(grouped["film_news"])
+        if not _is_review_item(story)
+    ]
+    film_preferred = [
+        story for story in film_news if _FILM_NEWS_PREFER_RE.search(f"{story.title} {story.summary}")
+    ]
+    film_order = film_preferred or film_news
+    reviews = _deduped_safe(grouped["reviews"])
+
+    chosen: list[EntertainmentStory] = []
+    if tmz_order:
+        chosen.append(_with_slot(tmz_order[0], SLOT_TMZ))
+    if deadline:
+        chosen.append(_with_slot(deadline[0], SLOT_DEADLINE))
+    elif tmz_fallback:
+        chosen.append(_with_slot(tmz_fallback[0], SLOT_DEADLINE))
+    if film_order:
+        chosen.append(_with_slot(film_order[0], SLOT_FILM_NEWS))
+    if reviews:
+        chosen.append(_with_slot(reviews[0], SLOT_REVIEW))
+    if limit < 1:
+        return []
+    return chosen[:limit]
 
 
 def collect_entertainment_stories(
@@ -312,7 +430,7 @@ def collect_entertainment_stories(
     fetch: bool = False,
     timeout: float = 12.0,
 ) -> list[EntertainmentStory]:
-    """Gather stories from the three entertainment feeds.
+    """Gather the four entertainment slots. Each feed fails on its own.
 
     Pass `xml_by_url` for offline fixtures. Set `fetch` to download live feeds.
     Each feed fails on its own; the others are still used.
@@ -371,19 +489,49 @@ _OUTLET_SAYS_RE = re.compile(
 )
 
 
-def _summary_for_air(summary: str) -> str:
-    """Use a short factual blurb. Drop it when it is outlet attribution."""
+def _summary_body(summary: str) -> str:
+    """Outlet-cleaned summary text. Kept long enough for one or two sentences."""
     text = _strip_outlet_prefix(summary)
     text = _ATTRIBUTION_RE.sub("", text)
     text = _OUTLET_SAYS_RE.sub("", text)
-    text = _first_sentence(text)
+    text = _clean_text(text)
     if not text or _OUTLET_WORD_RE.search(text):
         return ""
     return text
 
 
-def spoken_story(story: EntertainmentStory) -> str:
-    """One on-air beat from the headline. Outlet names are not added."""
+def _summary_for_air(summary: str) -> str:
+    """Use a short factual blurb. Drop it when it is outlet attribution."""
+    return _first_sentence(_summary_body(summary))
+
+
+def _take_sentences(text: str, count: int) -> list[str]:
+    cleaned = _clean_text(text)
+    if not cleaned or count < 1:
+        return []
+    sentences: list[str] = []
+    for part in re.findall(r"[^.!?]+[.!?]?", cleaned):
+        sentence = _WS_RE.sub(" ", part).strip()
+        if not sentence:
+            continue
+        if sentence[-1:] not in ".!?":
+            sentence += "."
+        sentences.append(sentence)
+        if len(sentences) >= count:
+            break
+    return sentences
+
+
+def _finish_title(title: str) -> str:
+    text = _strip_outlet_prefix(title)
+    if not text:
+        return ""
+    if text[-1:] not in ".!?":
+        return f"{text}."
+    return text
+
+
+def _spoken_general(story: EntertainmentStory) -> str:
     title = _strip_outlet_prefix(story.title)
     summary = _summary_for_air(story.summary)
     if summary and summary.lower() not in title.lower() and title.lower() not in summary.lower():
@@ -393,6 +541,66 @@ def spoken_story(story: EntertainmentStory) -> str:
             return f"{title}. {summary}"
         return f"{title} {summary}"
     return title
+
+
+def _is_arrival_only(sentence: str) -> bool:
+    match = _ARRIVAL_RE.search(sentence)
+    if not match:
+        return False
+    leftover = _ARRIVAL_RE.sub(" ", sentence)
+    leftover = re.sub(r"(?i)\b(?:the|a|an|on|in|this|next)\b", " ", leftover)
+    leftover = re.sub(r"[^\w]+", "", leftover)
+    return len(leftover) < 4
+
+
+def _spoken_film_news(story: EntertainmentStory) -> str:
+    """Title, arrival when the item states it, and one sentence on what it is."""
+    title = _finish_title(story.title)
+    body = _summary_body(story.summary)
+    what = ""
+    for sentence in _take_sentences(body, 3):
+        if _is_arrival_only(sentence):
+            continue
+        what = sentence
+        break
+    arrival = ""
+    match = _ARRIVAL_RE.search(f"{title} {body}")
+    if match:
+        arrival = _clean_text(match.group(1)).strip(" .,;")
+    parts = [title] if title else []
+    arrival_in_title = bool(arrival) and arrival.lower() in title.lower()
+    arrival_in_what = bool(arrival and what) and arrival.lower() in what.lower()
+    if arrival and not arrival_in_title and not arrival_in_what:
+        if arrival[0].isalpha() and arrival[0].islower():
+            arrival = arrival[0].upper() + arrival[1:]
+        if arrival[-1:] not in ".!?":
+            arrival += "."
+        parts.append(arrival)
+    if what and what.lower() not in title.lower():
+        parts.append(what if what[-1:] in ".!?" else f"{what}.")
+    return " ".join(parts)
+
+
+def _spoken_review(story: EntertainmentStory) -> str:
+    """Title plus one or two sentences. The rest of the review stays off air."""
+    title = _finish_title(story.title)
+    kept: list[str] = []
+    for sentence in _take_sentences(_summary_body(story.summary), 2):
+        if title and sentence.lower().rstrip(".!?") in title.lower():
+            continue
+        kept.append(sentence)
+    parts = [title] if title else []
+    parts.extend(kept)
+    return " ".join(parts)
+
+
+def spoken_story(story: EntertainmentStory) -> str:
+    """On-air beat for one slot. Outlet names are not added."""
+    if story.slot == SLOT_REVIEW or story.kind == "film_review" or story.source_id == "variety_reviews":
+        return _spoken_review(story)
+    if story.slot == SLOT_FILM_NEWS or story.kind in {"film_news", "film"} or story.source_id == "variety_film":
+        return _spoken_film_news(story)
+    return _spoken_general(story)
 
 
 def sports_close_hands_to_michael(close: str) -> str:
@@ -419,28 +627,50 @@ def michael_g_script(stories: list[EntertainmentStory]) -> str:
     return "\n".join(lines)
 
 
+_SLOT_PROMPT = (
+    (SLOT_TMZ, "Celebrity item about a death, gossip, or a sighting."),
+    (
+        SLOT_DEADLINE,
+        "Bigger entertainment-news item. A second celebrity item belongs here only when the news feed had nothing.",
+    ),
+    (
+        SLOT_FILM_NEWS,
+        "New movie or trailer from film news only. Say the title, when it arrives if the item says so, "
+        "and one sentence on what it is. Do not turn this into a review.",
+    ),
+    (
+        SLOT_REVIEW,
+        "Movie review. Say the title and one or two sentences only. Do not read the whole review. "
+        "Do not invent a review from the news items.",
+    ),
+)
+
+
 def format_entertainment_prompt(
     stories: list[EntertainmentStory],
     *,
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
 ) -> str:
-    """Local-AI prompt: sports-style rules plus only the supplied stories."""
-    count = len(stories)
-    lines = [rules.strip(), "", f"SUPPLIED STORIES ({count}):"]
-    if not stories:
-        lines.append("(none — do not invent entertainment stories; hand off to DJ Mo.)")
-    else:
-        for index, story in enumerate(stories, start=1):
-            lines.append(f"{index}. {spoken_story(story)}")
+    """Local-AI prompt: sports-style rules plus only the supplied slots."""
+    by_slot = {story.slot: story for story in stories if story.slot}
+    lines = [rules.strip(), "", "SUPPLIED STORIES:"]
+    filled = 0
+    for index, (slot, label) in enumerate(_SLOT_PROMPT, start=1):
+        story = by_slot.get(slot)
+        if story is None:
+            lines.append(f"{index}. {label} (skipped — do not invent this slot.)")
+            continue
+        filled += 1
+        lines.append(f"{index}. {label} {spoken_story(story)}")
     lines.append("")
-    if count >= ENTERTAINMENT_STORY_COUNT:
+    if filled >= ENTERTAINMENT_STORY_COUNT:
         lines.append(
-            "Read exactly these four stories, in order, one short beat each. "
+            "Read exactly these four stories, in order. "
             "Do not add a fifth story."
         )
-    elif count:
+    elif filled:
         lines.append(
-            f"Only {count} usable stor{'y' if count == 1 else 'ies'} were supplied. "
+            f"Only {filled} usable stor{'y' if filled == 1 else 'ies'} were supplied. "
             "Read those and do not invent stories to reach four."
         )
     else:
@@ -503,7 +733,7 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
         "",
         "[Michael G]",
         MICHAEL_OPEN,
-        "[Up to four supplied entertainment stories. Do not invent stories in this preview.]",
+        "[Four slots when the feeds supply them: celebrity item, entertainment news, new movie or trailer, short movie review. Do not invent stories in this preview.]",
         MICHAEL_HANDOFF,
         "",
         "[DJ Mo]",
@@ -570,11 +800,12 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     rules["entertainment_story_count"] = ENTERTAINMENT_STORY_COUNT
 
     report_rules = str(rules.get("entertainment_report_rules") or "").strip()
-    if not report_rules:
-        rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
-    elif not report_rules.startswith(DEFAULT_ENTERTAINMENT_REPORT_RULES):
-        lowered = report_rules.lower()
-        if "michael g" not in lowered or "do not invent" not in lowered:
+    lowered_rules = report_rules.lower()
+    has_slot_order = "variety reviews" in lowered_rules and "do not invent a review" in lowered_rules
+    if not report_rules or not has_slot_order:
+        if not report_rules or "new movies and reviews" in lowered_rules:
+            rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
+        elif not report_rules.startswith(DEFAULT_ENTERTAINMENT_REPORT_RULES):
             rules["entertainment_report_rules"] = (
                 f"{DEFAULT_ENTERTAINMENT_REPORT_RULES} {report_rules}"
             ).strip()

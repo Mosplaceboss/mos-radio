@@ -21,6 +21,10 @@ from app.core.entertainment_report import (  # noqa: E402
     collect_entertainment_stories,
     is_morning_safe,
     michael_g_script,
+    SLOT_DEADLINE,
+    SLOT_FILM_NEWS,
+    SLOT_REVIEW,
+    SLOT_TMZ,
     select_entertainment_stories,
     spoken_story,
     sports_close_hands_to_michael,
@@ -35,7 +39,8 @@ from app.core.news_content_model import (  # noqa: E402
 
 DEADLINE_URL = "https://deadline.com/feed/atom/"
 TMZ_URL = "https://www.tmz.com/rss.xml"
-VARIETY_URL = "https://variety.com/v/film/feed/"
+VARIETY_NEWS_URL = "https://variety.com/v/film/feed/"
+VARIETY_REVIEWS_URL = "https://variety.com/v/film/reviews/feed/"
 
 
 def _check(label: str, condition: bool) -> None:
@@ -77,52 +82,137 @@ def test_filters() -> None:
     _check("murder dropped", not is_morning_safe("Actor arrested for murder after party"))
     _check("shooting dropped", not is_morning_safe("Star shot and killed outside a club"))
     _check("short title dropped", not is_morning_safe("Nope"))
+    _check("birthday stays out", not is_morning_safe("Singer turns 40 today"))
 
 
 def test_selection_and_feeds() -> None:
-    fresh = [
-        _story("Award show adds a surprise host", published=_dt(12), source_id="tmz"),
-        _story("Streaming series renews for another year", published=_dt(11)),
-        _story("Festival announces its opening film", published=_dt(10), source_id="tmz"),
-        _story("Singer confirms a fall tour", published=_dt(9)),
-        _story("Older concert clip resurfaces", published=_dt(8, day=1)),
-    ]
-    picked = select_entertainment_stories(fresh)
-    _check("exactly four when more are safe", len(picked) == 4)
-    _check("stale item left out", all(story.title != "Older concert clip resurfaces" for story in picked))
-    _check("freshest story leads", picked[0].title.startswith("Award show"))
-
-    with_film = fresh[:4] + [
-        _story(
-            "Review: the new heist movie sticks the landing",
-            summary="Critics call the June release a crowd pleaser.",
-            kind="film",
-            source_id="variety_film",
-            published=_dt(8, day=11),
-        )
-    ]
-    filmed = select_entertainment_stories(with_film)
-    _check("still four with a film slot", len(filmed) == 4)
-    _check("variety film kept", any(story.kind == "film" for story in filmed))
-    _check(
-        "oldest general item yields the film slot",
-        all(story.title != "Singer confirms a fall tour" for story in filmed),
+    graphic = _story("Star shot and killed outside a club", published=_dt(15), source_id="tmz", kind="celebrity")
+    sexual = _story("Celebrity sex tape leaks online", published=_dt(14), source_id="tmz", kind="celebrity")
+    birthday = _story("Singer turns 40 today", published=_dt(16), source_id="tmz", kind="celebrity")
+    box_office = _story(
+        "Weekend ticket sales climb again",
+        published=_dt(13),
+        source_id="tmz",
+        kind="celebrity",
     )
+    sighting = _story(
+        "Singer spotted leaving a downtown diner",
+        summary="Fans saw the singer just after midnight.",
+        published=_dt(9),
+        source_id="tmz",
+        kind="celebrity",
+    )
+    gossip = _story(
+        "Famous couple split after the premiere party",
+        summary="Friends say the breakup followed a long week of rumors.",
+        published=_dt(8),
+        source_id="tmz",
+        kind="celebrity",
+    )
+    deadline = _story(
+        "Studio renews the drama for two more seasons",
+        summary="The series returns in November with the same cast.",
+        published=_dt(12),
+        source_id="deadline",
+        kind="entertainment_news",
+    )
+    film_review_on_news_feed = _story(
+        "Review: midnight comedy is a charmer",
+        summary="Critics call the June release a crowd pleaser. The second paragraph keeps going.",
+        published=_dt(18),
+        source_id="variety_film",
+        kind="film_news",
+    )
+    trailer = _story(
+        "Ocean Light trailer",
+        summary=(
+            "Opens June 12. A lighthouse keeper finds a map at sea. "
+            "The third act reveals the map was a painting."
+        ),
+        published=_dt(7),
+        source_id="variety_film",
+        kind="film_news",
+    )
+    memo = _story(
+        "Festival posts its volunteer memo",
+        summary="Staff should arrive early for badges.",
+        published=_dt(17),
+        source_id="variety_film",
+        kind="film_news",
+    )
+    review = _story(
+        "Ocean Light",
+        summary=(
+            "The film is a warm adventure. The lead performance carries every scene. "
+            "The ending is discussed at length with spoilers and should not be read aloud."
+        ),
+        published=_dt(6),
+        source_id="variety_reviews",
+        kind="film_review",
+    )
+    picked = select_entertainment_stories(
+        [graphic, sexual, birthday, box_office, sighting, gossip, deadline, film_review_on_news_feed, trailer, memo, review]
+    )
+    _check("four slots when every feed has a story", len(picked) == 4)
+    _check("slot order is celebrity, news, film news, review", [story.slot for story in picked] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_FILM_NEWS,
+        SLOT_REVIEW,
+    ])
+    _check("slot 1 is the TMZ sighting, not the fresher ticket item", picked[0].source_id == "tmz")
+    _check("slot 1 title is the sighting", picked[0].title.startswith("Singer spotted"))
+    _check("slot 2 is Deadline", picked[1].source_id == "deadline" and picked[1].title.startswith("Studio renews"))
+    _check("slot 3 is the film-news feed", picked[2].source_id == "variety_film" and picked[2].slot == SLOT_FILM_NEWS)
+    _check("slot 3 is the trailer, not a review or a memo", picked[2].title == "Ocean Light trailer")
+    _check("slot 4 is the reviews feed", picked[3].source_id == "variety_reviews" and picked[3].slot == SLOT_REVIEW)
+    _check("news-feed review did not become slot 4", all(story.title.startswith("Review:") is False for story in picked))
 
-    short_list = select_entertainment_stories(fresh[:2])
-    _check("fewer than four stays short", len(short_list) == 2)
+    trailer_line = spoken_story(picked[2])
+    _check("film news says the title", "Ocean Light trailer" in trailer_line)
+    _check("film news says when it arrives", "June 12" in trailer_line)
+    _check("film news says what it is", "lighthouse keeper" in trailer_line)
+    _check("film news does not read the later sentence", "painting" not in trailer_line)
 
-    graphic = _story("Star shot and killed outside a club", published=_dt(15))
-    sexual = _story("Celebrity sex tape leaks online", published=_dt(14))
-    safe = _story("Family movie tops the weekend chart", published=_dt(13))
-    cleaned = select_entertainment_stories([graphic, sexual, safe])
-    _check("unsafe stories never selected", cleaned == [safe])
+    review_line = spoken_story(picked[3])
+    _check("review says the title", review_line.startswith("Ocean Light"))
+    _check("review keeps the first sentence", "warm adventure" in review_line)
+    _check("review keeps a second sentence", "lead performance" in review_line)
+    _check("review does not read the rest", "spoilers" not in review_line)
+    _check("outlet names stay off the read", all(name not in trailer_line + review_line for name in ("Deadline", "TMZ", "Variety")))
 
-    deadline = """<?xml version="1.0"?>
+    without_deadline = select_entertainment_stories(
+        [sighting, gossip, trailer, review, graphic, sexual]
+    )
+    _check("deadline gap uses a second TMZ item", [story.slot for story in without_deadline] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_FILM_NEWS,
+        SLOT_REVIEW,
+    ])
+    _check("fallback slot stays a TMZ story", without_deadline[1].source_id == "tmz")
+    _check("fallback is not the same celebrity item", without_deadline[1].title != without_deadline[0].title)
+
+    reviews_down = select_entertainment_stories([sighting, deadline, trailer, film_review_on_news_feed])
+    _check("missing reviews feed skips slot 4", [story.slot for story in reviews_down] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_FILM_NEWS,
+    ])
+    _check("film news is not rewritten as a review", all(story.slot != SLOT_REVIEW for story in reviews_down))
+
+    film_down = select_entertainment_stories([sighting, deadline, review])
+    _check("missing film-news feed skips slot 3", [story.slot for story in film_down] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_REVIEW,
+    ])
+
+    deadline_xml = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <title>Studio sets a summer release date</title>
-    <summary>The film is scheduled for June.</summary>
+    <summary>The series returns in November.</summary>
     <published>2026-10-13T12:00:00Z</published>
     <link href="https://deadline.com/example"/>
   </entry>
@@ -132,54 +222,112 @@ def test_selection_and_feeds() -> None:
   </entry>
 </feed>
 """
-    variety = """<?xml version="1.0"?>
+    film_news_xml = """<?xml version="1.0"?>
 <rss version="2.0"><channel>
   <item>
     <title>Review: midnight comedy is a charmer</title>
-    <description>Variety likes the new movie.</description>
+    <description>Critics liked the new movie.</description>
+    <pubDate>Mon, 13 Oct 2026 18:00:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>Ocean Light trailer</title>
+    <description>Opens June 12. A lighthouse keeper finds a map at sea. The third act reveals the map was a painting.</description>
     <pubDate>Sun, 12 Oct 2026 15:00:00 GMT</pubDate>
-    <link>https://variety.com/film/review</link>
+    <link>https://variety.com/v/film/ocean-light</link>
   </item>
 </channel></rss>
 """
-    tmz = """<?xml version="1.0"?>
+    reviews_xml = """<?xml version="1.0"?>
 <rss version="2.0"><channel>
   <item>
-    <title>Box office: family comedy opens at number one</title>
-    <description>The film opened Friday and leads the weekend chart.</description>
-    <pubDate>Mon, 13 Oct 2026 11:00:00 GMT</pubDate>
+    <title>Ocean Light</title>
+    <description>The film is a warm adventure. The lead performance carries every scene. The ending is discussed at length with spoilers and should not be read aloud.</description>
+    <pubDate>Sat, 11 Oct 2026 15:00:00 GMT</pubDate>
+    <link>https://variety.com/v/film/reviews/ocean-light</link>
+  </item>
+</channel></rss>
+"""
+    tmz_xml = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Weekend ticket sales climb again</title>
+    <description>The family comedy led the chart.</description>
+    <pubDate>Mon, 13 Oct 2026 13:00:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>Singer spotted leaving a downtown diner</title>
+    <description>Fans saw the singer just after midnight.</description>
+    <pubDate>Mon, 13 Oct 2026 09:00:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>Famous couple split after the premiere party</title>
+    <description>Friends say the breakup followed a long week of rumors.</description>
+    <pubDate>Mon, 13 Oct 2026 08:00:00 GMT</pubDate>
   </item>
   <item>
     <title>Celebrity sex tape leaks online</title>
-    <pubDate>Mon, 13 Oct 2026 12:00:00 GMT</pubDate>
+    <pubDate>Mon, 13 Oct 2026 14:00:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>Singer turns 40 today</title>
+    <pubDate>Mon, 13 Oct 2026 15:00:00 GMT</pubDate>
   </item>
 </channel></rss>
 """
-    stories = collect_entertainment_stories(
+    from_feeds = collect_entertainment_stories(
         {
-            DEADLINE_URL: deadline,
-            TMZ_URL: tmz,
-            VARIETY_URL: RuntimeError("feed down"),
+            TMZ_URL: tmz_xml,
+            DEADLINE_URL: deadline_xml,
+            VARIETY_NEWS_URL: film_news_xml,
+            VARIETY_REVIEWS_URL: reviews_xml,
         }
     )
-    titles = [story.title for story in stories]
-    _check("down variety feed is skipped", "Review: midnight comedy is a charmer" not in titles)
-    _check("deadline story kept", "Studio sets a summer release date" in titles)
-    _check("tmz story kept", any(title.startswith("Box office") for title in titles))
-    _check("assault story dropped", all("assault" not in title.lower() for title in titles))
-    _check("sex tape dropped from feed", all("sex tape" not in title.lower() for title in titles))
+    _check("fixtures keep the four-slot order", [story.slot for story in from_feeds] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_FILM_NEWS,
+        SLOT_REVIEW,
+    ])
+    _check("fixture slot 3 is film news", from_feeds[2].source_id == "variety_film")
+    _check("fixture slot 4 is the reviews feed", from_feeds[3].source_id == "variety_reviews")
+    _check("fixture slot 3 title is the trailer", from_feeds[2].title == "Ocean Light trailer")
+    _check("fixture slot 4 title is the review", from_feeds[3].title == "Ocean Light")
+    _check("assault story dropped", all("assault" not in story.title.lower() for story in from_feeds))
+    _check("sex tape dropped from feed", all("sex tape" not in story.title.lower() for story in from_feeds))
+    _check("birthday dropped from feed", all("turns 40" not in story.title.lower() for story in from_feeds))
 
-    variety_only = collect_entertainment_stories(
+    reviews_feed_down = collect_entertainment_stories(
         {
-            DEADLINE_URL: "<not xml",
-            TMZ_URL: "",
-            VARIETY_URL: variety,
+            TMZ_URL: tmz_xml,
+            DEADLINE_URL: deadline_xml,
+            VARIETY_NEWS_URL: film_news_xml,
+            VARIETY_REVIEWS_URL: RuntimeError("feed down"),
         }
     )
-    _check("bad feeds still leave the film review", len(variety_only) == 1)
-    spoken = spoken_story(variety_only[0])
-    _check("outlet name not spoken", "Variety" not in spoken and "Deadline" not in spoken)
-    _check("review title spoken", "midnight comedy" in spoken)
+    _check("down reviews feed skips slot 4", SLOT_REVIEW not in [story.slot for story in reviews_feed_down])
+    _check("down reviews feed still reads the trailer", any(story.slot == SLOT_FILM_NEWS for story in reviews_feed_down))
+    _check(
+        "film news is not used as the review",
+        all(story.source_id != "variety_reviews" for story in reviews_feed_down),
+    )
+
+    deadline_down = collect_entertainment_stories(
+        {
+            TMZ_URL: tmz_xml,
+            DEADLINE_URL: RuntimeError("feed down"),
+            VARIETY_NEWS_URL: film_news_xml,
+            VARIETY_REVIEWS_URL: reviews_xml,
+        }
+    )
+    _check("deadline down keeps the other slots", [story.slot for story in deadline_down] == [
+        SLOT_TMZ,
+        SLOT_DEADLINE,
+        SLOT_FILM_NEWS,
+        SLOT_REVIEW,
+    ])
+    _check("deadline down uses a second TMZ item", deadline_down[1].source_id == "tmz")
+    _check("deadline down does not invent a Deadline story", "summer release" not in deadline_down[1].title.lower())
+    _check("second TMZ item is not the first celebrity story", deadline_down[1].title != deadline_down[0].title)
 
 
 def test_handoff_flow() -> None:
@@ -196,10 +344,34 @@ def test_handoff_flow() -> None:
     _check("existing Michael G close kept", sports_close_hands_to_michael(already) == already)
 
     stories = [
-        _story("Award show adds a surprise host", summary="Producers confirmed the booking this morning.", published=_dt(12)),
-        _story("Streaming series renews for another year", published=_dt(11)),
-        _story("Festival announces its opening film", published=_dt(10)),
-        _story("Singer confirms a fall tour", summary="According to Deadline, the tour starts in November.", published=_dt(9)),
+        _story(
+            "Singer spotted leaving a downtown diner",
+            summary="Fans saw the singer just after midnight.",
+            source_id="tmz",
+            kind="celebrity",
+            published=_dt(9),
+        ),
+        _story(
+            "Studio renews the drama for two more seasons",
+            summary="The series returns in November.",
+            source_id="deadline",
+            kind="entertainment_news",
+            published=_dt(11),
+        ),
+        _story(
+            "Ocean Light trailer",
+            summary="Opens June 12. A lighthouse keeper finds a map at sea.",
+            source_id="variety_film",
+            kind="film_news",
+            published=_dt(10),
+        ),
+        _story(
+            "Ocean Light",
+            summary="The film is a warm adventure. The lead performance carries every scene.",
+            source_id="variety_reviews",
+            kind="film_review",
+            published=_dt(8),
+        ),
     ]
     flow = build_morning_flow(stories, sports_close="Back to you, Mo.")
     _check("order is news, sports, entertainment, thanks", flow["order"] == [
@@ -257,6 +429,27 @@ def test_news_rules_upgrade() -> None:
     _check("four story count", upgraded["entertainment_story_count"] == 4)
     _check("thanks line", upgraded["mo_entertainment_thanks"] == MO_THANKS)
     _check("feeds present", upgraded["entertainment_feeds"] == [source["url"] for source in ENTERTAINMENT_SOURCES])
+    _check("rules name the reviews slot", "variety reviews" in upgraded["entertainment_report_rules"].lower())
+    _check("rules refuse an invented review", "do not invent a review" in upgraded["entertainment_report_rules"].lower())
+    legacy_rules = normalize_script_rules(
+        {
+            "entertainment_report_rules": (
+                "Michael G reads the entertainment report after Dave's sports. "
+                "Use only the supplied stories. Read four when four usable stories are supplied; "
+                "if fewer are supplied, read only those and do not invent gossip, quotes, or extra stories. "
+                "Deadline and TMZ items are general entertainment. Variety film items are new movies and reviews. "
+                "Skip graphic crime, sexual content, and anything that does not fit a morning music-radio show. "
+                "Do not name the outlets on the air. "
+                "Thank Dave, then read the stories in short conversational beats, then hand the show to DJ Mo. "
+                "DJ Mo's next line thanks Michael G by name."
+            )
+        }
+    )
+    _check("old movie-and-review wording upgrades", "variety reviews" in legacy_rules["entertainment_report_rules"].lower())
+    _check(
+        "old wording no longer treats film news as the review",
+        "new movies and reviews" not in legacy_rules["entertainment_report_rules"].lower(),
+    )
     again = normalize_script_rules(upgraded)
     _check("rules upgrade is stable", again["entertainment_report_rules"] == upgraded["entertainment_report_rules"])
     _check("personality clause is not duplicated", again["news_first_personality_rules"].lower().count("hands to michael g") == 1)
