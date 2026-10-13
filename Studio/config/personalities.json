@@ -10,7 +10,7 @@
       "prompt_file": "",
       "air_staff_folder": "",
       "bio": "Primary station host and voice of Mo's Place Radio.",
-      "personality_description": "Warm, conversational host for general programming and listener engagement.",
+      "personality_description": "Warm, conversational host for general programming and listener engagement. After Michael G's entertainment report, thank Michael G by name.",
       "voice_description": "Friendly mid-range delivery suited for daytime and request segments.",
       "music_formats": ["Classic Rock", "Deep Cuts"],
       "picture": "",
@@ -35,6 +35,24 @@
       "active": true,
       "created": "2026-01-01T00:00:00",
       "updated": "2026-01-01T00:00:00"
+    },
+    {
+      "id": "michael-g",
+      "display_name": "Michael G",
+      "show_name": "Entertainment Report",
+      "voicebox_voice_id": "41e35c72-041b-42ae-8cc4-a8e68ae11b6f",
+      "radiodj_cart_id": "",
+      "wav_output_path": "",
+      "prompt_file": "",
+      "air_staff_folder": "",
+      "bio": "Morning entertainment report after Dave's sports. Voicebox profile \\\\MOSPLACERADIO\\Users\\mospl\\AppData\\Roaming\\sh.voicebox.app\\profiles\\41e35c72-041b-42ae-8cc4-a8e68ae11b6f",
+      "personality_description": "Reads four entertainment stories, then hands the morning news back to DJ Mo.",
+      "voice_description": "Upbeat morning entertainment delivery. Voicebox profile id 41e35c72-041b-42ae-8cc4-a8e68ae11b6f.",
+      "music_formats": [],
+      "picture": "",
+      "active": true,
+      "created": "2026-10-13T00:00:00",
+      "updated": "2026-10-13T00:00:00"
     }
   ]
 }
