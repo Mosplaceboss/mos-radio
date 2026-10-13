@@ -1,10 +1,13 @@
 """Morning entertainment report for Michael G.
 
-Runs after Dave's sports in the morning newscast. Michael G thanks Dave,
-says he has the entertainment report, adds one short light comical beat,
-then reads four slots, in order, and hands to DJ Mo. DJ Mo thanks Michael G
-by name. The comical beat stays in that open. It is not a punchline on a
-death or illness story.
+Runs after Dave's sports in the morning newscast. Michael G thanks Dave
+and says he has the entertainment report. On a normal day he adds one
+short warm comical beat: a light touch of Southeast Massachusetts, his
+husband, the grandkids, or the dog. He does not read his biography.
+If any story is a death, obituary, or mourning item, the whole open stays
+straight, with no joke. Then he reads four slots, in order, and hands to
+DJ Mo. DJ Mo thanks Michael G by name. The death story itself stays
+respectful.
 
 1. A TMZ celebrity item: a death, gossip, or a sighting, as one or two
    plain sentences. The headline is not read and then repeated as the lede.
@@ -88,20 +91,36 @@ ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
 _RETIRED_FEED_MARKERS = ("variety.com/v/film/reviews",)
 
 DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertainment report."
+MICHAEL_G_BIO = (
+    "Mike Gleason has a BA in Communications-Journalism from Roger Williams University "
+    "and an MA in Professional Writing & Communication from the University of Massachusetts-Dartmouth. "
+    "He and his husband live in Southeast Massachusetts where they spoil their grandkids and their dog."
+)
 MICHAEL_OPEN = "Thanks, Dave."
-MICHAEL_BEAT = "I brought the popcorn, and I will keep this shorter than the previews."
-MICHAEL_INTRO = f"Michael G here with the entertainment report. {MICHAEL_BEAT}"
+MICHAEL_REPORT = "Michael G here with the entertainment report."
+MICHAEL_STRAIGHT_OPEN = f"{MICHAEL_OPEN} {MICHAEL_REPORT}"
+# Stable fallback for a normal day. The model may vary the sentence.
+# This one mentions the dog and Southeast Massachusetts, not the biography.
+MICHAEL_BEAT = "Out in Southeast Massachusetts, the dog already claimed the good chair."
+MICHAEL_WARM_OPEN = f"{MICHAEL_STRAIGHT_OPEN} {MICHAEL_BEAT}"
+MICHAEL_INTRO = MICHAEL_WARM_OPEN
 MICHAEL_HANDOFF = "DJ Mo, back to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
 MO_THANKS = "Thanks, Michael G."
 
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports. "
-    "His personality is comical: light and warm, one or two sentences, then the stories. "
+    "His on-air name is Michael G. He does not read his biography. "
+    "His personality is comical: light and warm, one short beat, then the stories. "
     "Not sarcastic about death or illness. Not a long monologue. "
-    'Open with "Thanks, Dave. Michael G here with the entertainment report." '
-    "then one short comical beat, then the supplied stories, then hand to DJ Mo. "
-    "Do not put that comical beat on a death or illness story. "
+    'On a normal day, open with "Thanks, Dave. Michael G here with the entertainment report." '
+    "Then one short warm comical beat. "
+    "That beat may lightly mention Southeast Massachusetts, his husband, the grandkids, or the dog. "
+    "One short beat. Not a biography. Not the degrees or the universities. Not the same sentence every day. "
+    "If any story is a death, obituary, or mourning item, the whole open is straight. "
+    'Open with exactly "Thanks, Dave. Michael G here with the entertainment report." '
+    "No popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
+    "The death story itself stays respectful. "
     "Do not invent a movie title or a person's death for the joke. "
     "Use only the supplied stories, in this order: "
     "a celebrity item about a death, gossip, or a sighting, in one or two plain sentences; "
@@ -721,6 +740,24 @@ _DEATH_CLAIM_RE = re.compile(
 _HEADLINE_DEATH_RE = re.compile(
     r"(?i)\b(?:dead|dies|died|death|mourns|obituary|killed|passes|passed away)\b"
 )
+# A headline that is itself a death, obituary, or mourning item.
+# "Killed it" is slang and is removed before this runs. A movie title word
+# inside a sale blurb does not count: only the headline is checked.
+_DEATH_ITEM_RE = re.compile(
+    r"(?i)\b(?:"
+    r"obituar(?:y|ies)|"
+    r"in memoriam|"
+    r"in mourning|"
+    r"mourn(?:s|ed|ing)|"
+    r"pass(?:es|ed) away|"
+    r"passing of|"
+    r"dies|died|"
+    r"dead at|"
+    r"found dead|"
+    r"death of|"
+    r"(?:'s|’s)\s+death"
+    r")\b"
+)
 
 
 def _death_not_in_headline(sentence: str, title: str) -> bool:
@@ -728,6 +765,30 @@ def _death_not_in_headline(sentence: str, title: str) -> bool:
     if not _DEATH_CLAIM_RE.search(sentence or ""):
         return False
     return _HEADLINE_DEATH_RE.search(title or "") is None
+
+
+def is_death_obituary_or_mourning(story: EntertainmentStory) -> bool:
+    """True when the headline is a death, obituary, or mourning item.
+
+    A blurb that adds a death the headline never reported does not count.
+    """
+    title = _KILLED_IT_RE.sub(" ", _clean_text(story.title))
+    return _DEATH_ITEM_RE.search(title) is not None
+
+
+def stories_need_straight_open(stories: list[EntertainmentStory]) -> bool:
+    """Any death, obituary, or mourning story straightens the whole open."""
+    return any(
+        is_death_obituary_or_mourning(story)
+        for story in list(stories or [])[:ENTERTAINMENT_STORY_COUNT]
+    )
+
+
+def michael_open_lines(stories: list[EntertainmentStory] | None = None) -> list[str]:
+    """Death day: the straight open only. Normal day: that line, then one beat."""
+    if stories_need_straight_open(list(stories or [])):
+        return [MICHAEL_STRAIGHT_OPEN]
+    return [MICHAEL_STRAIGHT_OPEN, MICHAEL_BEAT]
 
 
 def _story_sentences(text: str, limit: int = 2) -> list[str]:
@@ -834,7 +895,8 @@ def sports_close_hands_to_michael(close: str) -> str:
 
 def michael_g_script(stories: list[EntertainmentStory]) -> str:
     """Spoken fallback. The introduction is here even when OpenAI is not called."""
-    lines = [MICHAEL_OPEN, MICHAEL_INTRO]
+    selected = list(stories or [])[:ENTERTAINMENT_STORY_COUNT]
+    lines = michael_open_lines(selected)
     if stories:
         lines.extend(
             line
@@ -900,13 +962,26 @@ def format_entertainment_prompt(
     else:
         lines.append("No usable stories were supplied. Do not invent any. Hand off to DJ Mo.")
     lines.append("Do not name Deadline, TMZ, or Variety on the air.")
-    lines.append(
-        'Open with "Thanks, Dave. Michael G here with the entertainment report." '
-        "Then one short light, warm comical beat, then the stories. "
-        "Not sarcastic about death or illness. Not a long monologue. "
-        "Do not put that comical beat on a death or illness story. "
-        "Do not invent a movie title or a person's death for the joke."
-    )
+    if stories_need_straight_open(list(stories)):
+        lines.append(
+            "A supplied story is a death, obituary, or mourning item. "
+            'Open with exactly "Thanks, Dave. Michael G here with the entertainment report." '
+            "Do not add a comical beat. "
+            "No popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
+            "Do not follow the normal-day comical beat. This open has no joke. "
+            "The death story itself stays respectful. "
+            "Not sarcastic about death or illness."
+        )
+    else:
+        lines.append(
+            'Open with "Thanks, Dave. Michael G here with the entertainment report." '
+            "Then one short warm comical beat. "
+            "That beat may lightly mention Southeast Massachusetts, his husband, the grandkids, or the dog. "
+            "One short beat. Not a biography. Do not read the degrees or the universities. "
+            "Not the same sentence every day. "
+            "Not sarcastic about death or illness. Not a long monologue. "
+            "Do not invent a movie title or a person's death for the joke."
+        )
     lines.append("After the stories, hand the show to DJ Mo.")
     lines.append(f"DJ Mo's next line is: {MO_THANKS}")
     return "\n".join(lines)
@@ -963,8 +1038,7 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
         close,
         "",
         "[Michael G]",
-        MICHAEL_OPEN,
-        MICHAEL_INTRO,
+        *michael_open_lines([]),
         "[Four slots when the feeds supply them: celebrity item, entertainment news, movie news, one more entertainment item. Do not invent stories in this preview.]",
         MICHAEL_HANDOFF,
         "",
@@ -1036,7 +1110,19 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     has_movie_shape = "in movie news" in lowered_rules and "do not say review" in lowered_rules
     mentions_reviews_feed = "variety reviews" in lowered_rules or "reviews/feed" in lowered_rules
     has_intro = "michael g here with the entertainment report" in lowered_rules
-    if not has_movie_shape or mentions_reviews_feed or not has_intro:
+    has_straight_death_open = "whole open is straight" in lowered_rules
+    has_light_touch = (
+        "southeast massachusetts" in lowered_rules
+        and "does not read his biography" in lowered_rules
+        and "not the same sentence every day" in lowered_rules
+    )
+    if (
+        not has_movie_shape
+        or mentions_reviews_feed
+        or not has_intro
+        or not has_straight_death_open
+        or not has_light_touch
+    ):
         rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
 
     feeds = rules.get("entertainment_feeds")

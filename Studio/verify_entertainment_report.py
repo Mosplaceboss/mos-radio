@@ -16,9 +16,10 @@ from app.core.entertainment_report import (  # noqa: E402
     DEFAULT_ENTERTAINMENT_REPORT_RULES,
     ENTERTAINMENT_SOURCES,
     MICHAEL_BEAT,
+    MICHAEL_G_BIO,
     MICHAEL_G_VOICEBOX_ID,
     MICHAEL_G_VOICEBOX_PROFILE,
-    MICHAEL_INTRO,
+    MICHAEL_STRAIGHT_OPEN,
     MO_THANKS,
     EntertainmentStory,
     build_morning_flow,
@@ -637,9 +638,30 @@ def test_handoff_flow() -> None:
     _check("dave does not hand straight to Mo", "Back to you, Mo." not in script.split("[Michael G]")[0])
     _check("dave close is the entertainment handoff", DAVE_SPORTS_CLOSE in script)
     _check("michael script thanks Dave", flow["michael_g_script"].startswith("Thanks, Dave."))
+    normal_lines = flow["michael_g_script"].splitlines()
+    _check("normal-day open is straight plus one beat", normal_lines[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("normal-day open adds one light beat", normal_lines[1] == MICHAEL_BEAT)
     _check(
-        "introduction follows Thanks, Dave",
-        flow["michael_g_script"].startswith(f"Thanks, Dave.\n{MICHAEL_INTRO}"),
+        "fallback beat mentions home, husband, grandkids, or the dog",
+        any(
+            touch in MICHAEL_BEAT.lower()
+            for touch in ("southeast massachusetts", "husband", "grandkids", "the dog")
+        ),
+    )
+    _check("normal-day beat is one sentence", MICHAEL_BEAT.endswith(".") and MICHAEL_BEAT.count(".") == 1)
+    _check("normal-day script uses that beat once", flow["michael_g_script"].count(MICHAEL_BEAT) == 1)
+    _check("normal-day script does not read the biography", "Roger Williams" not in flow["michael_g_script"])
+    _check("normal-day script does not say Mike Gleason", "Mike Gleason" not in flow["michael_g_script"])
+    _check("normal-day script has no popcorn joke", "popcorn" not in flow["michael_g_script"].lower())
+    _check(
+        "normal-day prompt asks for one light beat",
+        "one short warm comical beat" in flow["michael_g_prompt"].lower()
+        and "southeast massachusetts" in flow["michael_g_prompt"].lower()
+        and "not the same sentence every day" in flow["michael_g_prompt"].lower(),
+    )
+    _check(
+        "normal-day prompt does not force today's open straight",
+        "a supplied story is a death, obituary, or mourning item" not in flow["michael_g_prompt"].lower(),
     )
     _check("michael hands to DJ Mo", flow["michael_g_script"].strip().endswith("DJ Mo, back to you."))
     _check("mo thanks Michael G", flow["mo_thanks"] == MO_THANKS)
@@ -664,7 +686,8 @@ def test_handoff_flow() -> None:
 
     empty = build_morning_flow([])
     _check("empty report invents nothing", "Thanks, Dave." in empty["michael_g_script"])
-    _check("empty report still introduces Michael", MICHAEL_INTRO in empty["michael_g_script"])
+    _check("empty report still introduces Michael", MICHAEL_STRAIGHT_OPEN in empty["michael_g_script"])
+    _check("empty report keeps the light beat", empty["michael_g_script"].splitlines()[1] == MICHAEL_BEAT)
     _check("empty report still hands off", "DJ Mo, back to you." in empty["michael_g_script"])
     _check("empty prompt forbids gossip", "do not invent" in empty["michael_g_prompt"].lower())
     _check("mo still thanks Michael G", empty["mo_thanks"] == "Thanks, Michael G.")
@@ -677,16 +700,195 @@ def test_handoff_flow() -> None:
     )
     death_script = michael_g_script([death])
     death_lines = death_script.splitlines()
-    _check("death script thanks Dave first", death_lines[0] == "Thanks, Dave.")
-    _check("death script introduction is next", death_lines[1] == MICHAEL_INTRO)
-    death_stories = death_lines[2:-1]
+    _check(
+        "death-day open is exact",
+        death_lines[0] == "Thanks, Dave. Michael G here with the entertainment report.",
+    )
+    _check("death-day open matches the straight line", death_lines[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("death-day open has no joke after it", death_lines[1] != MICHAEL_BEAT)
+    death_stories = death_lines[1:-1]
     _check("death story is still read", any("died" in line.lower() for line in death_stories))
     _check(
-        "comical intro is not a death punchline",
+        "death story stays respectful",
         death_stories
-        and all(MICHAEL_BEAT not in line and "entertainment report" not in line.lower() for line in death_stories),
+        and all(
+            MICHAEL_BEAT not in line and "popcorn" not in line.lower() and "grandkids" not in line.lower()
+            for line in death_stories
+        ),
     )
+    _check("death-day script has no comical beat", MICHAEL_BEAT not in death_script)
+    _check("death-day script has no popcorn joke", "popcorn" not in death_script.lower())
+    _check("death-day open has no grandkids joke", "grandkids" not in death_lines[0].lower())
+    _check("death-day open has no dog joke", "dog" not in death_lines[0].lower())
+    _check("death-day open has no husband joke", "husband" not in death_lines[0].lower())
     _check("spoken death story has no comical beat", MICHAEL_BEAT not in spoken_story(death))
+    _check("spoken death story stays respectful", spoken_story(death) == "The actor died Thursday.")
+
+    mixed = michael_g_script(
+        [
+            _story(
+                "Singer spotted leaving a downtown diner",
+                summary="Fans saw the singer just after midnight.",
+                source_id="tmz",
+                kind="celebrity",
+            ),
+            death,
+            _story(
+                "Ocean Light trailer",
+                summary=MOVIE_SUMMARY,
+                source_id="variety_film",
+                kind="film_news",
+            ),
+            _story(
+                "Weekend ticket sales climb again",
+                summary="The family comedy led the chart.",
+                source_id="tmz",
+                kind="celebrity",
+            ),
+        ]
+    )
+    _check("a death in any slot straightens the whole open", mixed.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("a death day does not keep the light beat", MICHAEL_BEAT not in mixed and "popcorn" not in mixed.lower())
+    _check("a death day still reads the other stories", "Ocean Light" in mixed and "family comedy" in mixed)
+    _check("a death day still reads the death", "died" in mixed.lower())
+
+    mourning = michael_g_script(
+        [
+            _story(
+                "Hollywood mourns a beloved singer",
+                summary="Friends shared quiet tributes.",
+                source_id="tmz",
+                kind="celebrity",
+            )
+        ]
+    )
+    _check("a mourning item straightens the open", mourning.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("a mourning day has no light beat", MICHAEL_BEAT not in mourning)
+
+    obituary = michael_g_script(
+        [
+            _story(
+                "Obituary: the comic who made Tuesday nights",
+                summary="He died Sunday at home.",
+                source_id="tmz",
+                kind="celebrity",
+            )
+        ]
+    )
+    _check("an obituary straightens the open", obituary.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("an obituary is still read", "died" in obituary.lower())
+
+    killed_it = michael_g_script(
+        [
+            _story(
+                "Singer killed it at the box office",
+                summary="The tour stop sold out.",
+                source_id="tmz",
+                kind="celebrity",
+            )
+        ]
+    )
+    _check(
+        "killed-it slang keeps the normal-day open",
+        killed_it.startswith(f"{MICHAEL_STRAIGHT_OPEN}\n{MICHAEL_BEAT}"),
+    )
+
+    cottage_open = michael_g_script(
+        [
+            _story(
+                "Dolly Parton's Former Solvang Cottage Sells for $2 Million",
+                summary=(
+                    "The Solvang cottage that once belonged to Dolly Parton is officially off the market. "
+                    "The late legend's former retreat sold this month for $1,945,150, "
+                    "weeks after the singer's late August death."
+                ),
+                source_id="tmz",
+                kind="celebrity",
+            )
+        ]
+    )
+    _check(
+        "a sale blurb that mentions death does not straighten the open",
+        cottage_open.startswith(f"{MICHAEL_STRAIGHT_OPEN}\n{MICHAEL_BEAT}"),
+    )
+
+    death_flow = build_morning_flow(
+        [
+            death,
+            _story(
+                "Studio renews the drama for two more seasons",
+                summary="The series returns in November.",
+                source_id="deadline",
+                kind="entertainment_news",
+            ),
+            _story(
+                "Ocean Light trailer",
+                summary=MOVIE_SUMMARY,
+                source_id="variety_film",
+                kind="film_news",
+            ),
+            _story(
+                "Weekend ticket sales climb again",
+                summary="The family comedy led the chart.",
+                source_id="tmz",
+                kind="celebrity",
+            ),
+        ]
+    )
+    _check(
+        "death-day package open is straight",
+        death_flow["michael_g_script"].splitlines()[0] == MICHAEL_STRAIGHT_OPEN,
+    )
+    _check(
+        "death-day package has no joke",
+        MICHAEL_BEAT not in death_flow["michael_g_script"] and "popcorn" not in death_flow["michael_g_script"].lower(),
+    )
+    _check(
+        "death-day prompt forbids the joke",
+        "a supplied story is a death, obituary, or mourning item" in death_flow["michael_g_prompt"].lower()
+        and "do not add a comical beat" in death_flow["michael_g_prompt"].lower()
+        and "no popcorn joke" in death_flow["michael_g_prompt"].lower(),
+    )
+    _check("death-day prompt keeps the exact open", MICHAEL_STRAIGHT_OPEN in death_flow["michael_g_prompt"])
+
+    mourning_later = build_morning_flow(
+        [
+            _story(
+                "Singer spotted leaving a downtown diner",
+                summary="Fans saw the singer just after midnight.",
+                source_id="tmz",
+                kind="celebrity",
+                published=_dt(9),
+            ),
+            _story(
+                "Studio mourns a longtime editor",
+                summary="Colleagues shared tributes on Monday.",
+                source_id="deadline",
+                kind="entertainment_news",
+                published=_dt(12),
+            ),
+            _story(
+                "Ocean Light trailer",
+                summary=MOVIE_SUMMARY,
+                source_id="variety_film",
+                kind="film_news",
+                published=_dt(10),
+            ),
+            _story(
+                "Weekend ticket sales climb again",
+                summary="The family comedy led the chart.",
+                source_id="tmz",
+                kind="celebrity",
+                published=_dt(8),
+            ),
+        ]
+    )
+    _check(
+        "mourning in a later slot straightens the package",
+        mourning_later["michael_g_script"].splitlines()[0] == MICHAEL_STRAIGHT_OPEN,
+    )
+    _check("later-slot mourning drops the beat", MICHAEL_BEAT not in mourning_later["michael_g_script"])
+    _check("later-slot mourning still reads the movie", "Ocean Light" in mourning_later["michael_g_script"])
 
 
 def test_news_rules_upgrade() -> None:
@@ -719,6 +921,14 @@ def test_news_rules_upgrade() -> None:
     _check("rules do not name a reviews feed", "variety reviews" not in rules and "reviews/feed" not in rules)
     _check("rules introduce the entertainment report", "michael g here with the entertainment report" in rules)
     _check("rules keep comedy off death", "not sarcastic about death" in rules)
+    _check("rules straighten the whole open for a death", "whole open is straight" in rules)
+    _check(
+        "rules name the exact straight open",
+        "thanks, dave. michael g here with the entertainment report." in rules,
+    )
+    _check("rules keep the light touch", "southeast massachusetts" in rules)
+    _check("rules do not require the same sentence every day", "not the same sentence every day" in rules)
+    _check("rules say he does not read his biography", "does not read his biography" in rules)
     legacy_rules = normalize_script_rules(
         {
             "entertainment_report_rules": (
@@ -771,6 +981,28 @@ def test_news_rules_upgrade() -> None:
     _check(
         "saved rules gain the death boundary",
         "not sarcastic about death" in stale_open["entertainment_report_rules"].lower(),
+    )
+    popcorn_open = normalize_script_rules(
+        {
+            "entertainment_report_rules": (
+                "Michael G reads the entertainment report after Dave's sports. "
+                'Open with "Thanks, Dave. Michael G here with the entertainment report." '
+                "then one short comical beat. "
+                "Do not put that comical beat on a death or illness story. "
+                "Movie news that starts with In movie news. "
+                "Do not say review. "
+                "Not sarcastic about death."
+            ),
+        }
+    )
+    _check(
+        "popcorn-only open upgrades to the straight death rule",
+        popcorn_open["entertainment_report_rules"] == DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    )
+    _check(
+        "upgraded rules drop the joke on a death day",
+        "whole open is straight" in popcorn_open["entertainment_report_rules"].lower()
+        and "no popcorn joke" in popcorn_open["entertainment_report_rules"].lower(),
     )
     again = normalize_script_rules(upgraded)
     _check("rules upgrade is stable", again["entertainment_report_rules"] == upgraded["entertainment_report_rules"])
@@ -834,7 +1066,12 @@ def test_news_rules_upgrade() -> None:
     _check("preview order", text.index("[Dave]") < text.index("[Michael G]") < text.index("[DJ Mo]"))
     _check("preview thanks Michael G", "Thanks, Michael G." in text)
     _check("preview does not invent a headline", "Do not invent stories in this preview." in text)
-    _check("preview introduces the entertainment report", MICHAEL_INTRO in text)
+    _check("preview introduces the entertainment report", MICHAEL_STRAIGHT_OPEN in text)
+    _check("preview keeps the normal-day beat", MICHAEL_BEAT in text)
+    _check(
+        "preview beat follows the straight open",
+        text.index(MICHAEL_STRAIGHT_OPEN) < text.index(MICHAEL_BEAT),
+    )
     _check("preview still signs off", "For Mo's Place Radio, I'm DJ Mo." in text)
 
 
@@ -849,6 +1086,15 @@ def test_config_files() -> None:
     _check("voice prompt forbids saying review", "Do not say review" in prompt)
     _check("voice prompt introduces the entertainment report", "Michael G here with the entertainment report" in prompt)
     _check("voice prompt is not sarcastic about death", "Not sarcastic about death" in prompt)
+    _check("voice prompt does not read the biography every morning", "does not read his biography" in prompt.lower())
+    _check(
+        "voice prompt keeps a light touch",
+        "southeast massachusetts" in prompt.lower() and "grandkids" in prompt.lower() and "the dog" in prompt.lower(),
+    )
+    _check("voice prompt does not put the degrees on the air", "roger williams" not in prompt.lower())
+    _check("voice prompt straightens a death open", "whole open is straight" in prompt.lower())
+    _check("voice prompt has the exact straight open", MICHAEL_STRAIGHT_OPEN in prompt)
+    _check("voice prompt bars popcorn on a death day", "no popcorn joke" in prompt.lower())
     _check("voice prompt has no reviews feed", "reviews/feed" not in prompt and "Star Wars" not in prompt)
     personalities = json.loads((config / "personalities.json").read_text(encoding="utf-8"))
     michael = next(person for person in personalities["personalities"] if person["display_name"] == "Michael G")
@@ -856,8 +1102,33 @@ def test_config_files() -> None:
         "personality description introduces the report",
         "Michael G here with the entertainment report" in michael["personality_description"],
     )
+    _check("bio stored", michael["bio"] == MICHAEL_G_BIO)
+    _check(
+        "bio is Mike Gleason's",
+        "Mike Gleason" in michael["bio"] and "Roger Williams University" in michael["bio"],
+    )
+    _check(
+        "bio includes home, husband, grandkids, and the dog",
+        "Southeast Massachusetts" in michael["bio"]
+        and "husband" in michael["bio"]
+        and "grandkids" in michael["bio"]
+        and "their dog" in michael["bio"],
+    )
+    _check("on-air name stays Michael G", michael["display_name"] == "Michael G")
+    _check(
+        "personality does not read the bio every morning",
+        "does not read his biography" in michael["personality_description"].lower(),
+    )
+    _check(
+        "personality keeps a light touch",
+        "southeast massachusetts" in michael["personality_description"].lower(),
+    )
+    _check(
+        "personality straightens a death open",
+        "whole open is straight" in michael["personality_description"].lower(),
+    )
     _check("personality voicebox id", michael["voicebox_voice_id"] == MICHAEL_G_VOICEBOX_ID)
-    _check("personality stores the UNC profile", MICHAEL_G_VOICEBOX_PROFILE in michael["bio"])
+    _check("personality stores the UNC profile", MICHAEL_G_VOICEBOX_PROFILE in michael["voice_description"])
     mo = next(person for person in personalities["personalities"] if person["id"] == "mo-main")
     _check("Mo thanks Michael G in the personality note", "thank Michael G" in mo["personality_description"])
     news_desk = next(voice for voice in voices["voices"] if voice["id"] == "vb-news-desk")
