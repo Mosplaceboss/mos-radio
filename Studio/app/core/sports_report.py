@@ -6,7 +6,9 @@ when they have no game and no news. Never invent a score, an opponent,
 or an idle-team line.
 
 Lowell Spinners games come from the schedule RSS. MLB playoff games and
-news come from the Fox Sports MLB RSS. A down feed is skipped.
+news come from the Fox Sports MLB RSS. Other major headlines come from
+the general Fox Sports RSS, skipping items the MLB feed already covered.
+A down feed is skipped.
 """
 
 from __future__ import annotations
@@ -31,11 +33,18 @@ FOX_MLB_RSS_URL = (
     "&size=30&tags=fs%2Fmlb"
     "&_hp5_cdc=479232849%3B2254849013005665%3B6960053605144110%3B1791964238458%3B"
 )
+FOX_SPORTS_RSS_URL = (
+    "https://api.foxsports.com/v2/content/optimized-rss"
+    "?partnerKey=MB0Wehpmuj2lUhuRhQaafhBjAJqaPU244mlTDK1i"
+    "&size=30"
+    "&_hp5_cdc=479232849%3B2254849013005665%3B6960053605144110%3B1791964238458%3B"
+)
 SPINNERS_SCHEDULE_RSS_URL = "https://www.lowellspinners.com/sports/bsb/2025-26/schedule?print=rss"
 
 STATION_TZ = ZoneInfo("America/New_York")
 _USER_AGENT = "MoPlaceStudio/2.0"
 _PLAYOFF_LIMIT = 3
+_HEADLINE_LIMIT = 3
 
 # Station order. Spinners schedule lines are built separately.
 _TEAM_ORDER = ("Patriots", "Red Sox", "Celtics", "Bruins", "Lowell Spinners")
@@ -75,6 +84,16 @@ _PLAYOFF_RE = re.compile(
     r"league championship|league division"
     r")\b"
 )
+_PROMO_RE = re.compile(
+    r"(?i)\b("
+    r"promo code|promocode|"
+    r"fanduel|kalshi|polymarket|underdog|draftkings|betmgm|caesars|"
+    r"sign up|signing up|\bodds\b|"
+    r"favorite\s+'?dogs|best bets"
+    r")\b"
+)
+# UCLA and other college nicknames are not the NHL Bruins.
+_NOT_BOSTON_BRUINS_RE = re.compile(r"(?i)\b(ucla|belmont|badgers|big ten|college football)\b")
 _DESC_WHEN_RE = re.compile(
     r"(?i)\bon\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})(?:\s+at\s+(\d{1,2}:\d{2}\s*[AP]M))?"
 )
@@ -94,6 +113,11 @@ SPORTS_PLAYOFF_RULE = (
     "storylines. Prefer the freshest items. "
     "If that feed is down, skip the playoff copy and continue."
 )
+SPORTS_GENERAL_FOX_RULE = (
+    "Include major sports headlines from the general Fox Sports feed "
+    "when they are not already covered by the MLB playoff feed. "
+    "If that feed is down, skip it. Do not invent scores."
+)
 SPORTS_SPINNERS_RULE = (
     "Lowell Spinners baseball comes from the schedule feed. "
     "Mention today's game, or the next scheduled game when the feed gives "
@@ -104,6 +128,7 @@ SPORTS_SPINNERS_RULE = (
 DEFAULT_SPORTS_GAME_RULES = " ".join(
     (
         SPORTS_PLAYOFF_RULE,
+        SPORTS_GENERAL_FOX_RULE,
         "Always include notable athlete deaths or memorials when they appear "
         "in supplied sources.",
         SPORTS_SILENCE_RULE,
@@ -111,9 +136,14 @@ DEFAULT_SPORTS_GAME_RULES = " ".join(
         "Do not invent scores, opponents, or idle-team filler.",
     )
 )
+SPORTS_GENERAL_PERSONALITY = (
+    "Also include major headlines from the general Fox Sports feed "
+    "when they are not already covered by the MLB playoff feed."
+)
 SPORTS_PERSONALITY_CLAUSE = (
     "Dave reads sports only from supplied games and news. "
     "During the MLB postseason, include playoff games and news from the Fox Sports MLB feed. "
+    f"{SPORTS_GENERAL_PERSONALITY} "
     "If the Patriots, Red Sox, Celtics, Bruins, or Lowell Spinners have no game and no news, stay silent."
 )
 
@@ -127,11 +157,14 @@ def ensure_sports_personality_rules(rules: str) -> str:
     if not current:
         return f"Lead anchor opens every newscast. {SPORTS_PERSONALITY_CLAUSE}"
     lower = current.lower()
-    if "stay silent" in lower and "playoff" in lower:
+    needs_core = "stay silent" not in lower or "playoff" not in lower
+    needs_general = "general fox" not in lower
+    if not needs_core and not needs_general:
         return current
     if current[-1] not in ".!?":
         current += "."
-    return f"{current} {SPORTS_PERSONALITY_CLAUSE}"
+    extra = SPORTS_PERSONALITY_CLAUSE if needs_core else SPORTS_GENERAL_PERSONALITY
+    return f"{current} {extra}"
 
 
 def ensure_sports_game_rules(rules: str) -> str:
@@ -149,6 +182,8 @@ def ensure_sports_game_rules(rules: str) -> str:
         extra.append(SPORTS_SILENCE_RULE)
     if "spinners" not in lower:
         extra.append(SPORTS_SPINNERS_RULE)
+    if "general fox" not in lower:
+        extra.append(SPORTS_GENERAL_FOX_RULE)
     if not extra:
         return text
     return f"{text} {' '.join(extra)}".strip()
@@ -297,6 +332,14 @@ def _feed_items(xml_text: str) -> list[_FeedItem]:
 def _team_name(value: str) -> str:
     text = _clean_text(value).lower()
     for key, label in _TEAM_KEYS:
+        if key == "bruins":
+            if not re.search(r"\bbruins\b", text) or _NOT_BOSTON_BRUINS_RE.search(text):
+                continue
+            return label
+        if key == "spinners":
+            if re.search(r"\bspinners\b", text):
+                return label
+            continue
         if key in text:
             return label
     return ""
@@ -354,8 +397,20 @@ def _freshness(item: _FeedItem) -> tuple[int, float]:
     return (0, -item.published.timestamp())
 
 
+def _item_key(item: _FeedItem) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", item.title.lower()).strip()
+
+
+def _is_promo(item: _FeedItem) -> bool:
+    return _PROMO_RE.search(f"{item.title} {item.summary}") is not None
+
+
 def _playoff_lines(items: list[_FeedItem]) -> list[str]:
-    playoff = [item for item in items if _is_playoff(item) and not is_idle_filler(item.title)]
+    playoff = [
+        item
+        for item in items
+        if _is_playoff(item) and not is_idle_filler(item.title) and not _is_promo(item)
+    ]
     playoff.sort(key=_freshness)
     lines: list[str] = []
     seen: set[str] = set()
@@ -375,13 +430,33 @@ def _team_news_from_items(items: list[_FeedItem]) -> list[str]:
     """Local-team headlines that are not already playoff copy."""
     notes: list[dict[str, str]] = []
     for item in sorted(items, key=_freshness):
-        if _is_playoff(item):
+        if _is_playoff(item) or _is_promo(item) or is_idle_filler(item.title):
             continue
         team = _team_name(f"{item.title} {item.summary}")
         if not team:
             continue
         notes.append({"team": team, "text": item.title})
     return _team_note_lines(notes)
+
+
+def _major_headline_lines(items: list[_FeedItem]) -> list[str]:
+    """Freshest general-feed headlines that are not local-team or playoff copy."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for item in sorted(items, key=_freshness):
+        if _is_promo(item) or is_idle_filler(item.title):
+            continue
+        if _team_name(f"{item.title} {item.summary}"):
+            continue
+        line = _sentence(item.title)
+        key = line.lower()
+        if not line or key in seen:
+            continue
+        seen.add(key)
+        lines.append(line)
+        if len(lines) >= _HEADLINE_LIMIT:
+            break
+    return lines
 
 
 def _opponent_from_title(title: str) -> tuple[str, bool]:
@@ -559,6 +634,7 @@ def build_dave_sports_script(
     today: date | None = None,
     spinners_xml: str | BaseException | None = None,
     fox_xml: str | BaseException | None = None,
+    fox_general_xml: str | BaseException | None = None,
     other_xml: list[str | BaseException] | None = None,
     team_notes: list[dict[str, Any]] | None = None,
     fetch: bool = False,
@@ -581,18 +657,39 @@ def build_dave_sports_script(
         timeout=timeout,
         fetcher=fetcher,
     )
-    fox_items = _feed_items(fox_payload)
+    general_payload = _load_feed(
+        fox_general_xml,
+        FOX_SPORTS_RSS_URL,
+        fetch=fetch,
+        timeout=timeout,
+        fetcher=fetcher,
+    )
+    mlb_items = _feed_items(fox_payload)
+    covered = {_item_key(item) for item in mlb_items if _item_key(item)}
+    general_items: list[_FeedItem] = []
+    for item in _feed_items(general_payload):
+        key = _item_key(item)
+        if not key or key in covered:
+            continue
+        covered.add(key)
+        general_items.append(item)
     for payload in other_xml or []:
         if isinstance(payload, BaseException):
             logger.warning("Sports feed skipped: %s", payload)
             continue
-        fox_items.extend(_feed_items(str(payload)))
+        for item in _feed_items(str(payload)):
+            key = _item_key(item)
+            if not key or key in covered:
+                continue
+            covered.add(key)
+            general_items.append(item)
 
     lines = _team_note_lines(team_notes)
-    lines.extend(_team_news_from_items(fox_items))
+    lines.extend(_team_news_from_items(mlb_items + general_items))
     if spinners_payload:
         lines.extend(spinners_lines(spinners_payload, today=station_today))
-    lines.extend(_playoff_lines(fox_items))
+    lines.extend(_playoff_lines(mlb_items))
+    lines.extend(_major_headline_lines(general_items))
     return _dedupe(lines)
 
 

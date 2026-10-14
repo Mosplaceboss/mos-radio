@@ -2,7 +2,8 @@
 
 Idle Patriots, Red Sox, Celtics, Bruins, and Lowell Spinners stay silent.
 A team with a game or news is mentioned. An MLB playoff item is spoken.
-A down Spinners or Fox feed does not crash.
+A down Spinners, MLB, or general Fox feed does not crash.
+The general Fox feed adds other major headlines and does not repeat MLB items.
 """
 
 from __future__ import annotations
@@ -233,13 +234,97 @@ def main() -> None:
     assert any("Celtics" in line for line in survived), survived
     _assert_no_idle(survived)
 
-    broken = build_dave_sports_script(today=TODAY, spinners_xml="<rss>", fox_xml="not xml")
+    broken = build_dave_sports_script(
+        today=TODAY, spinners_xml="<rss>", fox_xml="not xml", fox_general_xml="also not xml"
+    )
     assert broken == [], broken
+
+    general_xml = """<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Rays even the ALCS and keep their World Series hopes alive</title>
+      <description>The same playoff story as the MLB feed.</description>
+      <pubDate>Wed, 14 Oct 2026 06:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>49ers' Dre Greenlaw suspended 1 game after headbutting Seahawks' Ernest Jones IV</title>
+      <description>San Francisco's linebacker will sit out one game.</description>
+      <pubDate>Wed, 14 Oct 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>The Patriots are not playing</title>
+      <pubDate>Wed, 14 Oct 2026 13:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Underdog Promo Code FOXSPORTS: Play $5, Get $100 on Rays or Guardians</title>
+      <description>Odds and a sign-up bonus.</description>
+      <pubDate>Wed, 14 Oct 2026 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Cowboys' defense draws questions after another leaky afternoon</title>
+      <pubDate>Wed, 14 Oct 2026 11:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+    combined = build_dave_sports_script(
+        today=TODAY,
+        fox_xml=FOX_PLAYOFFS,
+        fox_general_xml=general_xml,
+    )
+    combined_blob = _spoken(combined)
+    assert combined_blob.count("rays even the alcs") == 1, combined
+    assert "49ers" in combined_blob and "greenlaw" in combined_blob, combined
+    assert "cowboys" in combined_blob, combined
+    assert "promo code" not in combined_blob and "underdog" not in combined_blob, combined
+    assert "not playing" not in combined_blob, combined
+    _assert_no_idle(combined)
+
+    def _mlb_only(url: str, _timeout: float) -> str:
+        if "tags=fs" in url:
+            return FOX_PLAYOFFS
+        raise URLError("general fox down")
+
+    mlb_only = build_dave_sports_script(today=TODAY, fetch=True, fetcher=_mlb_only)
+    assert any("Rays even the ALCS" in line for line in mlb_only), mlb_only
+    _assert_no_idle(mlb_only)
+
+    college_xml = """<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Bob Chesney, UCLA Bruins top the AP Big Ten list</title>
+      <pubDate>Wed, 14 Oct 2026 18:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Favorite 'Dogs: Back Broncos; Badgers Over Bruins</title>
+      <pubDate>Wed, 14 Oct 2026 17:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>The Bruins beat the Rangers 4-2</title>
+      <pubDate>Wed, 14 Oct 2026 16:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>The Bruins are idle</title>
+      <pubDate>Wed, 14 Oct 2026 15:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+    college = build_dave_sports_script(today=TODAY, fox_xml="", fox_general_xml=college_xml)
+    college_blob = _spoken(college)
+    assert "rangers" in college_blob and "4-2" in college_blob, college
+    assert "ucla" in college_blob, college
+    assert "favorite" not in college_blob, college
+    assert "are idle" not in college_blob, college
+    _assert_no_idle(college)
 
     rules = default_script_rules()
     sports_rules = rules["sports_game_rules"].lower()
     assert sports_rules == DEFAULT_SPORTS_GAME_RULES.lower()
     assert "playoff" in sports_rules and "stay silent" in sports_rules and "spinners" in sports_rules
+    assert "general fox" in sports_rules
     assert "dave reads sports" in rules["news_first_personality_rules"].lower()
 
     legacy = normalize_script_rules(
@@ -261,6 +346,7 @@ def main() -> None:
     assert "keep sports brief" in custom["sports_game_rules"].lower()
     assert "mlb playoff" in custom["sports_game_rules"].lower()
     assert "stay silent" in custom["sports_game_rules"].lower()
+    assert "general fox" in custom["sports_game_rules"].lower()
     assert normalize_script_rules(custom)["sports_game_rules"] == custom["sports_game_rules"]
 
     assert format_sports_story(IDLE_NOTES and [note["text"] for note in IDLE_NOTES]) == ""
@@ -281,7 +367,7 @@ def main() -> None:
     assert "Nashua Silver Knights" in live_text
     assert "not playing" not in live_text.lower()
 
-    print("OK: Dave sports silence, Spinners, and MLB playoffs verified")
+    print("OK: Dave sports silence, Spinners, MLB playoffs, and general Fox headlines verified")
 
 
 if __name__ == "__main__":
