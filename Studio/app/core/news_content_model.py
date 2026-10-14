@@ -12,12 +12,34 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from app.core.entertainment_report import (
+    DAVE_SPORTS_CLOSE,
+    DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    ENTERTAINMENT_PERSONALITY_CLAUSE,
+    ENTERTAINMENT_STORY_COUNT,
+    MO_THANKS,
+    apply_entertainment_script_rules,
+    entertainment_feed_urls,
+    ensure_bailey_personality,
+    ensure_michael_g_personality,
+    midday_preview_lines,
+    morning_preview_lines,
+)
+from app.core.sports_report import (
+    DEFAULT_SPORTS_GAME_RULES,
+    ensure_sports_game_rules,
+    ensure_sports_personality_rules,
+    format_sports_story,
+)
 from app.core.news_content_storage import (
+    load_json_file,
     load_news_content_bundle,
     news_dev_output_dir,
     news_reports_dir,
     rss_sources_path,
+    save_json_file,
     save_news_content_bundle,
+    script_rules_path,
 )
 from app.core.platform_manager import platform_path
 from app.core.schedule_model import DAYS
@@ -25,7 +47,9 @@ from app.core.schedule_model import DAYS
 DEFAULT_PERSONALITIES = (
     ("dj_mo", "DJ Mo", "anchor"),
     ("johnny_j", "Johnny J", "anchor"),
+    ("bailey", "Bailey", "anchor"),
     ("mos_place_dave", "Mo's Place Dave", "anchor"),
+    ("michael_g", "Michael G", "entertainment"),
     ("bonnie", "Bonnie", "reporter"),
     ("flea", "Flea", "reporter"),
     ("future", "Future Personalities", "anchor"),
@@ -48,11 +72,11 @@ DEFAULT_CATEGORIES = (
 
 DEFAULT_SCHEDULE_SLOTS = (
     ("morning", "Morning", "06:30"),
-    ("midday", "Midday", "12:00"),
+    ("midday", "Midday", "12:15"),
     ("afternoon", "Afternoon", "16:30"),
 )
 
-NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "traffic", "backup")
+NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "entertainment", "traffic", "backup")
 
 SPEAKING_STYLES = ("conversational", "authoritative", "upbeat", "calm", "urgent")
 
@@ -112,7 +136,16 @@ def default_script_rules() -> dict[str, Any]:
         "closing": "For Mo's Place Radio, I'm {personality}.",
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": ensure_sports_personality_rules(
+            "Lead anchor opens every newscast. " + ENTERTAINMENT_PERSONALITY_CLAUSE
+        ),
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
+        "sports_close": DAVE_SPORTS_CLOSE,
+        "bailey_entertainment_close": "Bailey here with the latest. Michael G has the entertainment report.",
+        "entertainment_report_rules": DEFAULT_ENTERTAINMENT_REPORT_RULES,
+        "entertainment_story_count": ENTERTAINMENT_STORY_COUNT,
+        "entertainment_feeds": entertainment_feed_urls(),
+        "mo_entertainment_thanks": MO_THANKS,
         "stale_hours_warning": 12,
     }
 
@@ -140,7 +173,8 @@ def normalize_personalities(data: dict[str, Any] | None) -> dict[str, Any]:
         record.setdefault("enabled", True)
         record.setdefault("notes", "")
         normalized.append(record)
-    return {"personalities": normalized}
+    with_bailey = ensure_bailey_personality(normalized)
+    return {"personalities": ensure_michael_g_personality(with_bailey)}
 
 
 def normalize_categories(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -218,7 +252,11 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
-    return merged
+    merged["news_first_personality_rules"] = ensure_sports_personality_rules(
+        str(merged.get("news_first_personality_rules", ""))
+    )
+    merged["sports_game_rules"] = ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
+    return apply_entertainment_script_rules(merged)
 
 
 def normalize_voice_settings(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -313,6 +351,7 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        _upgrade_saved_sports_rules(config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
@@ -323,6 +362,27 @@ def ensure_news_content_data(config_manager=None) -> None:
     if news_config.get("last_successful_run"):
         bundle["overview"]["last_successful_run"] = news_config["last_successful_run"]
     save_news_content_bundle(bundle, config_manager)
+
+
+def _upgrade_saved_sports_rules(config_manager=None) -> None:
+    """Persist sports silence, entertainment handoff, and midday rules on existing desks."""
+    path = script_rules_path(config_manager)
+    raw = load_json_file(path, {})
+    if not raw:
+        return
+    upgraded = normalize_script_rules(raw)
+    watch_keys = (
+        "sports_game_rules",
+        "news_first_personality_rules",
+        "sports_close",
+        "bailey_entertainment_close",
+        "mo_entertainment_thanks",
+        "entertainment_report_rules",
+        "entertainment_feeds",
+    )
+    if all(upgraded.get(key) == raw.get(key) for key in watch_keys):
+        return
+    save_json_file(path, upgraded)
 
 
 def test_rss_feed(url: str, timeout: float = 8.0) -> tuple[str, str]:
@@ -379,28 +439,55 @@ def list_output_files(config_manager=None) -> list[str]:
     return paths
 
 
-def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> str:
+def build_dev_script_lines(
+    bundle: dict[str, Any],
+    sports_lines: list[str] | None = None,
+    *,
+    slot_type: str = "morning",
+) -> list[str]:
     personalities = [p for p in bundle["personalities"]["personalities"] if p.get("enabled")]
     anchor = personalities[0]["name"] if personalities else "Anchor"
     categories = [c["name"] for c in bundle["categories"]["categories"] if c.get("enabled")][: bundle["script_rules"]["maximum_stories"]]
+    greeting = "Good afternoon" if slot_type == "midday" else "Good morning"
     lines = [
         bundle["script_rules"].get("opening", ""),
         "",
-        f"Good morning, I'm {anchor}.",
+        f"{greeting}, I'm {anchor}.",
         "",
     ]
     for index, category in enumerate(categories, start=1):
-        lines.append(f"Story {index} — {category}: Sample headline for development preview.")
+        if category == "Sports" and sports_lines is not None:
+            spoken = format_sports_story(sports_lines)
+            if not spoken:
+                continue
+            lines.append(f"Story {index} — Sports: {spoken}")
+        else:
+            lines.append(f"Story {index} — {category}: Sample headline for development preview.")
         if bundle["script_rules"].get("pause_sound_between_stories"):
             lines.append(f"[pause: {bundle['script_rules']['pause_sound_between_stories']}]")
         lines.append("")
+    if bundle["script_rules"].get("personality_handoffs", True):
+        if slot_type == "midday":
+            lines.extend(midday_preview_lines(bundle["script_rules"]))
+        else:
+            lines.extend(morning_preview_lines(bundle["script_rules"]))
     closing = bundle["script_rules"].get("closing", "").replace("{personality}", anchor)
     lines.append(closing)
     lines.append("")
     lines.append("— Development preview only. Not published to live News.")
-    content = "\n".join(lines)
+    return lines
+
+
+def generate_dev_script_preview(
+    bundle: dict[str, Any],
+    config_manager=None,
+    sports_lines: list[str] | None = None,
+    *,
+    slot_type: str = "morning",
+) -> str:
+    content = "\n".join(build_dev_script_lines(bundle, sports_lines, slot_type=slot_type))
     output_dir = news_dev_output_dir(config_manager)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
     script_path.write_text(content, encoding="utf-8")
     return str(script_path)

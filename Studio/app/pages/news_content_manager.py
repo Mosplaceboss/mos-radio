@@ -13,6 +13,7 @@ from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledText
 
 from app.core.background_tasks import run_in_background
+from app.core.entertainment_report import apply_entertainment_script_rules
 from app.core.news_content_model import (
     NEWS_ROLES,
     REPORT_OPTIONS,
@@ -701,6 +702,11 @@ class NewsContentManagerPage(BasePage):
             ("closing", "Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
+            ("sports_game_rules", "Sports Game Rules"),
+            ("sports_close", "Dave Sports Close"),
+            ("bailey_entertainment_close", "Bailey Midday Close"),
+            ("entertainment_report_rules", "Entertainment Report Rules"),
+            ("mo_entertainment_thanks", "Mo Thanks Michael G"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:
@@ -738,6 +744,8 @@ class NewsContentManagerPage(BasePage):
                 rules[key] = value
         rules["story_order"] = [part.strip() for part in self._story_order.get().split(",") if part.strip()]
         rules["personality_handoffs"] = self._handoffs.get()
+        apply_entertainment_script_rules(rules)
+        self._refresh_script_rules()
         self.set_status("Script rules updated")
 
     def _build_voice_tab(self) -> None:
@@ -855,11 +863,32 @@ class NewsContentManagerPage(BasePage):
         self._set_scroll_text(self._output_list_text, "\n".join(files) if files else "No output files found.")
 
     def _generate_dev_script(self) -> None:
-        path = generate_dev_script_preview(self._bundle, self.config_manager)
-        content = Path(path).read_text(encoding="utf-8")
-        self._set_scroll_text(self._script_preview_text, content)
-        self._refresh_output()
-        self.set_status(f"Development script saved: {path}")
+        self.set_status("Gathering sports for the development script…")
+
+        def work() -> list[str]:
+            from app.core.sports_report import build_dave_sports_script
+
+            return build_dave_sports_script(fetch=True)
+
+        def complete(sports_lines: list[str]) -> None:
+            path = generate_dev_script_preview(self._bundle, self.config_manager, sports_lines=sports_lines)
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            if sports_lines:
+                self.set_status(f"Development script saved: {path}")
+            else:
+                self.set_status(f"Development script saved: {path}. No sports copy to read.")
+
+        def failed(err: Exception) -> None:
+            path = generate_dev_script_preview(self._bundle, self.config_manager, sports_lines=[])
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            self.set_status(f"Development script saved: {path}. Sports feeds were skipped.")
+            self._show_error_dialog("Sports Feeds", str(err))
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _open_output_folder(self) -> None:
         try:

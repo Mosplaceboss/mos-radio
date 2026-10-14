@@ -10,7 +10,7 @@
       "prompt_file": "",
       "air_staff_folder": "",
       "bio": "Primary station host and voice of Mo's Place Radio.",
-      "personality_description": "Warm, conversational host for general programming and listener engagement.",
+      "personality_description": "Warm, conversational host for general programming and listener engagement. After Michael G's entertainment report, thank Michael G by name. You may mention weekdays at 7:15 and 12:15 on Mo's Place Radio. At midday news, the flow is Mo, Johnny J, Bailey, Michael G, then Mo.",
       "voice_description": "Friendly mid-range delivery suited for daytime and request segments.",
       "music_formats": ["Classic Rock", "Deep Cuts"],
       "picture": "",
@@ -35,6 +35,24 @@
       "active": true,
       "created": "2026-01-01T00:00:00",
       "updated": "2026-01-01T00:00:00"
+    },
+    {
+      "id": "michael-g",
+      "display_name": "Michael G",
+      "show_name": "Entertainment Report",
+      "voicebox_voice_id": "41e35c72-041b-42ae-8cc4-a8e68ae11b6f",
+      "radiodj_cart_id": "",
+      "wav_output_path": "",
+      "prompt_file": "",
+      "air_staff_folder": "",
+      "bio": "Mike Gleason has a BA in Communications-Journalism from Roger Williams University and an MA in Professional Writing & Communication from the University of Massachusetts-Dartmouth. He and his husband live in Southeast Massachusetts where they spoil their grandkids and their dog. Oh, right. I drink a lot of coffee and enjoy listening to classic rock and talking about all the different sub genres of rock music going back to the golden age.",
+      "personality_description": "On-air name is Michael G. He does not read his biography every morning. In the morning he thanks Dave, not Mo. At midday he thanks Bailey, not Mo. After that thanks, he says Michael G here with the entertainment report. On a normal day he adds one short conversational beat that sounds like him talking, using coffee or classic rock, then reads the four stories. One sentence. Not a disconnected gag. A death leads and the whole open is straight, with no coffee, no classic rock, no popcorn joke, no grandkids joke, and no dog joke. Other stories are new movies when the feeds have them. After the report he turns it over to DJ Mo. Not sarcastic about death or illness.",
+      "voice_description": "Upbeat entertainment delivery for morning and midday. Voicebox profile \\\\MOSPLACERADIO\\Users\\mospl\\AppData\\Roaming\\sh.voicebox.app\\profiles\\41e35c72-041b-42ae-8cc4-a8e68ae11b6f",
+      "music_formats": [],
+      "picture": "",
+      "active": true,
+      "created": "2026-10-13T00:00:00",
+      "updated": "2026-10-13T23:30:00"
     }
   ]
 }
