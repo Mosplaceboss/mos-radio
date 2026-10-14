@@ -14,9 +14,14 @@ An existing bands file is replaced when tonight has events.
 Friday, Saturday, and Sunday band-rundown wav files are a separate product.
 This sheet never writes or replaces those wav files.
 
-Deploy to D:\\MPR\\Engines\\LiveDJ\\Scripts\\Bands.py
+Deploy to D:\\MPR\\Engines\\LiveDJ\\Scripts\\Bands.py on the Office PC.
 Calendar: D:\\MPR\\Weekly Events.csv
 Output: D:\\MPR\\Knowledge\\BandsTonight.txt
+The Radio PC only has the news voices. This script does not read or write them.
+
+LiveDJ's platform_paths.LIVE_BASE on the Office PC is D:\\MPR\\Engines\\LiveDJ.
+That folder is the script home, not the calendar. A weekly sheet with a blank
+Date still lives at D:\\MPR\\Weekly Events.csv.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger("moplace.livedj.bands")
 
 STATION_TZ = ZoneInfo("America/New_York")
+STATION_ROOT = Path(r"D:\MPR")
 BANDS_FILENAME = "BandsTonight.txt"
 CALENDAR_FILENAME = "Weekly Events.csv"
 
@@ -94,22 +100,56 @@ class BandEvent:
     event_date: str
 
 
-def live_base() -> Path:
-    """Platform root used by the other LiveDJ knowledge scripts."""
+def live_base() -> Path | None:
+    """Script folder from platform_paths, when Bands.py is running inside LiveDJ.
+
+    On the Office PC this is D:\\MPR\\Engines\\LiveDJ. It is not the calendar root.
+    """
     try:
         from platform_paths import LIVE_BASE
     except ImportError:
-        return Path(r"D:\MPR")
+        return None
     return Path(LIVE_BASE)
 
 
+def station_roots(base: Path | None = None) -> list[Path]:
+    """Office PC folders that can hold Weekly Events.csv.
+
+    D:\\MPR comes first. LIVE_BASE is included after it so a calendar sitting
+    next to the scripts can still be found, without hiding the station sheet.
+    """
+    if base is not None:
+        return [base]
+    roots: list[Path] = [STATION_ROOT]
+    live = live_base()
+    if live is not None and live not in roots:
+        roots.append(live)
+    return roots
+
+
+def calendar_candidates(base: Path | None = None) -> list[Path]:
+    candidates: list[Path] = []
+    for root in station_roots(base):
+        candidates.extend(
+            (
+                root / CALENDAR_FILENAME,
+                root / "Knowledge" / CALENDAR_FILENAME,
+                root / "Weekly Events" / CALENDAR_FILENAME,
+            )
+        )
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
 def default_calendar_path(base: Path | None = None) -> Path:
-    root = base or live_base()
-    candidates = (
-        root / CALENDAR_FILENAME,
-        root / "Knowledge" / CALENDAR_FILENAME,
-        root / "Weekly Events" / CALENDAR_FILENAME,
-    )
+    candidates = calendar_candidates(base)
     for path in candidates:
         if path.is_file():
             return path
@@ -117,8 +157,20 @@ def default_calendar_path(base: Path | None = None) -> Path:
 
 
 def default_output_path(base: Path | None = None) -> Path:
-    root = base or live_base()
+    """BandsTonight.txt under the Office PC knowledge folder, not the script folder."""
+    root = base or STATION_ROOT
     return root / "Knowledge" / BANDS_FILENAME
+
+
+def extra_output_paths(primary: Path) -> list[Path]:
+    """Also update LiveDJ's own Knowledge folder when that folder already exists."""
+    live = live_base()
+    if live is None:
+        return []
+    extra = live / "Knowledge" / BANDS_FILENAME
+    if extra == primary or not extra.parent.is_dir():
+        return []
+    return [extra]
 
 
 def station_night(when: date | datetime | None = None) -> date:
@@ -322,9 +374,14 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Date must be YYYY-MM-DD: %s", args.date)
         return 1
     if not calendar_path.is_file():
-        logger.error("Weekly Events calendar not found: %s", calendar_path)
+        tried = [calendar_path] if args.calendar else calendar_candidates()
+        for path in tried:
+            logger.error("Weekly Events calendar not found: %s", path)
         return 1
     written = write_bands_file(calendar_path, output_path, night)
+    if args.output is None:
+        for extra in extra_output_paths(output_path):
+            write_bands_file(calendar_path, extra, night)
     if written is None:
         print(f"No bands file. No Yes events for {night.isoformat()}.")
         return 0

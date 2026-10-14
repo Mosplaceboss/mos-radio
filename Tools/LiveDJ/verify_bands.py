@@ -117,6 +117,36 @@ def main() -> None:
         _check("slash date still selects the night", october_20 == output)
         _check("slash date event is kept", "G&G Music Bingo" in slash_text)
 
+    with tempfile.TemporaryDirectory() as tmp:
+        station = Path(tmp) / "MPR"
+        livedj = station / "Engines" / "LiveDJ"
+        (livedj / "Knowledge").mkdir(parents=True)
+        calendar = station / "Weekly Events.csv"
+        calendar.write_bytes(FIXTURE.read_bytes())
+        original_base = Bands.live_base
+        original_root = Bands.STATION_ROOT
+        Bands.live_base = lambda: livedj
+        Bands.STATION_ROOT = station
+        try:
+            found = Bands.default_calendar_path()
+            output = Bands.default_output_path()
+            extras = Bands.extra_output_paths(output)
+            _check("Office calendar wins over the LiveDJ script folder", found == calendar)
+            _check("bands file stays in D:\\MPR\\Knowledge", output == station / "Knowledge" / "BandsTonight.txt")
+            _check(
+                "an existing LiveDJ Knowledge folder also receives a copy",
+                extras == [livedj / "Knowledge" / "BandsTonight.txt"],
+            )
+            tried = [str(path) for path in Bands.calendar_candidates()]
+            _check(
+                "the missed LiveDJ path is still searched after the station sheet",
+                str(station / "Weekly Events.csv") in tried
+                and str(livedj / "Weekly Events.csv") in tried,
+            )
+        finally:
+            Bands.live_base = original_base
+            Bands.STATION_ROOT = original_root
+
     print("verify_bands: OK")
 
 
