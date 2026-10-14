@@ -40,6 +40,7 @@ from app.core.entertainment_report import (  # noqa: E402
     select_entertainment_stories,
     spoken_story,
     sports_close_hands_to_michael,
+    story_selection_audit,
 )
 
 # Keep window checks stable after October 13, 2026.
@@ -110,6 +111,7 @@ def _story(
     source_name: str = "",
     outlet: str = "",
     published: datetime | None = None,
+    updated: datetime | None = None,
     confirmed_outlets: tuple[str, ...] = (),
 ) -> EntertainmentStory:
     return EntertainmentStory(
@@ -120,6 +122,7 @@ def _story(
         source_name=source_name or source_id,
         kind=kind,
         published=published,
+        updated=updated,
         outlet=outlet,
         confirmed_outlets=confirmed_outlets,
     )
@@ -1443,6 +1446,251 @@ def test_discovery_ranking() -> None:
     _check("operator log is on the package", any(row["status"] == "selected" for row in flow["selection_log"]))
 
 
+def test_story_selection_audit() -> None:
+    """Operator table from the real selector log. It stays off the air."""
+    deadline_death = _story(
+        "Jordan Hale dies at 70",
+        summary="The actor died Monday at home. Friends said he had been working on a new film.",
+        source_id="deadline",
+        kind="entertainment_news",
+        published=_dt(15),
+    )
+    wire_death = _story(
+        "Jordan Hale dead at 70",
+        summary="The actor died Monday at home.",
+        source_id="google_news",
+        source_name="AP News",
+        outlet="AP News",
+        published=_dt(16),
+    )
+    opening = _story(
+        "Harbor Lights trailer",
+        summary="Opens this Friday. A ferry captain follows a letter home.",
+        source_id="variety",
+        kind="headlines",
+        published=_dt(8),
+    )
+    stale_sighting = _story(
+        "Older celebrity sighting at the pier",
+        summary="Fans saw the singer at the pier.",
+        source_id="tmz",
+        kind="celebrity",
+        published=datetime(2026, 10, 8, 9, 0, tzinfo=timezone.utc),
+        updated=NOW,
+    )
+    stale_obit = _story(
+        "Mina Cole dies at 91",
+        summary="The actress died last spring.",
+        source_id="deadline",
+        kind="entertainment_news",
+        published=datetime(2026, 10, 8, 9, 0, tzinfo=timezone.utc),
+        updated=NOW,
+    )
+    stale_obit_wire = _story(
+        "Mina Cole dead at 91",
+        summary="The actress died last spring.",
+        source_id="google_news",
+        source_name="Reuters",
+        outlet="Reuters",
+        published=datetime(2026, 10, 8, 11, 0, tzinfo=timezone.utc),
+        updated=NOW,
+    )
+    single = _story(
+        "Casey Quinn dies at 64",
+        summary="The singer died Monday.",
+        source_id="tmz",
+        kind="celebrity",
+        published=_dt(18),
+    )
+    review = _story(
+        "Review: midnight comedy is a charmer",
+        summary="Critics say the June release is a crowd pleaser.",
+        source_id="variety",
+        kind="headlines",
+        published=_dt(18),
+    )
+    graphic = _story(
+        "Star shot and killed outside a club",
+        summary="Police are investigating.",
+        source_id="tmz",
+        kind="celebrity",
+        published=_dt(15),
+    )
+    sighting = _story(
+        "Singer spotted leaving a downtown diner",
+        summary="Fans saw the singer just after midnight.",
+        source_id="tmz",
+        kind="celebrity",
+        published=_dt(11),
+    )
+    sighting_again = _story(
+        "Singer spotted leaving a downtown diner",
+        summary="Fans saw the singer just after midnight.",
+        source_id="deadline",
+        kind="entertainment_news",
+        published=_dt(9),
+    )
+    pool = [
+        deadline_death,
+        wire_death,
+        opening,
+        stale_sighting,
+        stale_obit,
+        stale_obit_wire,
+        single,
+        review,
+        graphic,
+        sighting,
+        sighting_again,
+    ]
+    ranked = entertainment_report.rank_entertainment_stories(pool, now=NOW)
+    audit = story_selection_audit(ranked["log"], now=NOW)
+    text = audit["text"]
+    rows = audit["rows"]
+    header = text.splitlines()[0]
+    _check("audit header is the four columns", header == "Story | Source | Published | Decision")
+    _check("audit text names Story", "Story" in header)
+    _check("audit text names Source", "Source" in header)
+    _check("audit text names Published", "Published" in header)
+    _check("audit text names Decision", "Decision" in header)
+    _check(
+        "audit rows use the four columns",
+        rows and all({"story", "source", "published", "decision"} <= set(row) for row in rows),
+    )
+    _check("audit function matches the report audit", text == ranked["audit"]["text"])
+    _check("a fixture report distinguishes Selected", any(row["decision"] == "Selected" for row in rows))
+    _check(
+        "a fixture report distinguishes Rejected as stale",
+        any(row["decision"] == "Rejected as stale" for row in rows),
+    )
+    _check(
+        "selected and stale are different rows",
+        any(row["decision"] == "Selected" and row["decision"] != "Rejected as stale" for row in rows),
+    )
+    death_rows = [row for row in rows if "Jordan Hale" in row["story"]]
+    _check("verified death is one row", len(death_rows) == 1)
+    _check(
+        "verified death names the confirming outlets",
+        death_rows[0]
+        == {
+            "story": "Jordan Hale dies at 70",
+            "source": "Deadline + AP",
+            "published": "Today",
+            "decision": "Selected",
+        },
+    )
+    _check(
+        "opening uses the headline and the outlet",
+        any(
+            row["story"] == "Harbor Lights trailer"
+            and row["source"] == "Variety"
+            and row["published"] == "Today"
+            and row["decision"] == "Selected"
+            for row in rows
+        ),
+    )
+    _check(
+        "audit story is not the spoken script",
+        all("fans, get ready" not in row["story"].lower() and "In movie news" not in row["story"] for row in rows),
+    )
+    _check(
+        "five days ago uses the publication date",
+        any(
+            row["story"] == "Older celebrity sighting at the pier"
+            and row["source"] == "TMZ"
+            and row["published"] == "5 days ago"
+            and row["decision"] == "Rejected as stale"
+            for row in rows
+        ),
+    )
+    _check(
+        "an updated obituary stays 5 days ago",
+        any(
+            row["story"] == "Mina Cole dies at 91"
+            and row["published"] == "5 days ago"
+            and row["decision"] == "Rejected as stale"
+            for row in rows
+        ),
+    )
+    _check(
+        "update time is not stored as the publication date",
+        any(
+            row["title"].startswith("Mina Cole dies")
+            and row["status"] == "rejected"
+            and str(row["published"]).startswith("2026-10-08")
+            for row in ranked["log"]
+        ),
+    )
+    _check(
+        "single source death is Rejected as unverified",
+        any("Casey Quinn" in row["story"] and row["decision"] == "Rejected as unverified" for row in rows),
+    )
+    _check(
+        "duplicate headline is Rejected as duplicate",
+        any(
+            row["story"] == "Singer spotted leaving a downtown diner"
+            and row["source"] == "Deadline"
+            and row["decision"] == "Rejected as duplicate"
+            for row in rows
+        ),
+    )
+    _check(
+        "review uses the selector reason",
+        any(row["story"].startswith("Review:") and row["decision"] == "Rejected as review item" for row in rows),
+    )
+    _check(
+        "graphic copy is Rejected as unsafe",
+        any("shot and killed" in row["story"] and row["decision"] == "Rejected as unsafe" for row in rows),
+    )
+    considered = [row for row in ranked["log"] if row["status"] == "considered"]
+    _check(
+        "one row per considered story, with confirming death reports sharing a row",
+        len(rows) == len(considered) - 1,
+    )
+    _check("every considered story is represented", len(rows) >= 1 and len(considered) == len(pool))
+
+    flow = build_morning_flow(pool, now=NOW)
+    script = flow["michael_g_script"]
+    prompt = flow["michael_g_prompt"]
+    package_script = flow["script"]
+    _check("package carries the audit text", flow["selection_audit"] == text)
+    _check("package carries the audit rows", flow["selection_audit_rows"] == rows)
+    _check("spoken script does not include the audit", "Rejected as stale" not in script and header not in script)
+    _check("spoken script does not name the confirming outlets", "Deadline + AP" not in script)
+    _check("on-air prompt does not include the audit", "Rejected as stale" not in prompt and header not in prompt)
+    _check("package script does not include the audit", header not in package_script and "Rejected as stale" not in package_script)
+    _check("death still leads the spoken script", "died Monday" in script)
+    _check("stale obituary stays out of the spoken script", "Mina Cole" not in script and "last spring" not in script)
+
+    confirmed_only = entertainment_report.rank_entertainment_stories(
+        [
+            _story(
+                "Riley Quinn dies at 80",
+                summary="The actor died Monday at home.",
+                source_id="deadline",
+                kind="entertainment_news",
+                published=_dt(12),
+                confirmed_outlets=("Deadline", ""),
+            )
+        ],
+        now=NOW,
+    )
+    confirmed_rows = confirmed_only["audit"]["rows"]
+    _check(
+        "unnamed second source is independent confirmation",
+        any(
+            row["story"] == "Riley Quinn dies at 80"
+            and row["source"] == "Deadline + independent confirmation"
+            and row["decision"] == "Selected"
+            for row in confirmed_rows
+        ),
+    )
+    _check(
+        "independent confirmation stays out of the spoken script",
+        "independent confirmation" not in michael_g_script(confirmed_only["stories"]),
+    )
+
+
 def main() -> None:
     test_filters()
     test_selection_and_feeds()
@@ -1450,6 +1698,7 @@ def main() -> None:
     test_news_rules_upgrade()
     test_config_files()
     test_discovery_ranking()
+    test_story_selection_audit()
     print("OK: Michael G entertainment report verified")
     print(MOVIE_LINE)
 

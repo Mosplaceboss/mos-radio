@@ -29,6 +29,9 @@ Local AI, with a speakable fallback script when generation is not available.
 Print a fail-soft morning handoff (network optional) with:
 
     python Studio/app/core/entertainment_report.py
+
+That run also prints a story-selection audit for the operator. The audit is
+not part of the spoken script, the on-air prompt, or the audio.
 """
 
 from __future__ import annotations
@@ -607,6 +610,35 @@ _REPUTABLE_KEYS = {
     "variety",
     "washington post",
 }
+_OUTLET_DISPLAY = {
+    "abc": "ABC",
+    "ap": "AP",
+    "bbc": "BBC",
+    "billboard": "Billboard",
+    "cbs": "CBS",
+    "cnn": "CNN",
+    "deadline": "Deadline",
+    "empire": "Empire",
+    "entertainment weekly": "Entertainment Weekly",
+    "guardian": "The Guardian",
+    "hollywood reporter": "Hollywood Reporter",
+    "indiewire": "IndieWire",
+    "los angeles times": "Los Angeles Times",
+    "nbc": "NBC",
+    "new york times": "New York Times",
+    "npr": "NPR",
+    "page six": "Page Six",
+    "pbs": "PBS",
+    "people": "People",
+    "reuters": "Reuters",
+    "rolling stone": "Rolling Stone",
+    "the wrap": "The Wrap",
+    "tmz": "TMZ",
+    "tvline": "TVLine",
+    "usa today": "USA Today",
+    "variety": "Variety",
+    "washington post": "Washington Post",
+}
 _FAR_FUTURE = datetime(9999, 1, 1, tzinfo=timezone.utc)
 
 
@@ -674,6 +706,31 @@ def _recency(story: EntertainmentStory, now: datetime) -> float:
 
 def _source_label(story: EntertainmentStory) -> str:
     return _clean_text(story.outlet or story.source_name or story.source_id or "unknown")
+
+
+def _display_outlet(name: str) -> str:
+    """Outlet name for the operator audit. Empty when the label is blank."""
+    text = _clean_text(name)
+    if not text:
+        return ""
+    if text.lower() == "independent confirmation":
+        return "independent confirmation"
+    key = _outlet_key(
+        EntertainmentStory(
+            title="",
+            summary="",
+            url="",
+            source_id=text if " " not in text else "",
+            source_name=text,
+            kind="",
+            outlet=text,
+        )
+    )
+    if key:
+        return _OUTLET_DISPLAY.get(key, text)
+    if text.islower():
+        return text.title()
+    return text
 
 
 def _outlet_key(story: EntertainmentStory) -> str:
@@ -971,7 +1028,160 @@ def _verify_death_cluster(
     return _merge_death(reputable, outlets), "confirmed by " + " and ".join(outlets)
 
 
-def _emit_selection_log(log: list[dict[str, str]]) -> None:
+def _audit_story_label(title: str) -> str:
+    """Headline for the operator. Not the spoken sentence."""
+    text = _strip_outlet_prefix(title).replace("|", "/")
+    return _clean_text(text) or "Untitled"
+
+
+def _audit_decision(status: str, reason: str) -> str:
+    """Short operator decision from a selector status and reason."""
+    if status == "selected":
+        return "Selected"
+    text = _clean_text(reason).lower()
+    if "duplicate" in text:
+        return "Rejected as duplicate"
+    if any(token in text for token in ("older than", "old obituary", "not breaking", "stale")):
+        return "Rejected as stale"
+    if any(token in text for token in ("not verified", "unverified", "single source", "no publication date")):
+        return "Rejected as unverified"
+    if text in {"not morning-safe", "unsafe"} or "unsafe" in text:
+        return "Rejected as unsafe"
+    if status == "merged" and text.startswith("confirmed"):
+        return "Rejected as ranked below the four stories"
+    if text:
+        return "Rejected as " + _clean_text(reason)
+    if status == "rejected":
+        return "Rejected"
+    if status == "considered":
+        return "Considered"
+    return status[:1].upper() + status[1:] if status else "Considered"
+
+
+def _published_phrase(raw: str, now: datetime) -> str:
+    """Calendar age of the publication date. Update time is not used."""
+    published = _parse_datetime(raw)
+    if published is None:
+        return "Unknown"
+    delta = (_as_utc(now).date() - published.date()).days
+    if delta <= 0:
+        return "Today"
+    if delta == 1:
+        return "Yesterday"
+    return f"{delta} days ago"
+
+
+def _confirmed_source_text(labels: list[str]) -> str:
+    """Deadline + AP, or Deadline + independent confirmation when the second name is unknown."""
+    names: list[str] = []
+    for raw in labels:
+        label = _display_outlet(str(raw)) or "independent confirmation"
+        if label not in names:
+            names.append(label)
+    if len(names) >= 2:
+        return " + ".join(names)
+    if names:
+        return f"{names[0]} + independent confirmation"
+    return "independent confirmation"
+
+
+def _audit_source(entry: dict[str, Any]) -> str:
+    labels = [str(label) for label in (entry.get("confirmed") or []) if str(label).strip()]
+    death = _title_reports_death(str(entry.get("title") or ""))
+    if len(labels) >= 2 or (death and len(labels) == 1 and entry.get("status") == "selected"):
+        return _confirmed_source_text(labels)
+    source = _display_outlet(str(entry.get("source") or ""))
+    return source or "Unknown"
+
+
+def _is_confirming_merge(entry: dict[str, Any]) -> bool:
+    if entry.get("status") != "merged":
+        return False
+    reason = str(entry.get("reason") or "").lower()
+    return reason.startswith("confirmed by") or reason.startswith("confirmed death")
+
+
+def _format_audit_table(rows: list[dict[str, str]]) -> str:
+    lines = ["Story | Source | Published | Decision"]
+    if not rows:
+        lines.append("(no stories considered)")
+        return "\n".join(lines)
+    for row in rows:
+        cells = (
+            row.get("story") or "Untitled",
+            row.get("source") or "Unknown",
+            row.get("published") or "Unknown",
+            row.get("decision") or "Considered",
+        )
+        lines.append(" | ".join(cell.replace("|", "/") for cell in cells))
+    return "\n".join(lines)
+
+
+def story_selection_audit(
+    log: list[dict[str, Any]] | None = None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Operator audit for one entertainment report.
+
+    Built from the selector's considered, selected, and rejected log.
+    One row per story. Confirming reports of a verified death share that
+    row, and the source names each outlet that confirmed it. Returns
+    ``{"text": table, "rows": [...]}``. The text is not spoken on the air.
+    """
+    clock = _as_utc(now)
+    final: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    selected_order: list[str] = []
+    for index, entry in enumerate(list(log or [])):
+        key = str(entry.get("story_key") or "")
+        if not key:
+            key = f"{index}:{entry.get('title')}"
+        if key not in final:
+            order.append(key)
+            final[key] = dict(entry)
+        elif entry.get("status") != "considered":
+            final[key] = dict(entry)
+        if entry.get("status") == "selected" and key not in selected_order:
+            selected_order.append(key)
+
+    decision_events = {
+        str(item.get("event") or "")
+        for item in final.values()
+        if item.get("confirmed") and item.get("status") in {"selected", "rejected"} and item.get("event")
+    }
+
+    def keep(key: str) -> bool:
+        item = final[key]
+        event = str(item.get("event") or "")
+        return not (_is_confirming_merge(item) and event in decision_events)
+
+    ordered = [key for key in selected_order if keep(key)]
+    ordered.extend(key for key in order if key not in ordered and keep(key))
+    rows: list[dict[str, str]] = []
+    for key in ordered:
+        item = final[key]
+        rows.append(
+            {
+                "story": _audit_story_label(str(item.get("title") or "")),
+                "source": _audit_source(item),
+                "published": _published_phrase(str(item.get("published") or ""), clock),
+                "decision": _audit_decision(str(item.get("status") or ""), str(item.get("reason") or "")),
+            }
+        )
+    return {"text": _format_audit_table(rows), "rows": rows}
+
+
+def _rank_result(
+    chosen: list[EntertainmentStory],
+    log: list[dict[str, Any]],
+    now: datetime,
+) -> dict[str, Any]:
+    _emit_selection_log(log)
+    return {"stories": chosen, "log": log, "audit": story_selection_audit(log, now=now)}
+
+
+def _emit_selection_log(log: list[dict[str, Any]]) -> None:
     selected = sum(1 for row in log if row["status"] == "selected")
     rejected = sum(1 for row in log if row["status"] == "rejected")
     merged = sum(1 for row in log if row["status"] == "merged")
@@ -1007,16 +1217,26 @@ def rank_entertainment_stories(
     entertainment to fill.
     """
     clock = _as_utc(now)
-    log: list[dict[str, str]] = []
+    log: list[dict[str, Any]] = []
     resolved: set[int] = set()
 
     def note(story: EntertainmentStory, status: str, reason: str) -> None:
+        published = _as_utc(story.published).isoformat() if story.published is not None else ""
+        confirmed: list[str] = []
+        for raw in story.confirmed_outlets or ():
+            label = _display_outlet(str(raw)) or "independent confirmation"
+            if label not in confirmed:
+                confirmed.append(label)
         log.append(
             {
                 "title": story.title,
                 "source": _source_label(story),
                 "status": status,
                 "reason": reason,
+                "published": published,
+                "confirmed": confirmed,
+                "story_key": str(id(story)),
+                "event": _event_key(story),
             }
         )
         if status != "considered":
@@ -1028,8 +1248,7 @@ def rank_entertainment_stories(
     if limit < 1:
         for story in stories:
             note(story, "rejected", "no stories requested")
-        _emit_selection_log(log)
-        return {"stories": [], "log": log}
+        return _rank_result([], log, clock)
 
     usable: list[EntertainmentStory] = []
     for story in stories:
@@ -1122,7 +1341,8 @@ def rank_entertainment_stories(
         death_budget = min(death_budget, 2)
     death_budget = min(death_budget, limit)
     for story in verified[:death_budget]:
-        take(story, "confirmed death leads", SLOT_TMZ)
+        if not take(story, "confirmed death leads", SLOT_TMZ) and _event_key(story) not in chosen_keys:
+            note(story, "rejected", "ranked below the four stories")
 
     deaths_taken = len(chosen)
     if openings and (breaking or deaths_taken):
@@ -1151,7 +1371,8 @@ def rank_entertainment_stories(
     for story in openings:
         take(story, "opens within seven days", SLOT_FILM_NEWS)
     for story in verified[death_budget:]:
-        take(story, "confirmed death", SLOT_TMZ)
+        if not take(story, "confirmed death", SLOT_TMZ) and _event_key(story) not in chosen_keys:
+            note(story, "rejected", "ranked below the four stories")
     for story in fills:
         take(story, "fill", _news_slot(story, clock))
 
@@ -1159,8 +1380,7 @@ def rank_entertainment_stories(
         if id(story) not in resolved:
             note(story, "rejected", "ranked below the four stories")
 
-    _emit_selection_log(log)
-    return {"stories": chosen, "log": log}
+    return _rank_result(chosen, log, clock)
 
 
 def select_entertainment_stories(
@@ -1720,6 +1940,8 @@ def build_morning_flow(
         "story_count": len(selected),
         "stories": selected,
         "selection_log": ranked["log"],
+        "selection_audit": ranked["audit"]["text"],
+        "selection_audit_rows": ranked["audit"]["rows"],
         "dave_sports_close": dave_close,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(selected, rules=rules),
@@ -1870,10 +2092,15 @@ def main() -> int:
     report = collect_entertainment_report(fetch=True)
     package = build_morning_flow(report["stories"])
     # The collect log still has the stories that were rejected before the handoff.
+    # The audit is the operator table. It stays out of the spoken script and prompt.
     package["selection_log"] = report["log"]
+    package["selection_audit"] = report["audit"]["text"]
+    package["selection_audit_rows"] = report["audit"]["rows"]
     print(package["script"])
     print()
     print(package["michael_g_prompt"])
+    print()
+    print(package["selection_audit"])
     logging.basicConfig(level=logging.INFO)
     _emit_selection_log(report["log"])
     return 0
