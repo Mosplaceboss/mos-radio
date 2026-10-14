@@ -5,9 +5,9 @@ one of them on every break. Breaks now take turns: the first break of the day
 gets the first fun day, the next break gets the next, and so on. The same
 break time and host always get the same fun day if the prompt is rebuilt.
 A single fun day still goes on every break.
-Category on Edit Fun Day is Fun Day (the default) or Serious Day. A Serious
-Day is one respectful mention. Breast Cancer Awareness Month with no saved
-category loads as Serious Day.
+Category on Edit Fun Day is Funny, Regular, or Serious. Saved values stay
+fun, regular, or serious. Breast Cancer Awareness Month with no saved
+category loads as serious.
 
 The Fun / National Days list can still show every observance for today.
 The preview panel should call preview_prompt_payload() so it shows the
@@ -72,12 +72,16 @@ _NTH_RE = re.compile(
     r"october|november|december)\b"
 )
 
-FUN_DAY = "Fun Day"
-SERIOUS_DAY = "Serious Day"
-# Edit Fun Day offers these two choices. A blank saved value stays Fun Day.
-CATEGORY_CHOICES = (FUN_DAY, SERIOUS_DAY)
+# Stored on the observance. The Edit Fun Day combobox shows the labels.
+FUNNY = "fun"
+REGULAR = "regular"
+SERIOUS = "serious"
+CATEGORY_LABELS = ("Funny", "Regular", "Serious")
+_LABEL_FOR_TOKEN = {FUNNY: "Funny", REGULAR: "Regular", SERIOUS: "Serious"}
 
-# Said once, with no joke, when the observance is a Serious Day.
+# One line in the break prompt for each tone.
+FUNNY_PROMPT_LINE = "Mention it lightly. A joke is fine if it fits the operator note."
+REGULAR_PROMPT_LINE = "Mention it in a normal conversational way. Do not force a joke."
 SERIOUS_PROMPT_LINE = (
     "Mention it once in one short respectful sentence. Do not joke. "
     "Do not say you do not know what it means. Do not say you like it. "
@@ -85,7 +89,7 @@ SERIOUS_PROMPT_LINE = (
     "The station name is Mo's Place Radio."
 )
 
-# Saved before the category existed. Load it as Serious Day until the operator picks one.
+# Saved before the category existed. Load it as serious until the operator picks one.
 _SERIOUS_TITLES = {"breast cancer awareness month"}
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})\s*(am|pm)?$")
@@ -166,18 +170,49 @@ def _stored_category(raw: dict) -> str:
     return ""
 
 
+def stored_category_token(value: str) -> str | None:
+    """Map a combobox label or an older saved category onto fun, regular, or serious."""
+    text = _collapse(value).lower()
+    if not text:
+        return None
+    if text in {"serious", "serious day"}:
+        return SERIOUS
+    if text in {"regular"}:
+        return REGULAR
+    if text in {"fun", "fun day", "funny"}:
+        return FUNNY
+    if "serious" in text:
+        return SERIOUS
+    if "regular" in text:
+        return REGULAR
+    if "funny" in text or text == "fun" or text.startswith("fun "):
+        return FUNNY
+    return None
+
+
+def category_label(token: str) -> str:
+    """Operator label for a stored category. fun and Fun Day show as Funny."""
+    canonical = stored_category_token(token) or FUNNY
+    return _LABEL_FOR_TOKEN[canonical]
+
+
 def category_for(raw: dict, title: str) -> str:
-    """Fun Day unless the record says Serious Day, or Breast Cancer Awareness Month has no category yet."""
-    stored = _stored_category(raw).lower()
-    if stored in {"serious", "serious day"}:
-        return SERIOUS_DAY
-    if stored in {"fun", "fun day"}:
-        return FUN_DAY
-    if stored:
-        return SERIOUS_DAY if "serious" in stored else FUN_DAY
+    """fun, regular, or serious. Blank stays fun, except Breast Cancer Awareness Month."""
+    token = stored_category_token(_stored_category(raw))
+    if token:
+        return token
     if _collapse(title).lower().rstrip(".") in _SERIOUS_TITLES:
-        return SERIOUS_DAY
-    return FUN_DAY
+        return SERIOUS
+    return FUNNY
+
+
+def prompt_line_for_category(token: str) -> str:
+    """The one tone line for this observance."""
+    if token == SERIOUS:
+        return SERIOUS_PROMPT_LINE
+    if token == REGULAR:
+        return REGULAR_PROMPT_LINE
+    return FUNNY_PROMPT_LINE
 
 
 def normalize_day(raw: object) -> dict:
@@ -611,8 +646,7 @@ def format_prompt_payload(days: list | None) -> str:
         lines.append(f"  read by: {read_by_label(day)}")
         if day["note"]:
             lines.append(f"  notes: {day['note']}")
-        if day.get("category") == SERIOUS_DAY:
-            lines.append(f"  {SERIOUS_PROMPT_LINE}")
+        lines.append(f"  {prompt_line_for_category(day.get('category') or FUNNY)}")
     if not wrote:
         return ""
     return "\n".join(lines)

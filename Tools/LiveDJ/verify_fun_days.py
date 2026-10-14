@@ -97,7 +97,8 @@ def main() -> None:
         "fun days:\n"
         "- title: National Dessert Day\n"
         "  read by: (any DJ)\n"
-        "  notes: enjoy a little sweetness"
+        "  notes: enjoy a little sweetness\n"
+        f"  {FunDays.FUNNY_PROMPT_LINE}"
     )
     _check("one fun day is unchanged on every break", len(set(only_payloads)) == 1 and only_payloads[0] == expected)
     only_preview = FunDays.preview_prompt_payload(only, breaks, when=TODAY, now=NOW)
@@ -153,14 +154,18 @@ def main() -> None:
     _check("2nd Sunday is not October 14", not FunDays.occurs_on(FunDays.normalize_day(sunday), TODAY))
 
     plain = FunDays.normalize_day({"title": DESSERT, "note": "enjoy a little sweetness"})
-    _check("saved day with no category stays Fun Day", plain["category"] == "Fun Day")
+    _check("saved day with no category stays fun", plain["category"] == "fun")
+    _check("fun and Fun Day display as Funny", FunDays.category_label("fun") == "Funny" and FunDays.category_label("Fun Day") == "Funny")
+    _check("serious and Serious Day display as Serious", FunDays.category_label("serious") == "Serious" and FunDays.category_label("Serious Day") == "Serious")
     awareness = {"title": "Breast Cancer Awareness Month", "enabled": True, "who": "Each DJ", "date": "October", "when": "Whole month", "note": "remind people about screenings"}
     loaded = FunDays.normalize_day(awareness)
-    _check("Breast Cancer Awareness Month with no category loads as Serious Day", loaded["category"] == "Serious Day")
+    _check("Breast Cancer Awareness Month with no category loads as serious", loaded["category"] == "serious")
     overridden = FunDays.normalize_day({"title": "Breast Cancer Awareness Month", "category": "Fun Day"})
-    _check("an explicit Fun Day choice is kept", overridden["category"] == "Fun Day")
+    _check("an explicit Fun Day choice stays fun", overridden["category"] == "fun")
     marked = FunDays.normalize_day({"title": DESSERT, "category": "Serious Day"})
-    _check("an explicit Serious Day choice is kept", marked["category"] == "Serious Day")
+    _check("an explicit Serious Day choice stays serious", marked["category"] == "serious")
+    _check("a day already saved as fun stays fun", FunDays.normalize_day({"title": DESSERT, "category": "fun"})["category"] == "fun")
+    _check("a day already saved as serious stays serious", FunDays.normalize_day({"title": DESSERT, "category": "serious"})["category"] == "serious")
 
     serious_break = [{"Time": "08:20", "Host": "Mo"}]
     serious_payload = FunDays.prompt_payload_for_break([awareness], serious_break[0], serious_break, when=TODAY)
@@ -172,7 +177,13 @@ def main() -> None:
     _check("serious line is the shared prompt line", FunDays.SERIOUS_PROMPT_LINE in serious_payload)
 
     fun_payload = only_payloads[0]
-    _check("a fun day does not get the serious warning", "Do not joke." not in fun_payload and FunDays.SERIOUS_PROMPT_LINE not in fun_payload)
+    _check("a funny day uses the light line", FunDays.FUNNY_PROMPT_LINE in fun_payload)
+    _check("a funny day does not get the serious warning", "Do not joke." not in fun_payload and FunDays.SERIOUS_PROMPT_LINE not in fun_payload)
+    regular_day = _day(DESSERT, note="enjoy a little sweetness", category="regular")
+    regular_payload = FunDays.prompt_payload_for_break([regular_day], breaks[0], breaks, when=TODAY)
+    _check("a regular day uses the conversational line", FunDays.REGULAR_PROMPT_LINE in regular_payload)
+    _check("a regular day does not force a joke or the serious warning", "A joke is fine" not in regular_payload and "Do not joke." not in regular_payload)
+    _check("regular save token is regular", FunDays.normalize_day(regular_day)["category"] == "regular")
 
     mixed = [
         _day(BALD, note="own the look"),
@@ -211,7 +222,10 @@ def _verify_edit_form() -> None:
 
     field = category_field()
     _check("Edit Fun Day has a Category row", field.label == "Category")
-    _check("Category choices are Fun Day and Serious Day", field.choices == CATEGORY_CHOICES == ("Fun Day", "Serious Day"))
+    _check(
+        "Category choices are Funny, Regular, and Serious",
+        field.choices == CATEGORY_CHOICES == ("Funny", "Regular", "Serious"),
+    )
     _check("Category is a dropdown on the form", field.kind == "choice")
     labels = [item.label for item in FORM_FIELDS]
     _check("Category sits on the Edit Fun Day form", "Category" in labels and "Title (e.g. Breast Cancer Awareness Month)" in labels)
@@ -219,17 +233,24 @@ def _verify_edit_form() -> None:
 
     awareness = {"title": "Breast Cancer Awareness Month", "enabled": True, "date": "October", "when": "Whole month"}
     shown = form_values(awareness)
-    _check("selecting Breast Cancer with no category shows Serious Day", shown["category"] == "Serious Day")
+    _check("selecting Breast Cancer with no category shows Serious", shown["category"] == "Serious")
     dessert = form_values({"title": "National Dessert Day"})
-    _check("selecting a normal day shows Fun Day", dessert["category"] == "Fun Day")
+    _check("selecting a normal day shows Funny", dessert["category"] == "Funny")
+    _check("saved fun displays as Funny", form_values({"title": "National Dessert Day", "category": "fun"})["category"] == "Funny")
+    _check("saved Fun Day displays as Funny", form_values({"title": "National Dessert Day", "category": "Fun Day"})["category"] == "Funny")
+    _check("saved serious displays as Serious", form_values({"title": "National Dessert Day", "category": "serious"})["category"] == "Serious")
+    _check("saved Serious Day displays as Serious", form_values({"title": "National Dessert Day", "category": "Serious Day"})["category"] == "Serious")
 
     saved = record_from_form(shown, awareness)
-    _check("saving keeps Serious Day", saved["category"] == "Serious Day")
-    shown["category"] = "Fun Day"
+    _check("saving Serious writes serious", saved["category"] == "serious")
+    shown["category"] = "Funny"
     overridden = record_from_form(shown, awareness)
-    _check("saving Fun Day on Breast Cancer persists Fun Day", overridden["category"] == "Fun Day")
+    _check("saving Funny writes fun", overridden["category"] == "fun")
     reloaded = form_values(overridden)
-    _check("reselecting the saved row still shows Fun Day", reloaded["category"] == "Fun Day")
+    _check("reselecting the saved row still shows Funny", reloaded["category"] == "Funny")
+    regular_saved = record_from_form({**shown, "category": "Regular"}, {"title": "National Dessert Day"})
+    _check("saving Regular writes regular", regular_saved["category"] == "regular")
+    _check("reselecting Regular shows Regular", form_values(regular_saved)["category"] == "Regular")
 
     page_source = (studio / "app" / "pages" / "fun_days.py").read_text(encoding="utf-8")
     _check("the page draws Edit Fun Day", 'text="Edit Fun Day"' in page_source)
@@ -268,7 +289,7 @@ def _verify_category_widget() -> None:
         combo = page._category_combo
         _check("Category label is on Edit Fun Day", str(label.cget("text")) == "Category")
         _check("Category widget is a combobox", combo.winfo_class() == "TCombobox")
-        _check("combobox lists Fun Day and Serious Day", tuple(combo.cget("values")) == ("Fun Day", "Serious Day"))
+        _check("combobox lists Funny, Regular, and Serious", tuple(combo.cget("values")) == ("Funny", "Regular", "Serious"))
         _check("Category control is inside the Edit Fun Day panel", str(combo.winfo_parent()) == str(page._edit_form))
 
         page.replace_days(
@@ -282,13 +303,23 @@ def _verify_category_widget() -> None:
                 }
             ]
         )
-        _check("selected Breast Cancer row shows Serious Day", combo.get() == "Serious Day")
-        page._vars["category"].set("Fun Day")
+        _check("selected Breast Cancer row shows Serious", combo.get() == "Serious")
+        page._vars["category"].set("Funny")
         page._save_selected()
         saved = page.config_manager.load("fun_days")
-        _check("Save writes the category", saved["days"][0]["category"] == "Fun Day")
+        _check("Save writes fun", saved["days"][0]["category"] == "fun")
         page._load()
-        _check("opening the saved row shows Fun Day", combo.get() == "Fun Day")
+        _check("opening the saved row shows Funny", combo.get() == "Funny")
+        page._vars["category"].set("Regular")
+        page._save_selected()
+        saved = page.config_manager.load("fun_days")
+        _check("Save writes regular", saved["days"][0]["category"] == "regular")
+        page._vars["category"].set("Serious")
+        page._save_selected()
+        saved = page.config_manager.load("fun_days")
+        _check("Save writes serious", saved["days"][0]["category"] == "serious")
+        page._load()
+        _check("opening the saved row shows Serious", combo.get() == "Serious")
     finally:
         root.destroy()
 

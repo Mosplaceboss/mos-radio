@@ -19,9 +19,7 @@ if str(_LIVEDJ) not in sys.path:
 
 FunDays = importlib.import_module("FunDays")
 
-FUN_DAY = FunDays.FUN_DAY
-SERIOUS_DAY = FunDays.SERIOUS_DAY
-CATEGORY_CHOICES = FunDays.CATEGORY_CHOICES
+CATEGORY_CHOICES = FunDays.CATEGORY_LABELS
 
 WHEN_CHOICES = ("One-day", "Whole month", "Selected days")
 WHO_CHOICES = ("Each DJ, each day", "Only selected DJs")
@@ -81,13 +79,15 @@ def _who_choice(value: str) -> str:
 def form_values(record: dict | None) -> dict[str, Any]:
     """What Edit Fun Day shows when this row is selected.
 
-    A stored Breast Cancer Awareness Month with no category shows Serious Day.
-    Every other day with no category shows Fun Day.
+    Category is the combobox label: Funny, Regular, or Serious.
+    A stored Breast Cancer Awareness Month with no category shows Serious.
+    Every other day with no category shows Funny. fun and Fun Day show as Funny.
+    serious and Serious Day show as Serious.
     """
     day = FunDays.normalize_day(record or {})
     return {
         "title": day["title"],
-        "category": day["category"],
+        "category": FunDays.category_label(day["category"]),
         "when": _when_choice(day["when"]),
         "date": day["date"],
         "days_of_month": day["days_of_month"],
@@ -103,7 +103,12 @@ def record_from_form(values: dict[str, Any], previous: dict | None = None) -> di
     """Saved observance. The Category choice on the form is stored as category."""
     raw = dict(previous or {})
     raw["title"] = str(values.get("title") or "").strip()
-    raw["category"] = str(values.get("category") or FUN_DAY).strip() or FUN_DAY
+    token = FunDays.stored_category_token(str(values.get("category") or ""))
+    if token:
+        raw["category"] = token
+    else:
+        raw.pop("category", None)
+        raw.pop("Category", None)
     raw["when"] = str(values.get("when") or "One-day").strip() or "One-day"
     raw["date"] = str(values.get("date") or "").strip()
     raw["days_of_month"] = str(values.get("days_of_month") or "").strip()
@@ -112,7 +117,4 @@ def record_from_form(values: dict[str, Any], previous: dict | None = None) -> di
     raw["read_by"] = str(values.get("read_by") or "").strip()
     raw["note"] = str(values.get("note") or "").strip()
     raw["enabled"] = bool(values.get("enabled", True))
-    saved = FunDays.normalize_day(raw)
-    # Keep the operator's choice even when the title would otherwise default.
-    saved["category"] = raw["category"] if raw["category"] in CATEGORY_CHOICES else saved["category"]
-    return saved
+    return FunDays.normalize_day(raw)

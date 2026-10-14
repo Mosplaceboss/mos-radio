@@ -18,9 +18,8 @@ class FunDaysPage(BasePage):
     page_title = "Fun / National Days"
     page_subtitle = "Recurring observances the DJs can mention"
     page_help = (
-        "Pick a row, then edit it here. Category is Fun Day or Serious Day. "
-        "Serious Day is one respectful mention. Breast Cancer Awareness Month "
-        "opens as Serious Day until you choose otherwise."
+        "Pick a row, then edit it here. Category is Funny, Regular, or Serious. "
+        "Breast Cancer Awareness Month opens as Serious until you choose otherwise."
     )
 
     def build(self) -> None:
@@ -168,7 +167,7 @@ class FunDaysPage(BasePage):
             record_from_form(
                 {
                     "title": "",
-                    "category": "Fun Day",
+                    "category": "Funny",
                     "when": "One-day",
                     "date": "",
                     "days_of_month": "",
