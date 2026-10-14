@@ -55,6 +55,8 @@ def main() -> None:
         text = output.read_text(encoding="utf-8")
         _check("Wednesday writes the bands file", written == output and output.is_file())
         _check("stale bands file is replaced", "STALE BAND" not in text)
+        _check("file tags Reverend JJ as the speaker", text.startswith(Bands.BANDS_SPEAKER_TAG))
+        _check("file does not tag Mo as the speaker", "[Mo]" not in text and "[DJ Mo]" not in text)
         _check("file names the night", "Wednesday, October 14, 2026" in text)
         _check("file has Music Bingo with George", "Music Bingo with George" in text)
         _check("file has Casa Blanca", "Casa Blanca Mexican Cantina" in text)
@@ -66,6 +68,44 @@ def main() -> None:
         _check("note rows are not aired", "Bea band" not in text and "Massachusettstching" not in text)
         wavs = list(folder.glob("*.wav"))
         _check("Wednesday does not invent a wav", wavs == [])
+
+        jj_block = Bands.prompt_block_for_break(
+            host="Reverend JJ",
+            event_type="Band Announcements",
+            bands_path=output,
+        )
+        mo_block = Bands.prompt_block_for_break(
+            host="Mo",
+            event_type="Band Announcements",
+            bands_path=output,
+        )
+        _check("Reverend JJ receives the bands prompt block", "Music Bingo with George" in jj_block)
+        _check("Reverend JJ prompt names Reverend JJ only", "REVEREND JJ ONLY" in jj_block)
+        _check("Mo does not receive the bands prompt block", mo_block == "")
+        _check("blocked host helper marks Mo", Bands.is_blocked_bands_host("DJ Mo"))
+        _check("bands host helper marks Reverend JJ", Bands.is_bands_host("Rev. JJ"))
+
+        repaired, changed = Bands.repair_schedule_hosts(
+            [
+                {
+                    "day_of_week": "Wednesday",
+                    "Time": "18:00",
+                    "Host": "Mo",
+                    "EventType": "Band Announcements",
+                    "Mission": "Share tonight's local band listings",
+                },
+                {
+                    "day_of_week": "Wednesday",
+                    "Time": "19:00",
+                    "Host": "Mo",
+                    "EventType": "Check-In",
+                    "Mission": "Normal check-in",
+                },
+            ]
+        )
+        _check("repair rewrites one Mo bands row", changed == 1)
+        _check("repaired Host is Reverend JJ", repaired[0]["Host"] == Bands.BANDS_HOST_DISPLAY)
+        _check("non-bands Mo row is left alone", repaired[1]["Host"] == "Mo")
 
         output.write_text("Invented Band at Nowhere\n", encoding="utf-8")
         removed = Bands.write_bands_file(FIXTURE, output, TUESDAY)

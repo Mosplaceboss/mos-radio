@@ -26,6 +26,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
     "Today's Countdown": "Music History",
     "Final Half Hour": "Time of Day",
     "Listener Memory": "Listener Memory",
+    "Band Announcements": "Band Announcements",
     "Format Change": "Format Change",
     "Handoff": "DJ Handoff",
     "Show Close": "Show Close",

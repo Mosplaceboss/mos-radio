@@ -21,6 +21,7 @@ EVENT_TYPES: tuple[str, ...] = (
     "Final Half Hour",
     "Listener Memory",
     "Weekend Check-In",
+    "Band Announcements",
     "Format Change",
     "Handoff",
     "Show Close",
@@ -108,6 +109,13 @@ Keep energy appropriate for winding down while still sounding engaged.
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
 """.strip(),
+    "Band Announcements": """
+This break is Reverend JJ — never Mo.
+Read tonight's local band and live-music listings using ONLY the supplied BandsTonight source.
+Mention shows, venues, towns, and times from that source only.
+Do not invent events. Do not sound like Mo or another station host.
+Keep it warm and local, then return to the music.
+""".strip(),
     "Format Change": """
 Acknowledge the shift in format or show direction naturally.
 Set expectations for what listeners will hear next.
@@ -144,6 +152,10 @@ LEGACY_MISSION_MAP: dict[str, str] = {
     "format_transition": "Format Change",
     "daily_mix_return": "Format Change",
     "saturday_show_open": "Show Open",
+    "band_announcements": "Band Announcements",
+    "bands_tonight": "Band Announcements",
+    "band_listings": "Band Announcements",
+    "local_bands": "Band Announcements",
 }
 
 LEGACY_MISSION_TEXT: dict[str, str] = {
@@ -185,6 +197,10 @@ DEFAULT_MISSIONS: dict[str, str] = {
     "Today's Countdown": "Talk about why this era of music remains memorable and tease the next song.",
     "Final Half Hour": "Preview the final half hour and tease upcoming music.",
     "Listener Memory": "Connect with listeners in a warm, personal way when appropriate.",
+    "Band Announcements": (
+        "As Reverend JJ — never Mo — share tonight's local band listings from the supplied "
+        "BandsTonight source only. Do not invent shows."
+    ),
     "Format Change": "Acknowledge the format change and set expectations for what is coming next.",
     "Handoff": "Wrap up briefly and hand off to the next host.",
     "Show Close": "Thank listeners, close the show, and hand off to the next host or format.",
@@ -211,6 +227,7 @@ EVENT_TO_TYPE: dict[str, str] = {
     "Today's Countdown": "check_in",
     "Final Half Hour": "check_in",
     "Listener Memory": "check_in",
+    "Band Announcements": "check_in",
     "Format Change": "format_change",
     "Handoff": "handoff",
     "Show Close": "close",
@@ -294,6 +311,11 @@ def _infer_event_type_from_mission_text(mission: str) -> str | None:
         ("on this day in the 1970s", "On This Day in the 70s"),
         ("on this day in the 70s", "On This Day in the 70s"),
         ("70s on this day", "On This Day in the 70s"),
+        ("band announcement", "Band Announcements"),
+        ("bands tonight", "Band Announcements"),
+        ("band listing", "Band Announcements"),
+        ("local bands", "Band Announcements"),
+        ("bea's band", "Band Announcements"),
     )
     for needle, event_type in hints:
         if needle in lower:

@@ -14,6 +14,16 @@ An existing bands file is replaced when tonight has events.
 Friday, Saturday, and Sunday band-rundown wav files are a separate product.
 This sheet never writes or replaces those wav files.
 
+Band announcements are spoken by Reverend JJ — never Mo.
+LiveDJ must use Host=Reverend JJ on Band Announcements rows.
+Engine hook (same pattern as LocalHeadlines / MusicHistory):
+    import Bands
+    block = Bands.prompt_block_for_break(
+        host=host, event_type=event_type, mission=mission
+    )
+    # append block to the AI prompt when non-empty
+Mo and other hosts get an empty block so they never read tonight's bands.
+
 Deploy to D:\\MPR\\Engines\\LiveDJ\\Scripts\\Bands.py on the Office PC.
 Calendar search, first file that exists wins:
   D:\\MPR\\Weekly Events.csv
@@ -49,6 +59,45 @@ STATION_TZ = ZoneInfo("America/New_York")
 STATION_ROOT = Path(r"D:\MPR")
 BANDS_FILENAME = "BandsTonight.txt"
 CALENDAR_FILENAME = "Weekly Events.csv"
+
+# On-air voice for band announcements. Never Mo.
+BANDS_HOST_DISPLAY = "Reverend JJ"
+BANDS_SPEAKER_TAG = "[Reverend JJ]"
+BANDS_HOST_KEY = "reverend jj"
+ENABLED_HOSTS = {
+    "reverend jj",
+    "reverendjj",
+    "rev jj",
+    "rev. jj",
+    "rev jj.",
+    "jj",
+}
+BLOCKED_HOSTS = {
+    "mo",
+    "dj mo",
+    "mo main",
+    "mo-main",
+}
+BANDS_EVENT_TYPES = {
+    "band announcements",
+    "bands tonight",
+    "band listing",
+    "band listings",
+    "local bands",
+}
+BANDS_MISSION_NEEDLES = (
+    "band announcement",
+    "band announcements",
+    "bands tonight",
+    "band listing",
+    "band listings",
+    "tonight's bands",
+    "tonights bands",
+    "local bands",
+    "bea's band",
+    "bea band",
+    "band rundown",
+)
 
 _WEEKDAYS = (
     "Monday",
@@ -318,6 +367,99 @@ def events_for_night(rows: list[dict[str, str]], night: date) -> list[BandEvent]
     return selected
 
 
+def normalize_host(host: str) -> str:
+    text = str(host or "").strip().lower()
+    text = re.sub(r"[_\-]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if text.startswith("dj "):
+        text = text[3:].strip()
+    aliases = {
+        "reverend j.j.": "reverend jj",
+        "reverend j j": "reverend jj",
+        "rev. jj": "reverend jj",
+        "rev jj": "reverend jj",
+        "revjj": "reverend jj",
+        "jj.": "jj",
+    }
+    return aliases.get(text, text)
+
+
+def is_bands_host(host: str) -> bool:
+    return normalize_host(host) in ENABLED_HOSTS
+
+
+def is_blocked_bands_host(host: str) -> bool:
+    """Mo and aliases must never receive band-announcement source material."""
+    return normalize_host(host) in BLOCKED_HOSTS
+
+
+def wants_band_announcements(
+    *,
+    host: str = "",
+    event_type: str = "",
+    mission: str = "",
+) -> bool:
+    """True only when Reverend JJ should receive tonight's bands source material."""
+    if is_blocked_bands_host(host):
+        return False
+    if not is_bands_host(host):
+        return False
+
+    event = str(event_type or "").strip().lower()
+    mission_l = str(mission or "").strip().lower()
+    if event in BANDS_EVENT_TYPES:
+        return True
+    if any(needle in mission_l for needle in BANDS_MISSION_NEEDLES):
+        return True
+    # Dedicated Band Announcements host with an unlabeled break still gets the file.
+    if not event and not mission_l:
+        return True
+    return False
+
+
+def load_bands_tonight_text(path: Path | None = None) -> str:
+    target = path or default_output_path()
+    if not target.is_file():
+        return ""
+    try:
+        return target.read_text(encoding="utf-8-sig").strip()
+    except OSError:
+        return ""
+
+
+def format_prompt_block(bands_text: str, *, host: str = "") -> str:
+    host_label = str(host or "").strip() or BANDS_HOST_DISPLAY
+    if not bands_text.strip():
+        return (
+            "TONIGHT'S BAND ANNOUNCEMENTS SOURCE:\n"
+            f"(none available — {host_label} should skip band listings and do the normal break only; "
+            "do not invent shows, venues, or times.)"
+        )
+    return (
+        "TONIGHT'S BAND ANNOUNCEMENTS SOURCE — REVEREND JJ ONLY:\n"
+        f"{bands_text.strip()}\n"
+        "USAGE FOR THIS BREAK:\n"
+        f"- This break is spoken by {BANDS_HOST_DISPLAY} — never by Mo.\n"
+        f"- {host_label} reads the listings in a warm local-music voice.\n"
+        "- Use ONLY the supplied shows, venues, towns, and times.\n"
+        "- Do not invent events. Do not sound like Mo or another DJ.\n"
+        "- Keep it conversational, then return to the music."
+    )
+
+
+def prompt_block_for_break(
+    *,
+    host: str = "",
+    event_type: str = "",
+    mission: str = "",
+    bands_path: Path | None = None,
+) -> str:
+    """Engine helper: inject tonight's bands only for Reverend JJ. Mo gets nothing."""
+    if not wants_band_announcements(host=host, event_type=event_type, mission=mission):
+        return ""
+    return format_prompt_block(load_bands_tonight_text(bands_path), host=host)
+
+
 def render_event_line(event: BandEvent) -> str:
     where: list[str] = []
     if event.place:
@@ -336,8 +478,35 @@ def render_event_line(event: BandEvent) -> str:
 
 def render_bands(events: list[BandEvent], night: date) -> str:
     heading = f"{_WEEKDAYS[night.weekday()]}, {_MONTHS[night.month]} {night.day}, {night.year}"
-    lines = [heading, *[render_event_line(event) for event in events]]
+    lines = [
+        BANDS_SPEAKER_TAG,
+        heading,
+        *[render_event_line(event) for event in events],
+    ]
     return "\n".join(lines) + "\n"
+
+
+def row_looks_like_bands(row: dict[str, str]) -> bool:
+    event = str(row.get("EventType") or row.get("event_type") or "").strip().lower()
+    mission = str(row.get("Mission") or row.get("mission") or "").strip().lower()
+    if event in BANDS_EVENT_TYPES:
+        return True
+    return any(needle in mission for needle in BANDS_MISSION_NEEDLES)
+
+
+def repair_schedule_hosts(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], int]:
+    """Force Band Announcements rows to Host=Reverend JJ when they still say Mo."""
+    fixed: list[dict[str, str]] = []
+    changed = 0
+    for row in rows:
+        updated = dict(row)
+        if row_looks_like_bands(updated) and is_blocked_bands_host(str(updated.get("Host") or "")):
+            updated["Host"] = BANDS_HOST_DISPLAY
+            if not str(updated.get("EventType") or "").strip():
+                updated["EventType"] = "Band Announcements"
+            changed += 1
+        fixed.append(updated)
+    return fixed, changed
 
 
 def _refuse_wav(path: Path) -> None:
