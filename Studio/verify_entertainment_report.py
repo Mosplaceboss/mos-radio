@@ -19,14 +19,17 @@ from app.core.entertainment_report import (  # noqa: E402
     ENTERTAINMENT_SEARCH_QUERIES,
     ENTERTAINMENT_SOURCES,
     LOCKED_HANDOFF_LINES,
+    LOCKED_MIDDAY_HANDOFF_LINES,
     MICHAEL_BEAT,
     MICHAEL_G_BIO,
     MICHAEL_G_VOICEBOX_ID,
     MICHAEL_G_VOICEBOX_PROFILE,
     MICHAEL_HANDOFF,
+    MICHAEL_MIDDAY_STRAIGHT_OPEN,
     MICHAEL_STRAIGHT_OPEN,
     MO_THANKS,
     EntertainmentStory,
+    build_midday_flow,
     build_morning_flow,
     collect_entertainment_stories,
     google_news_rss_url,
@@ -710,7 +713,10 @@ def test_handoff_flow() -> None:
     )
     _check("michael hands to DJ Mo", flow["michael_g_script"].strip().endswith(MICHAEL_HANDOFF))
     _check("mo thanks Michael G", flow["mo_thanks"] == MO_THANKS)
-    _check("mo may mention weekdays at 7:15", "Weekdays at 7:15 on Mo's Place Radio." in flow["mo_thanks"])
+    _check(
+        "mo may mention weekdays at 7:15 and 12:15",
+        "Weekdays at 7:15 and 12:15 on Mo's Place Radio." in flow["mo_thanks"],
+    )
     _check("script ends with Mo's thanks", script.strip().endswith(MO_THANKS))
     dave_line, michael_thanks, michael_to_mo, mo_thanks = LOCKED_HANDOFF_LINES
     _check(
@@ -720,7 +726,7 @@ def test_handoff_flow() -> None:
             "That's sports for this morning. Michael G has the entertainment report.",
             "Thanks, Dave. Michael G here with the entertainment report.",
             "DJ Mo, back to you.",
-            "Thanks, Michael G. Weekdays at 7:15 on Mo's Place Radio.",
+            "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
         ),
     )
     dave_at = script.index(dave_line)
@@ -1047,7 +1053,8 @@ def test_news_rules_upgrade() -> None:
     _check("rules say he does not read his biography", "does not read his biography" in rules)
     _check("rules lock the handoff", "does not thank mo at the start" in rules and "dave is the person he thanks" in rules)
     _check("rules turn the show over to mo", "turns it over to mo" in rules)
-    _check("rules let mo mention 7:15", "weekdays at 7:15" in rules)
+    _check("rules name midday bailey handoff", "bailey" in rules and "mo, johnny j, bailey" in rules)
+    _check("rules let mo mention 7:15 and 12:15", "weekdays at 7:15 and 12:15" in rules)
     _check("rules name the first airing", ENTERTAINMENT_FIRST_AIRING.lower() in rules)
     _check("rules say a death leads", "a death, obituary, or mourning item leads" in rules)
     _check("rules require two independent sources", "two independent" in rules)
@@ -1282,11 +1289,119 @@ def test_config_files() -> None:
     _check("personality stores the UNC profile", MICHAEL_G_VOICEBOX_PROFILE in michael["voice_description"])
     mo = next(person for person in personalities["personalities"] if person["id"] == "mo-main")
     _check("Mo thanks Michael G in the personality note", "thank Michael G" in mo["personality_description"])
-    _check("mo may mention the weekday airtime", "weekdays at 7:15" in mo["personality_description"].lower())
+    _check(
+        "mo may mention the weekday airtimes",
+        "weekdays at 7:15 and 12:15" in mo["personality_description"].lower(),
+    )
+    _check(
+        "mo personality names midday flow",
+        "mo, johnny j, bailey, michael g, then mo" in mo["personality_description"].lower(),
+    )
     news_desk = next(voice for voice in voices["voices"] if voice["id"] == "vb-news-desk")
     _check("news desk hands to Michael G", "hands to Michael G" in news_desk["personality_prompt"])
+    _check("news desk names midday flow", "mo, johnny j, bailey" in news_desk["personality_prompt"].lower())
     mo_voice = next(voice for voice in voices["voices"] if voice["id"] == "vb-mo-primary")
     _check("Mo voice thanks Michael G", "thank Michael G" in mo_voice["personality_prompt"])
+
+
+def test_midday_handoff_flow() -> None:
+    stories = [
+        _story(
+            "Star announces a November tour",
+            summary="Tickets go on sale Friday for a November tour.",
+            source_id="tmz",
+            kind="celebrity",
+        ),
+        _story(
+            "Ocean Light opens June 12",
+            summary=MOVIE_SUMMARY,
+            source_id="variety",
+            kind="film_news",
+        ),
+    ]
+    flow = build_midday_flow(stories)
+    script = flow["script"]
+    _check("midday slot tag", flow["slot"] == "midday")
+    _check(
+        "midday order is Mo, Johnny, Bailey, Michael, Mo",
+        flow["order"] == ["mo_open", "johnny_j", "bailey", "michael_g_entertainment", "mo_thanks"],
+    )
+    _check("michael thanks Bailey at midday", flow["michael_g_script"].startswith("Thanks, Bailey."))
+    _check("michael does not thank Dave at midday", "Thanks, Dave." not in flow["michael_g_script"])
+    _check("bailey hands to michael", "Michael G has the entertainment report." in flow["bailey_close"])
+    _check("mo thanks after midday report", flow["mo_thanks"] == MO_THANKS)
+    _check(
+        "locked midday lines",
+        LOCKED_MIDDAY_HANDOFF_LINES
+        == (
+            "This is Mo's Place Radio midday news.",
+            "Johnny J with more of today's news.",
+            "Bailey here with the latest. Michael G has the entertainment report.",
+            "Thanks, Bailey. Michael G here with the entertainment report.",
+            "DJ Mo, back to you.",
+            "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
+        ),
+    )
+    mo_open_at = script.index("[DJ Mo]")
+    johnny_at = script.index("[Johnny J]")
+    bailey_at = script.index("[Bailey]")
+    michael_at = script.index("[Michael G]")
+    mo_close_at = script.rindex("[DJ Mo]")
+    _check(
+        "midday script order",
+        mo_open_at < johnny_at < bailey_at < michael_at < mo_close_at,
+    )
+    _check("midday prompt thanks Bailey", "thank bailey" in flow["michael_g_prompt"].lower())
+    _check("midday open constant", MICHAEL_MIDDAY_STRAIGHT_OPEN in flow["michael_g_script"])
+
+    death = _story(
+        "Beloved actor dies at 88",
+        summary="The actor died Thursday.",
+        source_id="tmz",
+        kind="celebrity",
+    )
+    death_script = michael_g_script([death], thanks_to="Bailey")
+    _check(
+        "midday death open thanks Bailey straight",
+        death_script.splitlines()[0] == MICHAEL_MIDDAY_STRAIGHT_OPEN,
+    )
+    _check("midday death drops the beat", MICHAEL_BEAT not in death_script)
+    death_flow = build_midday_flow(
+        [
+            death,
+            _story(
+                "Beloved actor dead at 88",
+                summary="The actor died Thursday.",
+                source_id="google_news",
+                source_name="AP News",
+                outlet="AP News",
+                published=NOW,
+            ),
+        ]
+    )
+    _check(
+        "midday death package open is straight",
+        death_flow["michael_g_script"].splitlines()[0] == MICHAEL_MIDDAY_STRAIGHT_OPEN,
+    )
+    _check("midday death package drops the beat", MICHAEL_BEAT not in death_flow["michael_g_script"])
+
+    bundle = normalize_bundle({})
+    midday_preview = "\n".join(build_dev_script_lines(bundle, slot_type="midday"))
+    _check("midday preview greets afternoon", "Good afternoon" in midday_preview)
+    _check("midday preview has Johnny", "[Johnny J]" in midday_preview)
+    _check("midday preview has Bailey", "[Bailey]" in midday_preview)
+    _check("midday preview thanks Bailey", "Thanks, Bailey." in midday_preview)
+    _check("midday slot default is 12:15", any(
+        slot.get("slot_type") == "midday" and slot.get("time") == "12:15"
+        for slot in bundle["schedule"]["slots"]
+    ))
+    personalities = bundle["personalities"]["personalities"]
+    names = [person["name"] for person in personalities]
+    _check("bailey is on the news desk", "Bailey" in names)
+    _check(
+        "desk order keeps Johnny before Bailey before Michael",
+        names.index("Johnny J") < names.index("Bailey") < names.index("Michael G"),
+    )
 
 
 def test_discovery_ranking() -> None:
@@ -1695,6 +1810,7 @@ def main() -> None:
     test_filters()
     test_selection_and_feeds()
     test_handoff_flow()
+    test_midday_handoff_flow()
     test_news_rules_upgrade()
     test_config_files()
     test_discovery_ranking()
