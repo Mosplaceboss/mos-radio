@@ -26,6 +26,7 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
     "Today's Countdown": "Music History",
     "Final Half Hour": "Time of Day",
     "Listener Memory": "Listener Memory",
+    "Band Announcements": "Band Announcements",
     "Format Change": "Format Change",
     "Handoff": "DJ Handoff",
     "Show Close": "Show Close",
@@ -84,6 +85,12 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Ask listeners where they were when they first heard this music.",
         "Create a nostalgic moment before the next song.",
         "Connect the song to summer, school, travel, family, or friends.",
+    ],
+    "Band Announcements": [
+        "As Reverend JJ — never Mo — share tonight's local band listings from BandsTonight only.",
+        "Read tonight's shows, venues, and times in Reverend JJ's warm local-music voice.",
+        "Highlight tonight's live music from the supplied bands file without inventing events.",
+        "Give a short local band rundown as Reverend JJ, then return to the music.",
     ],
     "Time of Day": [
         "Acknowledge the current time of day and match the mood.",

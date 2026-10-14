@@ -1,0 +1,38 @@
+Repeat,Day,Date,Event,Place,Town,Time,On
+Weekly,Monday,,Music Bingo with George,The Nest,"Plaistow, New Hampshire",7:00 PM,Yes
+Weekly,Wednesday,,Music Bingo with George,Casa Blanca Mexican Cantina,"Andover, Massachusetts",7:00 PM,Yes
+Weekly,Thursday,,Karaoke with GForce Karaoke,Lynn's 102 Tavern,"Hudson, New Hampshire",8:00 PM,Yes
+Weekly,Friday,,Karaoke with GForce Karaoke,Lynn's 102 Tavern,"Hudson, New Hampshire",8:00 PM,Yes
+Date,,2026-10-15,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-10-16,Todd Trusty,Michael's Flatbread,"Salem, New Hampshire",6:30 PM,Yes
+Date,,2026-10-17,Todd Trusty,McIntyre Ski Area,"Manchester, New Hampshire",1:00 PM,Yes
+Date,,2026-10-22,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-10-20,G&G Music Bingo,Kelari,"Pelham, New Hampshire",7:00 PM,Yes
+Date,,2026-10-22,Americanna Open Mike with Reverend JJ,Markoh's on Main,"Ayer, Massachusetts",6:00 PM,Yes
+Date,,2026-10-23,Mike Gacek,Primo Pizza and Pub,Drakeit,7:00 PM,Yes
+Date,,2026-10-29,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-10-29,Music Bingo with Todd Trusty,Michael's Flatbread,"Salem, New Hampshire",6:30 AM,Yes
+Date,,2026-11-05,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-11-07,Mike Gacek,American Legion,"North Chelmsford, Massachusetts",7:00 PM,Yes
+Date,,2026-11-12,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-11-14,Mike Gacek,3 Amigos Mexican Restaurant,"Tewksbury, Massachusetts",7:00 PM,Yes
+Date,,2026-10-17,Reverend JJ & the Casual Sinners,Fall Busker Festival,"66 Middle Street, Lowell, Massachusetts",2:00 PM,Yes
+Date,,2026-11-18,Mike Gacek,Tremezzo Ristorante,"Wilmington, Massachusetts",6:00 PM,Yes
+Date,,2026-11-19,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-11-20,Todd Trusty,Michael's Flatbread,"Salem, New Hampshire",6:30 PM,Yes
+Date,,2026-11-21,Reverend JJ & the Casual Sinners,Warp & Weft,"Lowell, Massachusetts",12:00 PM,Yes
+Date,,2026-11-26,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-11-27,Mike Gacek,Primo Pizza and Pub,Drakeit,7:00 PM,Yes
+Date,,2026-12-03,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-12-04,Mike Gacek,Primo Pizza and Pub,Drakeit,7:00 PM,Yes
+Date,,2026-12-10,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-12-11,Reverend JJ & the Casual Sinners,Medford Brewing Company,"Medford, Massachusetts",5:00 PM,Yes
+Date,,2026-12-17,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-12-18,Todd Trusty,Michael's Flatbread,"Salem, New Hampshire",6:30 PM,Yes
+Date,,2026-12-24,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Date,,2026-12-31,Mike Gacek,Garrisons,"Billahrica, Massachusetts",7:00 PM,Yes
+Note,,,Weekly rows air every Massachusettstching weekday. Put the day in Day and leave Date blank.,,,,
+Note,,,Date rows air only on that date. Type the date as YYYY-MM-DD and leave Day blank.,,,,
+Note,,,On = No skips that row. A blank Event is skipped.,,,,
+Note,,,A weekday with no Yes row produces no cart.,,,,
+Note,,,"Friday, Saturday, and Sunday Bea band rundowns are separate. This sheet does not replace those wav files.",,,,
