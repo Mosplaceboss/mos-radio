@@ -192,7 +192,105 @@ def main() -> None:
         all("Do not joke." not in payload for payload in (mixed_payloads[0], mixed_payloads[2], mixed_payloads[3])),
     )
 
+    _verify_edit_form()
+
     print("verify_fun_days: OK")
+
+
+def _verify_edit_form() -> None:
+    """Category is a real Edit Fun Day choice, and selecting a row shows it."""
+    studio = Path(__file__).resolve().parents[2] / "Studio"
+    sys.path.insert(0, str(studio))
+    from app.core.fun_day_editor import (  # noqa: WPS433
+        CATEGORY_CHOICES,
+        FORM_FIELDS,
+        category_field,
+        form_values,
+        record_from_form,
+    )
+
+    field = category_field()
+    _check("Edit Fun Day has a Category row", field.label == "Category")
+    _check("Category choices are Fun Day and Serious Day", field.choices == CATEGORY_CHOICES == ("Fun Day", "Serious Day"))
+    _check("Category is a dropdown on the form", field.kind == "choice")
+    labels = [item.label for item in FORM_FIELDS]
+    _check("Category sits on the Edit Fun Day form", "Category" in labels and "Title (e.g. Breast Cancer Awareness Month)" in labels)
+    _check("Category is with the other form rows", labels.index("Category") < labels.index("Enabled"))
+
+    awareness = {"title": "Breast Cancer Awareness Month", "enabled": True, "date": "October", "when": "Whole month"}
+    shown = form_values(awareness)
+    _check("selecting Breast Cancer with no category shows Serious Day", shown["category"] == "Serious Day")
+    dessert = form_values({"title": "National Dessert Day"})
+    _check("selecting a normal day shows Fun Day", dessert["category"] == "Fun Day")
+
+    saved = record_from_form(shown, awareness)
+    _check("saving keeps Serious Day", saved["category"] == "Serious Day")
+    shown["category"] = "Fun Day"
+    overridden = record_from_form(shown, awareness)
+    _check("saving Fun Day on Breast Cancer persists Fun Day", overridden["category"] == "Fun Day")
+    reloaded = form_values(overridden)
+    _check("reselecting the saved row still shows Fun Day", reloaded["category"] == "Fun Day")
+
+    page_source = (studio / "app" / "pages" / "fun_days.py").read_text(encoding="utf-8")
+    _check("the page draws Edit Fun Day", 'text="Edit Fun Day"' in page_source)
+    _check("the page builds a Category combobox from the form rows", "self._category_combo = widget" in page_source)
+    _check("the page labels rows from the shared form", "field.label" in page_source and "FORM_FIELDS" in page_source)
+    _verify_category_widget()
+
+
+def _verify_category_widget() -> None:
+    """Open Edit Fun Day and confirm the Category dropdown is on that panel."""
+    import tempfile
+
+    import ttkbootstrap as ttk
+
+    from app.core.config_manager import ConfigManager
+    import app.core.config_manager as config_manager
+    import app.core.paths as paths
+    from app.pages.fun_days import FunDaysPage
+    from app.ui.theme import StudioTheme
+
+    tmp = Path(tempfile.mkdtemp())
+
+    def config_dir() -> Path:
+        tmp.mkdir(parents=True, exist_ok=True)
+        return tmp
+
+    paths.config_dir = config_dir
+    config_manager.config_dir = config_dir
+
+    root = ttk.Window(themename="darkly")
+    root.withdraw()
+    try:
+        StudioTheme.apply_custom_styles(ttk.Style())
+        page = FunDaysPage(root, ConfigManager(), lambda _message: None)
+        label = page._labels["category"]
+        combo = page._category_combo
+        _check("Category label is on Edit Fun Day", str(label.cget("text")) == "Category")
+        _check("Category widget is a combobox", combo.winfo_class() == "TCombobox")
+        _check("combobox lists Fun Day and Serious Day", tuple(combo.cget("values")) == ("Fun Day", "Serious Day"))
+        _check("Category control is inside the Edit Fun Day panel", str(combo.winfo_parent()) == str(page._edit_form))
+
+        page.replace_days(
+            [
+                {
+                    "title": "Breast Cancer Awareness Month",
+                    "enabled": True,
+                    "date": "October",
+                    "when": "Whole month",
+                    "note": "a time to support those fighting",
+                }
+            ]
+        )
+        _check("selected Breast Cancer row shows Serious Day", combo.get() == "Serious Day")
+        page._vars["category"].set("Fun Day")
+        page._save_selected()
+        saved = page.config_manager.load("fun_days")
+        _check("Save writes the category", saved["days"][0]["category"] == "Fun Day")
+        page._load()
+        _check("opening the saved row shows Fun Day", combo.get() == "Fun Day")
+    finally:
+        root.destroy()
 
 
 if __name__ == "__main__":
