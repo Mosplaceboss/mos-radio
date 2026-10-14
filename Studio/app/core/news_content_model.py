@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -12,20 +13,47 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from app.core.entertainment_report import (
+    DAVE_SPORTS_CLOSE,
+    DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    ENTERTAINMENT_PERSONALITY_CLAUSE,
+    ENTERTAINMENT_STORY_COUNT,
+    MO_THANKS,
+    apply_entertainment_script_rules,
+    build_morning_flow,
+    collect_entertainment_report,
+    entertainment_feed_urls,
+    ensure_michael_g_personality,
+    morning_preview_lines,
+)
 from app.core.news_content_storage import (
+    load_json_file,
     load_news_content_bundle,
     news_dev_output_dir,
     news_reports_dir,
     rss_sources_path,
+    save_json_file,
     save_news_content_bundle,
+    script_rules_path,
 )
+from app.core.sports_report import (
+    DEFAULT_SPORTS_GAME_RULES,
+    build_dave_sports_script,
+    ensure_sports_game_rules,
+    ensure_sports_personality_rules,
+    format_sports_story,
+)
+
 from app.core.platform_manager import platform_path
 from app.core.schedule_model import DAYS
+
+logger = logging.getLogger("moplace.studio.news")
 
 DEFAULT_PERSONALITIES = (
     ("dj_mo", "DJ Mo", "anchor"),
     ("johnny_j", "Johnny J", "anchor"),
     ("mos_place_dave", "Mo's Place Dave", "anchor"),
+    ("michael_g", "Michael G", "entertainment"),
     ("bonnie", "Bonnie", "reporter"),
     ("flea", "Flea", "reporter"),
     ("future", "Future Personalities", "anchor"),
@@ -52,7 +80,7 @@ DEFAULT_SCHEDULE_SLOTS = (
     ("afternoon", "Afternoon", "16:30"),
 )
 
-NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "traffic", "backup")
+NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "entertainment", "traffic", "backup")
 
 SPEAKING_STYLES = ("conversational", "authoritative", "upbeat", "calm", "urgent")
 
@@ -112,7 +140,15 @@ def default_script_rules() -> dict[str, Any]:
         "closing": "For Mo's Place Radio, I'm {personality}.",
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": ensure_sports_personality_rules(
+            "Lead anchor opens every newscast. " + ENTERTAINMENT_PERSONALITY_CLAUSE
+        ),
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
+        "sports_close": DAVE_SPORTS_CLOSE,
+        "entertainment_report_rules": DEFAULT_ENTERTAINMENT_REPORT_RULES,
+        "entertainment_story_count": ENTERTAINMENT_STORY_COUNT,
+        "entertainment_feeds": entertainment_feed_urls(),
+        "mo_entertainment_thanks": MO_THANKS,
         "stale_hours_warning": 12,
     }
 
@@ -140,7 +176,7 @@ def normalize_personalities(data: dict[str, Any] | None) -> dict[str, Any]:
         record.setdefault("enabled", True)
         record.setdefault("notes", "")
         normalized.append(record)
-    return {"personalities": normalized}
+    return {"personalities": ensure_michael_g_personality(normalized)}
 
 
 def normalize_categories(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -218,7 +254,11 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
-    return merged
+    merged["news_first_personality_rules"] = ensure_sports_personality_rules(
+        str(merged.get("news_first_personality_rules", ""))
+    )
+    merged["sports_game_rules"] = ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
+    return apply_entertainment_script_rules(merged)
 
 
 def normalize_voice_settings(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -313,6 +353,7 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        _upgrade_saved_morning_rules(config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
@@ -323,6 +364,26 @@ def ensure_news_content_data(config_manager=None) -> None:
     if news_config.get("last_successful_run"):
         bundle["overview"]["last_successful_run"] = news_config["last_successful_run"]
     save_news_content_bundle(bundle, config_manager)
+
+
+def _upgrade_saved_morning_rules(config_manager=None) -> None:
+    """Persist Dave's sports silence rules and the Michael G handoff on an existing desk."""
+    path = script_rules_path(config_manager)
+    raw = load_json_file(path, {})
+    if not raw:
+        return
+    upgraded = normalize_script_rules(raw)
+    watch_keys = (
+        "sports_game_rules",
+        "news_first_personality_rules",
+        "sports_close",
+        "mo_entertainment_thanks",
+        "entertainment_report_rules",
+        "entertainment_feeds",
+    )
+    if all(upgraded.get(key) == raw.get(key) for key in watch_keys):
+        return
+    save_json_file(path, upgraded)
 
 
 def test_rss_feed(url: str, timeout: float = 8.0) -> tuple[str, str]:
@@ -379,7 +440,12 @@ def list_output_files(config_manager=None) -> list[str]:
     return paths
 
 
-def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> str:
+def build_dev_script_lines(
+    bundle: dict[str, Any],
+    sports_lines: list[str] | None = None,
+    entertainment_lines: list[str] | None = None,
+) -> list[str]:
+    """Weekday morning newscast: existing copy, then Dave, then Michael G, then Mo."""
     personalities = [p for p in bundle["personalities"]["personalities"] if p.get("enabled")]
     anchor = personalities[0]["name"] if personalities else "Anchor"
     categories = [c["name"] for c in bundle["categories"]["categories"] if c.get("enabled")][: bundle["script_rules"]["maximum_stories"]]
@@ -390,20 +456,93 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
         "",
     ]
     for index, category in enumerate(categories, start=1):
-        lines.append(f"Story {index} — {category}: Sample headline for development preview.")
+        if category == "Sports" and sports_lines is not None:
+            spoken = format_sports_story(sports_lines)
+            if not spoken:
+                continue
+            lines.append(f"Story {index} — Sports: {spoken}")
+        elif category == "Entertainment" and entertainment_lines is not None:
+            # Entertainment airs in the Michael G handoff after sports, not as a sample story.
+            continue
+        else:
+            lines.append(f"Story {index} — {category}: Sample headline for development preview.")
         if bundle["script_rules"].get("pause_sound_between_stories"):
             lines.append(f"[pause: {bundle['script_rules']['pause_sound_between_stories']}]")
         lines.append("")
+    if bundle["script_rules"].get("personality_handoffs", True):
+        if entertainment_lines is not None:
+            lines.extend(entertainment_lines)
+            if entertainment_lines and entertainment_lines[-1] != "":
+                lines.append("")
+        else:
+            lines.extend(morning_preview_lines(bundle["script_rules"]))
     closing = bundle["script_rules"].get("closing", "").replace("{personality}", anchor)
     lines.append(closing)
     lines.append("")
     lines.append("— Development preview only. Not published to live News.")
-    content = "\n".join(lines)
+    return lines
+
+
+def generate_dev_script_preview(
+    bundle: dict[str, Any],
+    config_manager=None,
+    sports_lines: list[str] | None = None,
+    entertainment_lines: list[str] | None = None,
+) -> str:
+    content = "\n".join(build_dev_script_lines(bundle, sports_lines, entertainment_lines))
     output_dir = news_dev_output_dir(config_manager)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
     script_path.write_text(content, encoding="utf-8")
     return str(script_path)
+
+
+def gather_morning_sports_and_entertainment(*, fetch: bool = True) -> tuple[list[str], list[str]]:
+    """Dave's sports lines and the Michael G handoff. A down feed is logged and skipped."""
+    sports_lines: list[str] = []
+    try:
+        sports_lines = build_dave_sports_script(fetch=fetch)
+    except Exception:
+        logger.exception("Morning sports skipped; the rest of the bulletin continues")
+        sports_lines = []
+    if not sports_lines:
+        logger.info("Morning sports has nothing to read")
+
+    entertainment_lines: list[str] = []
+    try:
+        report = collect_entertainment_report(fetch=fetch)
+        audit = ""
+        audit_payload = report.get("audit") if isinstance(report, dict) else None
+        if isinstance(audit_payload, dict):
+            audit = str(audit_payload.get("text") or "")
+        if audit:
+            logger.info("Entertainment story selection audit:\n%s", audit)
+        flow = build_morning_flow(report.get("stories") or [])
+        entertainment_lines = str(flow.get("script") or "").splitlines()
+    except Exception:
+        logger.exception("Morning entertainment skipped; the rest of the bulletin continues")
+        try:
+            entertainment_lines = str(build_morning_flow([]).get("script") or "").splitlines()
+        except Exception:
+            logger.exception("Morning entertainment handoff could not be built")
+            entertainment_lines = []
+    return sports_lines, entertainment_lines
+
+
+def build_morning_newscast(bundle: dict[str, Any], config_manager=None, *, fetch: bool = True) -> str:
+    """Build the weekday morning bulletin the station generates for 7:15.
+
+    Order is the existing news copy, Dave's sports, Dave handing to Michael G,
+    Michael's entertainment report, then Mo's thanks. Feed failures are logged
+    and the rest of the bulletin is still written.
+    """
+    sports_lines, entertainment_lines = gather_morning_sports_and_entertainment(fetch=fetch)
+    return generate_dev_script_preview(
+        bundle,
+        config_manager,
+        sports_lines=sports_lines,
+        entertainment_lines=entertainment_lines,
+    )
 
 
 def refresh_overview_from_bundle(bundle: dict[str, Any], config_manager=None) -> dict[str, Any]:

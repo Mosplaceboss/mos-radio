@@ -1,3 +1,13 @@
 @echo off
-REM Copy to engine.local.cmd and point at your real News runner script.
+REM Office PC file that must be updated before 12:15 changes:
+REM   D:\MosPlaceRadioPlatform\Automation\News\engine.local.cmd
+REM
+REM Speak this script, which build_bulletin.py writes:
+REM   D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt
+REM
+REM That file is the new newscast: existing news copy, Dave's sports,
+REM Dave handing to Michael G, Michael G's entertainment report,
+REM Michael handing to DJ Mo, and Mo thanking Michael G.
+REM A 12:15 bulletin says 12:15.
+REM Do not generate the old newscast.
 exit /b 0

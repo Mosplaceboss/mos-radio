@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from copy import deepcopy
 from datetime import datetime
@@ -17,11 +18,13 @@ from app.core.news_content_model import (
     NEWS_ROLES,
     REPORT_OPTIONS,
     SPEAKING_STYLES,
+    build_morning_newscast,
     build_overview_snapshot,
     build_report_lines,
     generate_dev_script_preview,
     list_output_files,
     normalize_bundle,
+    normalize_script_rules,
     refresh_overview_from_bundle,
     test_rss_feed,
     validate_news_content,
@@ -31,6 +34,8 @@ from app.core.platform_manager import open_folder, platform_path
 from app.core.schedule_model import DAYS
 from app.core.voice_model import normalize_voice_library_data
 from app.pages.base_page import BasePage
+
+logger = logging.getLogger("moplace.studio.news")
 
 DAY_LABELS = {day: day.title() for day in DAYS}
 
@@ -701,6 +706,10 @@ class NewsContentManagerPage(BasePage):
             ("closing", "Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
+            ("sports_game_rules", "Sports Game Rules"),
+            ("sports_close", "Dave Sports Close"),
+            ("entertainment_report_rules", "Entertainment Report Rules"),
+            ("mo_entertainment_thanks", "Mo Thanks Michael G"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:
@@ -738,6 +747,10 @@ class NewsContentManagerPage(BasePage):
                 rules[key] = value
         rules["story_order"] = [part.strip() for part in self._story_order.get().split(",") if part.strip()]
         rules["personality_handoffs"] = self._handoffs.get()
+        upgraded = normalize_script_rules(rules)
+        rules.clear()
+        rules.update(upgraded)
+        self._refresh_script_rules()
         self.set_status("Script rules updated")
 
     def _build_voice_tab(self) -> None:
@@ -855,11 +868,28 @@ class NewsContentManagerPage(BasePage):
         self._set_scroll_text(self._output_list_text, "\n".join(files) if files else "No output files found.")
 
     def _generate_dev_script(self) -> None:
-        path = generate_dev_script_preview(self._bundle, self.config_manager)
-        content = Path(path).read_text(encoding="utf-8")
-        self._set_scroll_text(self._script_preview_text, content)
-        self._refresh_output()
-        self.set_status(f"Development script saved: {path}")
+        """Weekday morning bulletin: news copy, Dave sports, Michael G, then Mo."""
+        self.set_status("Building the morning bulletin…")
+        bundle = self._bundle
+
+        def work() -> str:
+            return build_morning_newscast(bundle, self.config_manager, fetch=True)
+
+        def complete(path: str) -> None:
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            self.set_status(f"Morning bulletin saved: {path}")
+
+        def failed(err: Exception) -> None:
+            path = generate_dev_script_preview(self._bundle, self.config_manager, sports_lines=[])
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            self.set_status(f"Morning bulletin saved: {path}. Sports and entertainment feeds were skipped.")
+            logger.exception("Morning bulletin feeds failed: %s", err)
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _open_output_folder(self) -> None:
         try:
