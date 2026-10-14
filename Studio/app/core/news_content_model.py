@@ -12,6 +12,17 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from app.core.entertainment_report import (
+    DAVE_SPORTS_CLOSE,
+    DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    ENTERTAINMENT_PERSONALITY_CLAUSE,
+    ENTERTAINMENT_STORY_COUNT,
+    MO_THANKS,
+    apply_entertainment_script_rules,
+    entertainment_feed_urls,
+    ensure_michael_g_personality,
+    morning_preview_lines,
+)
 from app.core.news_content_storage import (
     load_news_content_bundle,
     news_dev_output_dir,
@@ -26,6 +37,7 @@ DEFAULT_PERSONALITIES = (
     ("dj_mo", "DJ Mo", "anchor"),
     ("johnny_j", "Johnny J", "anchor"),
     ("mos_place_dave", "Mo's Place Dave", "anchor"),
+    ("michael_g", "Michael G", "entertainment"),
     ("bonnie", "Bonnie", "reporter"),
     ("flea", "Flea", "reporter"),
     ("future", "Future Personalities", "anchor"),
@@ -52,7 +64,7 @@ DEFAULT_SCHEDULE_SLOTS = (
     ("afternoon", "Afternoon", "16:30"),
 )
 
-NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "traffic", "backup")
+NEWS_ROLES = ("anchor", "reporter", "weather", "sports", "entertainment", "traffic", "backup")
 
 SPEAKING_STYLES = ("conversational", "authoritative", "upbeat", "calm", "urgent")
 
@@ -112,7 +124,14 @@ def default_script_rules() -> dict[str, Any]:
         "closing": "For Mo's Place Radio, I'm {personality}.",
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": (
+            "Lead anchor opens every newscast. " + ENTERTAINMENT_PERSONALITY_CLAUSE
+        ),
+        "sports_close": DAVE_SPORTS_CLOSE,
+        "entertainment_report_rules": DEFAULT_ENTERTAINMENT_REPORT_RULES,
+        "entertainment_story_count": ENTERTAINMENT_STORY_COUNT,
+        "entertainment_feeds": entertainment_feed_urls(),
+        "mo_entertainment_thanks": MO_THANKS,
         "stale_hours_warning": 12,
     }
 
@@ -140,7 +159,7 @@ def normalize_personalities(data: dict[str, Any] | None) -> dict[str, Any]:
         record.setdefault("enabled", True)
         record.setdefault("notes", "")
         normalized.append(record)
-    return {"personalities": normalized}
+    return {"personalities": ensure_michael_g_personality(normalized)}
 
 
 def normalize_categories(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -218,7 +237,7 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
-    return merged
+    return apply_entertainment_script_rules(merged)
 
 
 def normalize_voice_settings(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -379,7 +398,7 @@ def list_output_files(config_manager=None) -> list[str]:
     return paths
 
 
-def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> str:
+def build_dev_script_lines(bundle: dict[str, Any]) -> list[str]:
     personalities = [p for p in bundle["personalities"]["personalities"] if p.get("enabled")]
     anchor = personalities[0]["name"] if personalities else "Anchor"
     categories = [c["name"] for c in bundle["categories"]["categories"] if c.get("enabled")][: bundle["script_rules"]["maximum_stories"]]
@@ -394,11 +413,17 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
         if bundle["script_rules"].get("pause_sound_between_stories"):
             lines.append(f"[pause: {bundle['script_rules']['pause_sound_between_stories']}]")
         lines.append("")
+    if bundle["script_rules"].get("personality_handoffs", True):
+        lines.extend(morning_preview_lines(bundle["script_rules"]))
     closing = bundle["script_rules"].get("closing", "").replace("{personality}", anchor)
     lines.append(closing)
     lines.append("")
     lines.append("— Development preview only. Not published to live News.")
-    content = "\n".join(lines)
+    return lines
+
+
+def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> str:
+    content = "\n".join(build_dev_script_lines(bundle))
     output_dir = news_dev_output_dir(config_manager)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
