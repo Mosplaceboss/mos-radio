@@ -1,6 +1,10 @@
 """Factual On This Day in the 1970s source for DJ Casey LiveDJ breaks.
 
-Priority:
+Vintage Seventies is created on Saturday and Sunday only. A Monday–Friday
+refresh returns without reading operator files, calling Wikimedia, or
+writing the cache, so the last weekend file stays in place.
+
+Priority on Saturday and Sunday:
 1. Operator files in D:\\MPR\\On this Day 1970's
 2. Wikimedia On This Day feed, filtered to years 1970-1979 and cached
 
@@ -31,6 +35,10 @@ USER_AGENT = "MosPlaceRadioStudio/1.0 (local radio production; Mo's Place Radio)
 MAX_FACTS = 5
 YEAR_MIN = 1970
 YEAR_MAX = 1979
+SEGMENT_NAME = "Vintage Seventies"
+SCHEDULE_LABEL = "Saturday and Sunday"
+# date.weekday(): Saturday is 5, Sunday is 6.
+_BUILD_WEEKDAYS = frozenset({5, 6})
 
 _MONTH_NAMES = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
@@ -282,16 +290,43 @@ def _select_facts(payload: dict[str, Any]) -> list[str]:
     return [line for _, line in ranked[:MAX_FACTS]]
 
 
+def calendar_day(when: date | datetime | None = None) -> date:
+    if isinstance(when, datetime):
+        return when.date()
+    if isinstance(when, date):
+        return when
+    return date.today()
+
+
+def seventies_segment_is_scheduled(when: date | datetime | None = None) -> bool:
+    """True when Vintage Seventies should be created for this calendar day."""
+    return calendar_day(when).weekday() in _BUILD_WEEKDAYS
+
+
+def _not_scheduled(day: date) -> dict[str, Any]:
+    """Weekday skip. Leaves the output file untouched."""
+    return {
+        "date": day.isoformat(),
+        "month": day.month,
+        "day": day.day,
+        "updated": "",
+        "source": "",
+        "year_range": f"{YEAR_MIN}-{YEAR_MAX}",
+        "facts": [],
+        "error": "",
+        "skipped": True,
+        "segment": SEGMENT_NAME,
+        "schedule": SCHEDULE_LABEL,
+    }
+
+
 def refresh_seventies_on_this_day(
     *, when: date | datetime | None = None, force: bool = False
 ) -> dict[str, Any]:
-    """Refresh the daily cache. Operator text files win over Wikipedia."""
-    if isinstance(when, datetime):
-        day = when.date()
-    elif isinstance(when, date):
-        day = when
-    else:
-        day = date.today()
+    """Refresh the Saturday/Sunday cache. Operator text files win over Wikipedia."""
+    day = calendar_day(when)
+    if not seventies_segment_is_scheduled(day):
+        return _not_scheduled(day)
 
     day_key = day.isoformat()
     text_facts, text_source = _load_facts_from_operator(day)
@@ -361,7 +396,10 @@ def wants_seventies_on_this_day(*, event_type: str = "", mission: str = "") -> b
         "on this day in the 1970s",
         "70s on this day",
         "1970s on this day",
+        "vintage seventies",
     }:
+        return True
+    if "vintage seventies" in mission_l:
         return True
     if "on this day" in mission_l and ("70" in mission_l or "1970" in mission_l):
         return True
