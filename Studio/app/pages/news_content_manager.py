@@ -13,6 +13,7 @@ from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledText
 
 from app.core.background_tasks import run_in_background
+from app.core.entertainment_report import apply_entertainment_script_rules
 from app.core.news_content_model import (
     NEWS_ROLES,
     REPORT_OPTIONS,
@@ -701,6 +702,9 @@ class NewsContentManagerPage(BasePage):
             ("closing", "Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
+            ("sports_close", "Dave Sports Close"),
+            ("entertainment_report_rules", "Entertainment Report Rules"),
+            ("mo_entertainment_thanks", "Mo Thanks Michael G"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:
@@ -738,6 +742,8 @@ class NewsContentManagerPage(BasePage):
                 rules[key] = value
         rules["story_order"] = [part.strip() for part in self._story_order.get().split(",") if part.strip()]
         rules["personality_handoffs"] = self._handoffs.get()
+        apply_entertainment_script_rules(rules)
+        self._refresh_script_rules()
         self.set_status("Script rules updated")
 
     def _build_voice_tab(self) -> None:
