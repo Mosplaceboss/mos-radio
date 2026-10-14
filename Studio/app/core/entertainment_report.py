@@ -11,10 +11,11 @@ Runs after Dave's sports in the morning newscast. The handoff is locked:
 On a normal day Michael adds one short conversational beat that sounds like
 him talking, using coffee or classic rock. He does not read his biography.
 A death, obituary, or mourning item leads, and that open stays straight.
-Other stories are new movies when the feeds have them. Each movie is its
-own short paragraph: a hook, the title, the opening day only if supplied,
-the stars only if supplied, and what it is about. Four stories, refreshed
-every morning. The first airing is October 14, 2026 at 7:15.
+Stories are collected, deduped, and ranked before anything is written.
+A confirmed death leads. Major Hollywood and television headlines come
+next, then movies opening within seven days. Streaming, reviews, and box
+office only fill leftover room. Four stories, refreshed every morning.
+The first airing is October 14, 2026 at 7:15.
 
 Spec-script sales, writers labs, agency moves, cast laundry lists, and
 untitled projects with no film title are skipped. There is no reviews feed.
@@ -33,14 +34,18 @@ Print a fail-soft morning handoff (network optional) with:
 from __future__ import annotations
 
 import html
+import logging
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+LOGGER = logging.getLogger("mos.entertainment_report")
 
 MICHAEL_G_NAME = "Michael G"
 MICHAEL_G_NEWS_ID = "michael_g"
@@ -83,6 +88,30 @@ ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
         "url": "https://feeds.feedburner.com/variety/headlines",
     },
 )
+
+# Supplemental search. These are not saved as station feeds. Each query is
+# fetched whole; selection ranks the pool instead of keeping the newest few.
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+ENTERTAINMENT_SEARCH_QUERIES: tuple[str, ...] = (
+    "breaking celebrity news",
+    "actor dies",
+    "actor death",
+    "actor passed away",
+    "actor dead",
+    "actor obituary",
+    "musician dies",
+    "hollywood obituary",
+    "major TV news",
+    "movie opening",
+)
+
+# General items older than a day yield to fresher news. A confirmed death can
+# still lead on the next morning show. An obituary older than this is not
+# breaking. Movie openings can use an older item when the film opens within
+# the next week.
+FRESH_HOURS = 24
+DEATH_BREAKING_HOURS = 72
+OPENING_DAYS = 7
 
 # Retired on purpose. Do not fetch or speak these feeds.
 _RETIRED_FEED_MARKERS = (
@@ -154,6 +183,10 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Skip spec-script sales, writers labs, agency moves, cast laundry lists, and untitled projects with no film title. "
     "If a feed is down or a slot has nothing usable, skip that slot and do not invent gossip, quotes, or extra stories. "
     "Skip graphic crime, sexual content, and birthdays. "
+    "About 350 to 450 words when four stories are supplied, and shorter when fewer qualify. "
+    "Short sentences. No bullet points. "
+    "A death airs only after at least two independent reputable sources, "
+    "and an old obituary is not breaking news. "
     "Do not name the outlets on the air. "
     "Thank Dave, then read the supplied stories, then turn the show over to DJ Mo. "
     "Do not open with thanks to Mo. "
@@ -247,12 +280,14 @@ _UNSAFE_RE = re.compile(
     r"sex(?:\s+tape)?|sext(?:ing|s)?|sexy|nudes?|naked|porn(?:ography|ographic)?|onlyfans|"
     r"xxx|nsfw|orgy|prostitut\w*|escort|"
     r"assault(?:ed|s|ing)?|"
-    r"suicide|overdose|"
     r"dismember\w*|decapitat\w*|gore|gruesome|"
     r"terror(?:ist|ism)?|bombing|hostage|massacre|"
     r"arrested for|charged with|indicted|mugshot"
     r")\b"
 )
+# A cause of death must not erase the announcement. It also must not be
+# read as a graphic aside when the headline is not itself a death.
+_SENSITIVE_CAUSE_RE = re.compile(r"(?i)\b(?:suicide|overdose)\b")
 _STRAIGHT_TO_MO_RE = re.compile(
     r"(?i)("
     r"back to you,?\s+(?:dj\s+)?mo\b"
@@ -276,10 +311,22 @@ class EntertainmentStory:
     kind: str
     published: datetime | None = None
     slot: str = ""
+    updated: datetime | None = None
+    outlet: str = ""
+    confirmed_outlets: tuple[str, ...] = ()
 
 
 def entertainment_feed_urls() -> list[str]:
     return [source["url"] for source in ENTERTAINMENT_SOURCES]
+
+
+def google_news_rss_url(query: str) -> str:
+    """Google News search RSS. Query is escaped; the rest of the URL stays fixed."""
+    return GOOGLE_NEWS_RSS.format(query=quote(str(query or "").strip()))
+
+
+def entertainment_search_urls() -> list[str]:
+    return [google_news_rss_url(query) for query in ENTERTAINMENT_SEARCH_QUERIES]
 
 
 def _source_for_url(url: str) -> dict[str, str] | None:
@@ -332,12 +379,17 @@ def _element_text(node: ET.Element | None) -> str:
 
 
 def _child_text(item: ET.Element, names: tuple[str, ...]) -> str:
-    wanted = {name.lower() for name in names}
+    """First matching child, preferring `names` order over document order."""
+    found: dict[str, str] = {}
     for child in list(item):
-        if _local_name(child.tag) in wanted:
+        name = _local_name(child.tag)
+        if name not in found:
             text = _element_text(child).strip()
             if text:
-                return text
+                found[name] = text
+    for name in names:
+        if name.lower() in found:
+            return found[name.lower()]
     return ""
 
 
@@ -360,7 +412,11 @@ def is_morning_safe(title: str, summary: str = "") -> bool:
     blob = _KILLED_IT_RE.sub(" ", blob)
     if _BIRTHDAY_RE.search(blob):
         return False
-    return _UNSAFE_RE.search(blob) is None
+    if _UNSAFE_RE.search(blob):
+        return False
+    if _SENSITIVE_CAUSE_RE.search(blob) and not _title_reports_death(title_text):
+        return False
+    return True
 
 
 def _dedupe_key(title: str) -> str:
@@ -386,6 +442,7 @@ def parse_feed_xml(xml_text: str, source: dict[str, str]) -> list[EntertainmentS
     else:
         items = [node for node in root.iter() if _local_name(node.tag) == "entry"]
 
+    # Rank the whole document. Do not keep only the newest few items.
     stories: list[EntertainmentStory] = []
     for item in items:
         title = _strip_outlet_prefix(_child_text(item, ("title",)))
@@ -394,9 +451,17 @@ def parse_feed_xml(xml_text: str, source: dict[str, str]) -> list[EntertainmentS
         )
         if not is_morning_safe(title, summary):
             continue
-        published = _parse_datetime(
-            _child_text(item, ("pubDate", "published", "updated", "date"))
-        )
+        # Publication date wins when the feed also has a later update time.
+        # dc:date's local name is "date". updated is only a fallback.
+        published = _parse_datetime(_child_text(item, ("published", "pubdate", "date")))
+        updated = _parse_datetime(_child_text(item, ("updated",)))
+        if published is None:
+            published = updated
+        outlet = _child_text(item, ("source",))
+        source_name = source.get("name", "")
+        if outlet:
+            source_name = _clean_text(outlet) or source_name
+            title = _strip_publisher_suffix(title, source_name)
         if len(summary) > 900:
             summary = summary[:897].rstrip() + "..."
         stories.append(
@@ -405,18 +470,14 @@ def parse_feed_xml(xml_text: str, source: dict[str, str]) -> list[EntertainmentS
                 summary=summary,
                 url=_child_link(item),
                 source_id=source.get("id", ""),
-                source_name=source.get("name", ""),
+                source_name=source_name,
                 kind=source.get("kind", "general"),
                 published=published,
+                updated=updated,
+                outlet=_clean_text(outlet),
             )
         )
     return stories
-
-
-def _freshness_key(story: EntertainmentStory) -> tuple[int, float, str]:
-    if story.published is None:
-        return (1, 0.0, story.title.lower())
-    return (0, -story.published.timestamp(), story.title.lower())
 
 
 def _story_pool(story: EntertainmentStory) -> str | None:
@@ -452,45 +513,123 @@ def _is_unlistenable(story: EntertainmentStory) -> bool:
     return False
 
 
-def _deduped_safe(stories: list[EntertainmentStory]) -> list[EntertainmentStory]:
-    usable: list[EntertainmentStory] = []
-    seen: set[str] = set()
-    for story in stories:
-        if not is_morning_safe(story.title, story.summary):
-            continue
-        key = _dedupe_key(story.title)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        usable.append(story)
-    usable.sort(key=_freshness_key)
-    return usable
-
-
 def _with_slot(story: EntertainmentStory, slot: str) -> EntertainmentStory:
     if story.slot == slot:
         return story
-    return EntertainmentStory(
-        title=story.title,
-        summary=story.summary,
-        url=story.url,
-        source_id=story.source_id,
-        source_name=story.source_name,
-        kind=story.kind,
-        published=story.published,
-        slot=slot,
+    return replace(story, slot=slot)
+
+
+def _strip_publisher_suffix(title: str, publisher: str) -> str:
+    name = _clean_text(publisher).strip(" .")
+    text = _clean_text(title)
+    if not name or not text:
+        return text
+    trimmed = re.sub(
+        r"(?:\s*[-–—|:]\s*|\s+)" + re.escape(name) + r"[.\s]*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
     )
+    return _clean_text(trimmed) or text
+
+
+_FILM_CUE_RE = re.compile(
+    r"(?i)\b(?:movie|film|cinema|screening|director|comedy|horror|drama|sequel|franchise|starring)\b"
+)
+_BREAKING_NEWS_RE = re.compile(
+    r"(?i)\b(?:renews|renewed|orders|greenlights?|finale|canceled|cancelled|"
+    r"strike|network|studio|emmy|oscar)\b"
+)
+_BOX_OFFICE_RE = re.compile(r"(?i)\b(?:box office|ticket sales)\b")
+_STREAMING_RE = re.compile(
+    r"(?i)\b(?:streaming|netflix|hulu|disney\+|prime video|premieres on)\b"
+)
+_OLD_DEATH_MENTION_RE = re.compile(
+    r"(?i)\b(?:weeks|months|years)\s+after\b|\banniversary of (?:his|her|their) death\b"
+)
+_DEATH_ANNOUNCEMENT_RE = re.compile(
+    r"(?i)(?:"
+    r"\bobituar(?:y|ies)\b|"
+    r"\bpass(?:es|ed) away\b|"
+    r"\bpassing of\b|"
+    r"\bdies\b|"
+    r"\bdied\b|"
+    r"\bdead at\b|"
+    r"\bdead\s*:|"
+    r"\bis dead\b|"
+    r"\bfound dead\b|"
+    r"\bpronounced dead\b|"
+    r"\bconfirmed dead\b|"
+    r"\bdeath of\b"
+    r")"
+)
+_RUMOR_RE = re.compile(r"(?i)\b(?:unconfirmed|rumou?rs?)\b")
+_CONFIRMED_WORD_RE = re.compile(r"(?i)\b(?:confirmed|confirmation)\b")
+_SOCIAL_RE = re.compile(
+    r"(?i)\b(?:facebook|instagram|tiktok|reddit|threads)\b|"
+    r"(?:facebook|instagram|tiktok|reddit|threads)\.com|(?:^|\.)x\.com|twitter\.com"
+)
+_NAME_STOP = {
+    "the", "a", "an", "of", "and", "on", "in", "for", "with", "after", "before",
+    "his", "her", "their", "who", "was", "from", "best", "known", "as", "by",
+    "at", "aged", "age",
+}
+_NAME_ROLE = {
+    "actor", "actress", "singer", "rapper", "musician", "star", "costar", "co-star",
+    "legend", "icon", "beloved", "famous", "veteran", "hollywood",
+}
+_REPUTABLE_KEYS = {
+    "abc",
+    "ap",
+    "bbc",
+    "billboard",
+    "cbs",
+    "cnn",
+    "deadline",
+    "empire",
+    "entertainment weekly",
+    "guardian",
+    "hollywood reporter",
+    "indiewire",
+    "los angeles times",
+    "nbc",
+    "new york times",
+    "npr",
+    "page six",
+    "pbs",
+    "people",
+    "reuters",
+    "rolling stone",
+    "the wrap",
+    "tmz",
+    "tvline",
+    "usa today",
+    "variety",
+    "washington post",
+}
+_FAR_FUTURE = datetime(9999, 1, 1, tzinfo=timezone.utc)
+
+
+def _title_reports_death(title: str) -> bool:
+    """A headline that reports a death, not a later tribute or a 'weeks after' item."""
+    text = _KILLED_IT_RE.sub(" ", _clean_text(title))
+    if _OLD_DEATH_MENTION_RE.search(text):
+        return False
+    return _DEATH_ANNOUNCEMENT_RE.search(text) is not None
 
 
 def _is_movie_item(story: EntertainmentStory) -> bool:
     """A new movie the morning report can read as its own short paragraph."""
     if _is_review_item(story) or _is_unlistenable(story):
         return False
-    if is_death_obituary_or_mourning(story):
+    if is_death_obituary_or_mourning(story) or _title_reports_death(story.title):
         return False
-    if _movie_name(story.title):
-        return True
+    name = _movie_name(story.title)
     blob = f"{story.title} {story.summary}"
+    trailer = _TRAILER_NAME_RE.match(_clean_text(story.title)) is not None
+    filmish = _FILM_CUE_RE.search(blob) is not None or _FILM_NEWS_PREFER_RE.search(blob) is not None
+    if name and (trailer or filmish or story.kind in {"film_news", "film"}):
+        return True
     movie_source = story.kind in {"film_news", "film"} or story.source_id in {"variety_film", "variety"}
     return bool(movie_source and _FILM_NEWS_PREFER_RE.search(blob))
 
@@ -512,65 +651,564 @@ def _is_fill_entertainment(story: EntertainmentStory) -> bool:
     }
 
 
+def _as_utc(moment: datetime | None) -> datetime:
+    if moment is None:
+        return datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
+def _age_hours(published: datetime | None, now: datetime) -> float | None:
+    if published is None:
+        return None
+    return (_as_utc(now) - _as_utc(published)).total_seconds() / 3600.0
+
+
+def _recency(story: EntertainmentStory, now: datetime) -> float:
+    age = _age_hours(story.published, now)
+    if age is None:
+        return 10_000.0
+    return age
+
+
+def _source_label(story: EntertainmentStory) -> str:
+    return _clean_text(story.outlet or story.source_name or story.source_id or "unknown")
+
+
+def _outlet_key(story: EntertainmentStory) -> str:
+    """Stable outlet id. Unknown publishers do not count as reputable."""
+    raw = " ".join(
+        part for part in (story.outlet, story.source_name, story.source_id) if part
+    ).lower()
+    if re.search(r"\bassociated press\b|\bap news\b|\bap\b", raw):
+        return "ap"
+    for needle in (
+        "hollywood reporter",
+        "new york times",
+        "washington post",
+        "los angeles times",
+        "usa today",
+        "entertainment weekly",
+        "rolling stone",
+        "the wrap",
+        "page six",
+        "deadline",
+        "variety",
+        "reuters",
+        "guardian",
+        "billboard",
+        "indiewire",
+        "tvline",
+        "people",
+        "empire",
+        "tmz",
+        "cnn",
+        "bbc",
+        "nbc",
+        "abc",
+        "cbs",
+        "npr",
+        "pbs",
+    ):
+        if re.search(rf"\b{re.escape(needle)}\b", raw):
+            return needle
+    if story.source_id in {"deadline", "tmz", "variety"}:
+        return story.source_id
+    return ""
+
+
+def _is_social(story: EntertainmentStory) -> bool:
+    blob = f"{story.url} {story.outlet} {story.source_name}"
+    return _SOCIAL_RE.search(blob) is not None
+
+
+def _is_reputable(story: EntertainmentStory) -> bool:
+    if _is_social(story):
+        return False
+    return _outlet_key(story) in _REPUTABLE_KEYS
+
+
+def _is_rumor(story: EntertainmentStory) -> bool:
+    if _RUMOR_RE.search(story.title) is None:
+        return False
+    return _CONFIRMED_WORD_RE.search(f"{story.title} {story.summary}") is None
+
+
+def _is_preconfirmed(story: EntertainmentStory) -> bool:
+    return len(tuple(story.confirmed_outlets or ())) >= 2 and _title_reports_death(story.title)
+
+
+def _name_key(phrase: str) -> str:
+    """Person key from the clause next to the verb. Initials lose their dots."""
+    clause = re.split(r"[,:;]", phrase or "", maxsplit=1)[0]
+    tokens: list[str] = []
+    for token in re.findall(r"[A-Za-z][A-Za-z'’.-]*", clause):
+        token = token.lower().strip(".'’").replace(".", "")
+        if len(token) <= 1 or token in _NAME_STOP:
+            continue
+        tokens.append(token)
+    proper = [token for token in tokens if token not in _NAME_ROLE]
+    chosen = proper or tokens
+    if len(chosen) >= 2:
+        return " ".join(chosen[-2:])
+    return " ".join(chosen)
+
+
+def _death_cluster_key(story: EntertainmentStory) -> str:
+    title = _clean_text(story.title)
+    title = re.sub(r"\s+[-–—|]\s+[^-–—|]{2,60}$", "", title)
+    title = re.sub(r"[\"“”‘’][^\"“”‘’]{0,80}[\"“”‘’]", " ", title)
+    if re.search(r"(?i)\bmourns?\b", title):
+        tail = re.split(r"(?i)\bmourns?\b", title, maxsplit=1)[-1]
+        tail = re.split(r"(?i)\b(?:following|after|over|amid)\b|:", tail)[0]
+        return _name_key(tail) or _dedupe_key(story.title)
+    match = re.search(
+        r"(?i)^(?:obituary:?\s+)?(.+?)\s+(?:"
+        r"is\s+dead|was\s+found\s+dead|found\s+dead|pronounced\s+dead|confirmed\s+dead|"
+        r"dead|dies|died|has\s+died|passed\s+away|passes\s+away"
+        r")\b",
+        title,
+    )
+    if match:
+        return _name_key(match.group(1)) or _dedupe_key(story.title)
+    match = re.search(r"(?i)\bdeath of\s+(.+?)(?:\s+at\b|$|:)", title)
+    if match:
+        return _name_key(match.group(1)) or _dedupe_key(story.title)
+    return _dedupe_key(story.title)
+
+
+def _event_key(story: EntertainmentStory) -> str:
+    if (
+        _is_preconfirmed(story)
+        or _title_reports_death(story.title)
+        or re.search(r"(?i)\bmourns?\b", story.title)
+        or is_death_obituary_or_mourning(story)
+    ):
+        return "death:" + _death_cluster_key(story)
+    name = _movie_name(story.title)
+    if name:
+        return "movie:" + _dedupe_key(name)
+    return "title:" + _dedupe_key(story.title)
+
+
+def _skip_reason(story: EntertainmentStory) -> str:
+    blob = f"{story.title} {story.summary}"
+    if not is_morning_safe(story.title, story.summary):
+        return "not morning-safe"
+    if _is_review_item(story):
+        return "review item"
+    if _SPEC_RE.search(blob):
+        return "spec-script sale"
+    if _WRITERS_LAB_RE.search(blob):
+        return "writers lab"
+    if _CAST_LIST_RE.search(blob):
+        return "cast list"
+    if _is_unlistenable(story):
+        return "industry item"
+    if _OLD_DEATH_MENTION_RE.search(story.title):
+        return "old death mention, not breaking"
+    return ""
+
+
+def _upcoming_weekday(now: datetime, weekday: int) -> datetime:
+    delta = (weekday - now.weekday()) % 7
+    return (now + timedelta(days=delta)).replace(hour=12, minute=0, second=0, microsecond=0)
+
+
+def _parse_when_date(when: str, now: datetime) -> datetime | None:
+    text = _clean_text(when).lower()
+    if not text:
+        return None
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }
+    for name, index in weekdays.items():
+        if re.search(rf"\b{name}\b", text):
+            found = _upcoming_weekday(now, index)
+            if "next" in text and found.date() == now.date():
+                return found + timedelta(days=7)
+            return found
+    match = re.search(
+        r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:\s*,\s*(\d{4}))?\b",
+        text,
+    )
+    if not match:
+        return None
+    month = {
+        "jan": 1,
+        "feb": 2,
+        "mar": 3,
+        "apr": 4,
+        "may": 5,
+        "jun": 6,
+        "jul": 7,
+        "aug": 8,
+        "sep": 9,
+        "oct": 10,
+        "nov": 11,
+        "dec": 12,
+    }[match.group(1)]
+    day = int(match.group(2))
+    year = int(match.group(3)) if match.group(3) else now.year
+    try:
+        found = datetime(year, month, day, 12, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    if match.group(3) is None and found.date() < now.date():
+        return None
+    return found
+
+
+def _opening_at(story: EntertainmentStory, now: datetime) -> datetime | None:
+    when = _theater_when(f"{story.title} {story.summary}")
+    if not when:
+        return None
+    return _parse_when_date(when, now)
+
+
+def _opens_within_week(story: EntertainmentStory, now: datetime) -> bool:
+    opening = _opening_at(story, now)
+    if opening is None:
+        return False
+    delta = (opening.date() - now.date()).days
+    return 0 <= delta <= OPENING_DAYS
+
+
+def _opens_this_friday(story: EntertainmentStory, now: datetime) -> bool:
+    opening = _opening_at(story, now)
+    if opening is None:
+        return False
+    return opening.date() == _upcoming_weekday(now, 4).date()
+
+
+def _is_breaking_news(story: EntertainmentStory) -> bool:
+    if _is_movie_item(story) or _is_review_item(story) or _is_unlistenable(story):
+        return False
+    if is_death_obituary_or_mourning(story) or _title_reports_death(story.title):
+        return False
+    if _BOX_OFFICE_RE.search(story.title):
+        return False
+    return _BREAKING_NEWS_RE.search(f"{story.title} {story.summary}") is not None
+
+
+def _fill_tier(story: EntertainmentStory) -> int:
+    if _is_movie_item(story):
+        return 0
+    blob = f"{story.title} {story.summary}"
+    if _STREAMING_RE.search(blob):
+        return 1
+    if _BOX_OFFICE_RE.search(blob):
+        return 2
+    return 3
+
+
+def _news_slot(story: EntertainmentStory, now: datetime) -> str:
+    if _is_movie_item(story) or _opens_within_week(story, now):
+        return SLOT_FILM_NEWS
+    if story.source_id == "deadline" or story.kind == "entertainment_news":
+        return SLOT_DEADLINE
+    return SLOT_EXTRA
+
+
+def _merge_death(announcements: list[EntertainmentStory], outlets: list[str]) -> EntertainmentStory:
+    def sort_key(story: EntertainmentStory) -> tuple[int, datetime, int]:
+        graphic = 1 if _SENSITIVE_CAUSE_RE.search(f"{story.title} {story.summary}") else 0
+        published = _as_utc(story.published) if story.published else _FAR_FUTURE
+        return (graphic, published, -len(story.summary or ""))
+
+    best = min(announcements, key=sort_key)
+    return replace(best, confirmed_outlets=tuple(outlets), slot=SLOT_TMZ)
+
+
+def _verify_death_cluster(
+    group: list[EntertainmentStory],
+    now: datetime,
+) -> tuple[EntertainmentStory | None, str]:
+    preconfirmed = [story for story in group if _is_preconfirmed(story)]
+    if preconfirmed:
+        story = preconfirmed[0]
+        age = _age_hours(story.published, now)
+        if age is not None and age > DEATH_BREAKING_HOURS:
+            return None, "old obituary, not breaking"
+        return _with_slot(story, SLOT_TMZ), "confirmed death leads"
+
+    announcements = [
+        story
+        for story in group
+        if _title_reports_death(story.title) and not _is_rumor(story) and not _is_social(story)
+    ]
+    reputable = [story for story in announcements if _is_reputable(story)]
+    outlets: list[str] = []
+    for story in reputable:
+        key = _outlet_key(story)
+        if key and key not in outlets:
+            outlets.append(key)
+    if len(outlets) < 2:
+        if any(_is_social(story) for story in group) and len(outlets) < 1:
+            return None, "social post, death not verified"
+        if any(_is_rumor(story) for story in group) and len(outlets) < 2:
+            return None, "rumor, death not verified"
+        if len(outlets) == 1:
+            return None, "single source, death not verified"
+        return None, "death not verified"
+
+    dated = [story.published for story in reputable if story.published is not None]
+    if not dated:
+        return None, "death has no publication date"
+    newest = max(_as_utc(moment) for moment in dated)
+    oldest = min(_as_utc(moment) for moment in dated)
+    if (now - newest).total_seconds() > DEATH_BREAKING_HOURS * 3600:
+        return None, "old obituary, not breaking"
+    if (newest - oldest).total_seconds() > DEATH_BREAKING_HOURS * 3600:
+        return None, "old obituary, not breaking"
+    return _merge_death(reputable, outlets), "confirmed by " + " and ".join(outlets)
+
+
+def _emit_selection_log(log: list[dict[str, str]]) -> None:
+    selected = sum(1 for row in log if row["status"] == "selected")
+    rejected = sum(1 for row in log if row["status"] == "rejected")
+    merged = sum(1 for row in log if row["status"] == "merged")
+    LOGGER.info(
+        "Entertainment selection: %s selected, %s rejected, %s merged",
+        selected,
+        rejected,
+        merged,
+    )
+    for row in log:
+        if row["status"] == "considered":
+            continue
+        LOGGER.info(
+            "entertainment %s | %s | %s | %s",
+            row["status"],
+            row["source"],
+            row["title"],
+            row["reason"],
+        )
+
+
+def rank_entertainment_stories(
+    stories: list[EntertainmentStory],
+    *,
+    limit: int = ENTERTAINMENT_STORY_COUNT,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Collect a pool, then rank it. The log stays out of the spoken script.
+
+    Deaths need two independent reputable sources and a recent publication
+    date. Everything else is ranked: breaking headlines, movies opening
+    within seven days (Friday first), then streaming, box office, and other
+    entertainment to fill.
+    """
+    clock = _as_utc(now)
+    log: list[dict[str, str]] = []
+    resolved: set[int] = set()
+
+    def note(story: EntertainmentStory, status: str, reason: str) -> None:
+        log.append(
+            {
+                "title": story.title,
+                "source": _source_label(story),
+                "status": status,
+                "reason": reason,
+            }
+        )
+        if status != "considered":
+            resolved.add(id(story))
+
+    for story in stories:
+        note(story, "considered", "in the pool")
+
+    if limit < 1:
+        for story in stories:
+            note(story, "rejected", "no stories requested")
+        _emit_selection_log(log)
+        return {"stories": [], "log": log}
+
+    usable: list[EntertainmentStory] = []
+    for story in stories:
+        reason = _skip_reason(story)
+        if reason:
+            note(story, "rejected", reason)
+            continue
+        usable.append(story)
+
+    clusters: dict[str, list[EntertainmentStory]] = {}
+    rest: list[EntertainmentStory] = []
+    for story in usable:
+        death_related = (
+            _is_preconfirmed(story)
+            or _title_reports_death(story.title)
+            or re.search(r"(?i)\bmourns?\b", _clean_text(story.title)) is not None
+            or is_death_obituary_or_mourning(story)
+        )
+        if death_related:
+            clusters.setdefault(_death_cluster_key(story), []).append(story)
+        else:
+            rest.append(story)
+
+    verified: list[EntertainmentStory] = []
+    for group in clusters.values():
+        merged, reason = _verify_death_cluster(group, clock)
+        if merged is None:
+            for story in group:
+                note(story, "rejected", reason)
+            continue
+        for story in group:
+            note(story, "merged", reason)
+        verified.append(merged)
+
+    kept: dict[str, EntertainmentStory] = {}
+    for story in rest:
+        key = _event_key(story)
+        current = kept.get(key)
+        if current is None:
+            kept[key] = story
+            continue
+        if _recency(story, clock) + 0.01 < _recency(current, clock):
+            note(current, "merged", "duplicate headline")
+            kept[key] = story
+        else:
+            note(story, "merged", "duplicate headline")
+
+    openings: list[EntertainmentStory] = []
+    breaking: list[EntertainmentStory] = []
+    fills: list[EntertainmentStory] = []
+    for story in kept.values():
+        if _opens_within_week(story, clock):
+            openings.append(story)
+        elif (age := _age_hours(story.published, clock)) is not None and age > FRESH_HOURS:
+            note(story, "rejected", "older than 24 hours")
+        elif _is_breaking_news(story):
+            breaking.append(story)
+        elif _is_movie_item(story) or _is_fill_entertainment(story):
+            fills.append(story)
+        else:
+            note(story, "rejected", "not a headline, opening, or fill")
+
+    verified.sort(key=lambda story: _recency(story, clock))
+    breaking.sort(key=lambda story: _recency(story, clock))
+    openings.sort(
+        key=lambda story: (
+            0 if _opens_this_friday(story, clock) else 1,
+            _opening_at(story, clock) or _FAR_FUTURE,
+            _recency(story, clock),
+        )
+    )
+    fills.sort(key=lambda story: (_fill_tier(story), _recency(story, clock)))
+
+    chosen: list[EntertainmentStory] = []
+    chosen_keys: set[str] = set()
+
+    def take(story: EntertainmentStory, reason: str, slot: str) -> bool:
+        key = _event_key(story)
+        if not key or key in chosen_keys or len(chosen) >= limit:
+            return False
+        chosen_keys.add(key)
+        chosen.append(_with_slot(story, slot))
+        note(story, "selected", reason)
+        return True
+
+    verified.sort(key=lambda story: (-len(story.confirmed_outlets), _recency(story, clock)))
+    reserve_for_other_news = bool(openings or breaking)
+    death_budget = len(verified)
+    if reserve_for_other_news:
+        death_budget = min(death_budget, 2)
+    death_budget = min(death_budget, limit)
+    for story in verified[:death_budget]:
+        take(story, "confirmed death leads", SLOT_TMZ)
+
+    deaths_taken = len(chosen)
+    if openings and (breaking or deaths_taken):
+        opening_slots = min(2, len(openings), max(0, limit - deaths_taken))
+        headline_slots = min(len(breaking), max(0, 2 - deaths_taken))
+        room = max(0, limit - deaths_taken)
+        if headline_slots + opening_slots > room:
+            headline_slots = min(headline_slots, max(0, room - opening_slots))
+    elif openings:
+        opening_slots = min(len(openings), max(0, limit - deaths_taken))
+        headline_slots = 0
+    else:
+        opening_slots = 0
+        headline_slots = min(len(breaking), max(0, limit - deaths_taken))
+
+    for story in breaking[:headline_slots]:
+        take(story, "major headline", _news_slot(story, clock))
+    opening_taken = 0
+    for story in openings:
+        if opening_taken >= opening_slots:
+            break
+        if take(story, "opens within seven days", SLOT_FILM_NEWS):
+            opening_taken += 1
+    for story in breaking[headline_slots:]:
+        take(story, "major headline", _news_slot(story, clock))
+    for story in openings:
+        take(story, "opens within seven days", SLOT_FILM_NEWS)
+    for story in verified[death_budget:]:
+        take(story, "confirmed death", SLOT_TMZ)
+    for story in fills:
+        take(story, "fill", _news_slot(story, clock))
+
+    for story in stories:
+        if id(story) not in resolved:
+            note(story, "rejected", "ranked below the four stories")
+
+    _emit_selection_log(log)
+    return {"stories": chosen, "log": log}
+
+
 def select_entertainment_stories(
     stories: list[EntertainmentStory],
     *,
     limit: int = ENTERTAINMENT_STORY_COUNT,
+    now: datetime | None = None,
 ) -> list[EntertainmentStory]:
-    """Up to four stories, refreshed from the morning feeds.
-
-    A death, obituary, or mourning item leads. Other stories are new movies
-    when the feeds have them. Remaining room is filled with other usable
-    entertainment items. Reviews, spec sales, writers labs, agency moves,
-    and cast laundry lists are not used.
-    """
-    if limit < 1:
-        return []
-    safe = [
-        story
-        for story in _deduped_safe(stories)
-        if not _is_review_item(story) and not _is_unlistenable(story)
-    ]
-    deaths = [story for story in safe if is_death_obituary_or_mourning(story)]
-    movies = [story for story in safe if _is_movie_item(story)]
-    filler = [story for story in safe if _is_fill_entertainment(story)]
-
-    chosen: list[EntertainmentStory] = []
-    used: set[str] = set()
-
-    def take(story: EntertainmentStory, slot: str) -> None:
-        key = _dedupe_key(story.title)
-        if not key or key in used or len(chosen) >= limit:
-            return
-        used.add(key)
-        chosen.append(_with_slot(story, slot))
-
-    for story in deaths:
-        take(story, SLOT_TMZ)
-    for story in movies:
-        take(story, SLOT_FILM_NEWS)
-    for story in filler:
-        slot = SLOT_DEADLINE if story.source_id == "deadline" or story.kind == "entertainment_news" else SLOT_EXTRA
-        take(story, slot)
-    return chosen
+    """Up to four ranked stories. A verified death leads."""
+    return rank_entertainment_stories(stories, limit=limit, now=now)["stories"]
 
 
-def collect_entertainment_stories(
+def _is_google_news_url(url: str) -> bool:
+    return "news.google.com/rss/search" in str(url or "").lower()
+
+
+def _google_source(url: str) -> dict[str, str]:
+    return {
+        "id": "google_news",
+        "name": "Google News",
+        "kind": "search",
+        "slot": "",
+        "url": url,
+    }
+
+
+def collect_entertainment_report(
     xml_by_url: dict[str, str | BaseException] | None = None,
     *,
     fetch: bool = False,
     timeout: float = 12.0,
-) -> list[EntertainmentStory]:
-    """Gather the four entertainment slots. Each feed fails on its own.
+    limit: int = ENTERTAINMENT_STORY_COUNT,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Parse every feed item plus supplemental search, then rank.
 
-    Pass `xml_by_url` for offline fixtures. Set `fetch` to download live feeds.
-    Each feed fails on its own; the others are still used.
+    Pass `xml_by_url` for offline fixtures. Set `fetch` to download the
+    three station feeds and the Google News searches. Each request fails
+    on its own. The returned log is for the operator, not the script.
     """
     payloads: dict[str, str | BaseException] = {}
     if xml_by_url is not None:
         payloads = dict(xml_by_url)
     elif fetch:
-        for source in ENTERTAINMENT_SOURCES:
+        targets = list(ENTERTAINMENT_SOURCES) + [
+            _google_source(google_news_rss_url(query)) for query in ENTERTAINMENT_SEARCH_QUERIES
+        ]
+        for source in targets:
             url = source["url"]
             try:
                 payloads[url] = _fetch_feed_xml(url, timeout=timeout)
@@ -578,12 +1216,41 @@ def collect_entertainment_stories(
                 payloads[url] = exc
 
     stories: list[EntertainmentStory] = []
+    seen_urls: set[str] = set()
     for source in ENTERTAINMENT_SOURCES:
+        seen_urls.add(source["url"])
         payload = payloads.get(source["url"])
         if payload is None or isinstance(payload, BaseException):
             continue
         stories.extend(parse_feed_xml(str(payload), source))
-    return select_entertainment_stories(stories)
+    for url, payload in payloads.items():
+        if url in seen_urls or payload is None or isinstance(payload, BaseException):
+            continue
+        if not _is_google_news_url(url):
+            continue
+        stories.extend(parse_feed_xml(str(payload), _google_source(url)))
+    return rank_entertainment_stories(stories, limit=limit, now=now)
+
+
+def collect_entertainment_stories(
+    xml_by_url: dict[str, str | BaseException] | None = None,
+    *,
+    fetch: bool = False,
+    timeout: float = 12.0,
+    limit: int = ENTERTAINMENT_STORY_COUNT,
+    now: datetime | None = None,
+) -> list[EntertainmentStory]:
+    """Gather ranked entertainment stories. Each feed fails on its own.
+
+    Pass `xml_by_url` for offline fixtures. Set `fetch` to download live feeds.
+    """
+    return collect_entertainment_report(
+        xml_by_url,
+        fetch=fetch,
+        timeout=timeout,
+        limit=limit,
+        now=now,
+    )["stories"]
 
 
 def _fetch_feed_xml(url: str, *, timeout: float) -> str:
@@ -792,9 +1459,12 @@ def is_death_obituary_or_mourning(story: EntertainmentStory) -> bool:
     """True when the headline is a death, obituary, or mourning item.
 
     A blurb that adds a death the headline never reported does not count.
+    A "weeks after" follow-up is not treated as a new death.
     """
     title = _KILLED_IT_RE.sub(" ", _clean_text(story.title))
-    return _DEATH_ITEM_RE.search(title) is not None
+    if _OLD_DEATH_MENTION_RE.search(title):
+        return False
+    return _DEATH_ITEM_RE.search(title) is not None or _title_reports_death(title)
 
 
 def stories_need_straight_open(stories: list[EntertainmentStory]) -> bool:
@@ -816,6 +1486,8 @@ def _story_sentences(text: str, limit: int = 2) -> list[str]:
     kept: list[str] = []
     for sentence in _take_sentences(text, 8):
         if _is_arrival_only(sentence) or _FORBIDDEN_SPOKEN_RE.search(sentence):
+            continue
+        if re.match(r"(?i)\s*spoiler alert\b", sentence):
             continue
         if _WHEN_RE.fullmatch(sentence.strip(" .!?")):
             continue
@@ -873,6 +1545,8 @@ def _spoken_general(story: EntertainmentStory) -> str:
             continue
         if _death_not_in_headline(sentence, story.title):
             continue
+        if _SENSITIVE_CAUSE_RE.search(sentence):
+            continue
         kept.append(sentence)
     if kept:
         return " ".join(kept)
@@ -897,6 +1571,10 @@ def spoken_story(story: EntertainmentStory) -> str:
     if _FORBIDDEN_SPOKEN_RE.search(spoken):
         kept = [sentence for sentence in _take_sentences(spoken, 8) if not _FORBIDDEN_SPOKEN_RE.search(sentence)]
         spoken = " ".join(kept)
+    if story.outlet:
+        spoken = _strip_publisher_suffix(spoken.rstrip("."), story.outlet)
+        if spoken and spoken[-1:] not in ".!?":
+            spoken += "."
     return (
         spoken.replace("“", '"')
         .replace("”", '"')
@@ -980,6 +1658,11 @@ def format_entertainment_prompt(
     else:
         lines.append("No usable stories were supplied. Do not invent any. Hand off to DJ Mo.")
     lines.append("Do not name Deadline, TMZ, or Variety on the air.")
+    lines.append(
+        "Short sentences. No bullet points. "
+        "When four stories are supplied, aim for about 350 to 450 words. "
+        "Shorter if fewer stories qualify. Use only the supplied facts."
+    )
     if stories_need_straight_open(list(stories)):
         lines.append(
             "A supplied story is a death, obituary, or mourning item. "
@@ -1024,9 +1707,11 @@ def build_morning_flow(
     sports_close: str = "",
     mo_thanks: str = "",
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Morning order after the hard-news block: Dave, Michael G, then DJ Mo."""
-    selected = select_entertainment_stories(list(stories or []))
+    ranked = rank_entertainment_stories(list(stories or []), now=now)
+    selected = ranked["stories"]
     dave_close = sports_close_hands_to_michael(sports_close)
     michael_script = michael_g_script(selected)
     thanks = mo_thanks_line(mo_thanks)
@@ -1034,6 +1719,7 @@ def build_morning_flow(
         "order": ["news", "dave_sports", "michael_g_entertainment", "mo_thanks"],
         "story_count": len(selected),
         "stories": selected,
+        "selection_log": ranked["log"],
         "dave_sports_close": dave_close,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(selected, rules=rules),
@@ -1151,6 +1837,7 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
         and "turns it over to mo" in lowered_rules
         and "weekdays at 7:15" in lowered_rules
     )
+    has_verified_deaths = "two independent" in lowered_rules and "350" in lowered_rules
     if (
         not has_movie_shape
         or mentions_reviews_feed
@@ -1158,6 +1845,7 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
         or not has_straight_death_open
         or not has_conversational_beat
         or not has_locked_handoff
+        or not has_verified_deaths
     ):
         rules["entertainment_report_rules"] = DEFAULT_ENTERTAINMENT_REPORT_RULES
 
@@ -1179,11 +1867,15 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     """Print today's entertainment handoff. Feeds fail soft when unreachable."""
-    stories = collect_entertainment_stories(fetch=True)
-    package = build_morning_flow(stories)
+    report = collect_entertainment_report(fetch=True)
+    package = build_morning_flow(report["stories"])
+    # The collect log still has the stories that were rejected before the handoff.
+    package["selection_log"] = report["log"]
     print(package["script"])
     print()
     print(package["michael_g_prompt"])
+    logging.basicConfig(level=logging.INFO)
+    _emit_selection_log(report["log"])
     return 0
 
 

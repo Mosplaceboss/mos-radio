@@ -11,10 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+import app.core.entertainment_report as entertainment_report
 from app.core.entertainment_report import (  # noqa: E402
     DAVE_SPORTS_CLOSE,
     DEFAULT_ENTERTAINMENT_REPORT_RULES,
     ENTERTAINMENT_FIRST_AIRING,
+    ENTERTAINMENT_SEARCH_QUERIES,
     ENTERTAINMENT_SOURCES,
     LOCKED_HANDOFF_LINES,
     MICHAEL_BEAT,
@@ -27,8 +29,10 @@ from app.core.entertainment_report import (  # noqa: E402
     EntertainmentStory,
     build_morning_flow,
     collect_entertainment_stories,
+    google_news_rss_url,
     is_morning_safe,
     michael_g_script,
+    parse_feed_xml,
     SLOT_DEADLINE,
     SLOT_EXTRA,
     SLOT_FILM_NEWS,
@@ -37,6 +41,20 @@ from app.core.entertainment_report import (  # noqa: E402
     spoken_story,
     sports_close_hands_to_michael,
 )
+
+# Keep window checks stable after October 13, 2026.
+# 14:00 keeps the October 12 trailer inside the 24-hour window.
+NOW = datetime(2026, 10, 13, 14, 0, tzinfo=timezone.utc)
+_orig_rank = entertainment_report.rank_entertainment_stories
+
+
+def _ranked(stories, *args, **kwargs):
+    if kwargs.get("now") is None:
+        kwargs["now"] = NOW
+    return _orig_rank(stories, *args, **kwargs)
+
+
+entertainment_report.rank_entertainment_stories = _ranked
 from app.core.news_content_model import (  # noqa: E402
     build_dev_script_lines,
     default_script_rules,
@@ -89,16 +107,21 @@ def _story(
     summary: str = "",
     kind: str = "general",
     source_id: str = "deadline",
+    source_name: str = "",
+    outlet: str = "",
     published: datetime | None = None,
+    confirmed_outlets: tuple[str, ...] = (),
 ) -> EntertainmentStory:
     return EntertainmentStory(
         title=title,
         summary=summary,
         url="",
         source_id=source_id,
-        source_name=source_id,
+        source_name=source_name or source_id,
         kind=kind,
         published=published,
+        outlet=outlet,
+        confirmed_outlets=confirmed_outlets,
     )
 
 
@@ -239,13 +262,16 @@ def test_selection_and_feeds() -> None:
         ]
     )
     _check("four stories when every feed has a story", len(picked) == 4)
-    _check("a movie leads when there is no death", picked[0].title == "Ocean Light trailer" and picked[0].slot == SLOT_FILM_NEWS)
     _check(
-        "other stories follow the movie by freshness",
+        "a breaking headline leads when there is no death",
+        picked[0].title == "Studio renews the drama for two more seasons",
+    )
+    _check(
+        "a movie, box office, and a sighting follow the headline",
         [story.title for story in picked[1:]]
         == [
+            "Ocean Light trailer",
             "Weekend ticket sales climb again",
-            "Studio renews the drama for two more seasons",
             "Singer spotted leaving a downtown diner",
         ],
     )
@@ -317,7 +343,7 @@ def test_selection_and_feeds() -> None:
     _check("deadline item does not say exclusive", "exclusive" not in deadline_line.lower())
     _check("deadline item does not say according to", "according to" not in deadline_line.lower())
 
-    trailer_line = spoken_story(picked[0])
+    trailer_line = spoken_story(trailer)
     _check("movie slot matches the fixture sentence", trailer_line == MOVIE_LINE)
     _check("movie slot starts with In movie news", trailer_line.startswith("In movie news,"))
     _check("movie slot names the movie", "Ocean Light fans, get ready!" in trailer_line)
@@ -400,11 +426,15 @@ def test_selection_and_feeds() -> None:
     )
     named_only = select_entertainment_stories([sighting, deadline, spec_deal, named_movie])
     _check(
-        "a titled movie leads when there is no death",
-        named_only[0].slot == SLOT_FILM_NEWS and named_only[0].title.startswith("Parker Posey"),
+        "breaking television news leads when the movie is not opening this week",
+        named_only[0].title.startswith("Studio renews"),
+    )
+    _check(
+        "a titled movie still airs",
+        any(story.slot == SLOT_FILM_NEWS and story.title.startswith("Parker Posey") for story in named_only),
     )
     _check("spec deal does not take a story", all("Black Bear" not in story.title for story in named_only))
-    named_line = spoken_story(named_only[0])
+    named_line = spoken_story(next(story for story in named_only if story.title.startswith("Parker Posey")))
     _check(
         "titled movie uses the film title",
         named_line.startswith("In movie news, Sleepover fans, get ready!"),
@@ -449,8 +479,8 @@ def test_selection_and_feeds() -> None:
         "a review does not fill a story",
         [story.title for story in no_extra]
         == [
-            "Ocean Light trailer",
             "Studio renews the drama for two more seasons",
+            "Ocean Light trailer",
             "Singer spotted leaving a downtown diner",
         ],
     )
@@ -553,8 +583,10 @@ def test_selection_and_feeds() -> None:
         }
     )
     _check("fixtures keep four stories", len(from_feeds) == 4)
-    _check("fixture movie leads", from_feeds[0].title == "Ocean Light trailer" and from_feeds[0].source_id == "variety")
-    _check("fixture movie sentence", spoken_story(from_feeds[0]) == MOVIE_LINE)
+    _check("fixture headline leads", from_feeds[0].title == "Studio sets a summer release date")
+    movie = next(story for story in from_feeds if story.title == "Ocean Light trailer")
+    _check("fixture movie still airs", movie.source_id == "variety")
+    _check("fixture movie sentence", spoken_story(movie) == MOVIE_LINE)
     _check("fixture fill is not the retired review", all(story.title != "Ocean Light" or "trailer" in story.title.lower() for story in from_feeds))
     _check("reviews xml is ignored", all(story.source_id != "variety_reviews" for story in from_feeds))
     _check("warm-adventure review stays off the air", all("warm adventure" not in story.summary.lower() for story in from_feeds))
@@ -872,6 +904,14 @@ def test_handoff_flow() -> None:
         [
             death,
             _story(
+                "Beloved actor dead at 88",
+                summary="The actor died Thursday.",
+                source_id="google_news",
+                source_name="AP News",
+                outlet="AP News",
+                published=_dt(16),
+            ),
+            _story(
                 "Studio renews the drama for two more seasons",
                 summary="The series returns in November.",
                 source_id="deadline",
@@ -924,11 +964,19 @@ def test_handoff_flow() -> None:
                 published=_dt(9),
             ),
             _story(
-                "Studio mourns a longtime editor",
+                "Longtime editor dies at 68",
                 summary="Colleagues shared tributes on Monday.",
                 source_id="deadline",
                 kind="entertainment_news",
                 published=_dt(12),
+            ),
+            _story(
+                "Longtime editor dead at 68",
+                summary="Colleagues shared tributes on Monday.",
+                source_id="google_news",
+                source_name="Reuters",
+                outlet="Reuters",
+                published=_dt(11),
             ),
             _story(
                 "Ocean Light trailer",
@@ -999,6 +1047,9 @@ def test_news_rules_upgrade() -> None:
     _check("rules let mo mention 7:15", "weekdays at 7:15" in rules)
     _check("rules name the first airing", ENTERTAINMENT_FIRST_AIRING.lower() in rules)
     _check("rules say a death leads", "a death, obituary, or mourning item leads" in rules)
+    _check("rules require two independent sources", "two independent" in rules)
+    _check("rules aim for 350 to 450 words", "350" in rules and "450" in rules)
+    _check("rules ban bullet points", "no bullet points" in rules)
     _check("rules keep each movie as its own paragraph", "its own short paragraph" in rules)
     legacy_rules = normalize_script_rules(
         {
@@ -1235,12 +1286,170 @@ def test_config_files() -> None:
     _check("Mo voice thanks Michael G", "thank Michael G" in mo_voice["personality_prompt"])
 
 
+def test_discovery_ranking() -> None:
+    for wording in ("dies", "death", "passed away", "dead", "obituary"):
+        _check(f"search wording {wording}", any(wording in query for query in ENTERTAINMENT_SEARCH_QUERIES))
+    _check("search includes breaking celebrity news", any("breaking celebrity" in query for query in ENTERTAINMENT_SEARCH_QUERIES))
+    _check("search includes television and movies", any("TV" in query or "movie" in query for query in ENTERTAINMENT_SEARCH_QUERIES))
+    sample = google_news_rss_url("actor dies")
+    _check(
+        "google news rss shape",
+        sample == "https://news.google.com/rss/search?q=actor%20dies&hl=en-US&gl=US&ceid=US:en",
+    )
+    _check("station feeds stay the original three", len(ENTERTAINMENT_SOURCES) == 3)
+    module_source = (ROOT / "app/core/entertainment_report.py").read_text(encoding="utf-8")
+    lowered_module = module_source.lower()
+    _check("module does not hardcode one celebrity death", "breaking bad" not in lowered_module and "rj mitte" not in lowered_module)
+
+    deadline_death = _story(
+        "Jordan Hale dies at 70",
+        summary="The actor died Monday at home. Friends said he had been working on a new film.",
+        source_id="deadline",
+        kind="entertainment_news",
+        published=_dt(15),
+    )
+    wire_death = _story(
+        "Jordan Hale dead at 70",
+        summary="The actor died Monday at home.",
+        source_id="google_news",
+        source_name="AP News",
+        outlet="AP News",
+        published=_dt(16),
+    )
+    single = _story(
+        "Casey Quinn dies at 64",
+        summary="The singer died Monday.",
+        source_id="tmz",
+        kind="celebrity",
+        published=_dt(18),
+    )
+    old_a = _story(
+        "Mina Cole dies at 91",
+        summary="The actress died last spring.",
+        source_id="deadline",
+        kind="entertainment_news",
+        published=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    old_b = _story(
+        "Mina Cole dead at 91",
+        summary="The actress died last spring.",
+        source_id="google_news",
+        source_name="Reuters",
+        outlet="Reuters",
+        published=datetime(2026, 9, 1, 15, 0, tzinfo=timezone.utc),
+    )
+    duplicate = _story(
+        "Jordan Hale, the actor who led a new drama, dies at 70",
+        summary="The actor died Monday at home.",
+        source_id="variety",
+        kind="headlines",
+        published=_dt(17),
+    )
+    friday = _story(
+        "Harbor Lights trailer",
+        summary="Opens this Friday. A ferry captain follows a letter home.",
+        source_id="variety",
+        kind="headlines",
+        published=_dt(8),
+    )
+    spec = _story(
+        "Black Bear Acquires Love Triangle Comedy Spec From Writing Duo Cassidy Alla and Read Masino (EXCLUSIVE)",
+        summary="Black Bear has acquired the rights to a comedy spec script.",
+        source_id="variety",
+        kind="headlines",
+        published=_dt(21),
+    )
+    ranked = entertainment_report.rank_entertainment_stories(
+        [spec, friday, single, old_a, old_b, deadline_death, wire_death, duplicate],
+        now=NOW,
+    )
+    selected = ranked["stories"]
+    log = ranked["log"]
+    _check("two-source death leads", selected[0].title.startswith("Jordan Hale"))
+    _check("two-source death is confirmed", len(selected[0].confirmed_outlets) >= 2)
+    _check("friday opener is still selected", any(story.title.startswith("Harbor Lights") for story in selected))
+    friday_rank = entertainment_report.rank_entertainment_stories(
+        [
+            spec,
+            friday,
+            _story(
+                "Singer spotted leaving a downtown diner",
+                summary="Fans saw the singer just after midnight.",
+                source_id="tmz",
+                kind="celebrity",
+                published=_dt(21),
+            ),
+        ],
+        now=NOW,
+    )
+    _check("friday opener outranks a spec sale", friday_rank["stories"][0].title.startswith("Harbor Lights"))
+    _check(
+        "spec sale stays out when a friday opener is available",
+        all("black bear" not in story.title.lower() for story in friday_rank["stories"]),
+    )
+    _check("spec sale is not selected", all("comedy spec" not in story.title.lower() and "black bear" not in story.title.lower() for story in selected))
+    _check("single-source death is not selected", all("Casey Quinn" not in story.title for story in selected))
+    _check("old obituary is not selected", all("Mina Cole" not in story.title for story in selected))
+    _check("duplicate death headlines collapse", sum(1 for story in selected if "Jordan Hale" in story.title) == 1)
+    _check(
+        "spec sale is rejected in the log",
+        any(row["status"] == "rejected" and "spec" in row["reason"] for row in log),
+    )
+    _check(
+        "single source is rejected in the log",
+        any(row["status"] == "rejected" and "single source" in row["reason"] and "Casey Quinn" in row["title"] for row in log),
+    )
+    _check(
+        "old obituary is rejected in the log",
+        any(row["status"] == "rejected" and "old obituary" in row["reason"] and "Mina Cole" in row["title"] for row in log),
+    )
+    _check(
+        "duplicate death is merged in the log",
+        sum(1 for row in log if row["status"] == "merged" and "Jordan Hale" in row["title"]) >= 2,
+    )
+    _check("every considered story is logged", any(row["status"] == "considered" for row in log))
+    _check("selected stories are logged", any(row["status"] == "selected" for row in log))
+
+    updated_obituary = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Mina Cole dies at 91</title>
+    <summary>The actress died last spring.</summary>
+    <updated>2026-10-13T22:00:00Z</updated>
+    <published>2026-09-01T12:00:00Z</published>
+    <link href="https://deadline.com/example-obit"/>
+  </entry>
+</feed>
+"""
+    parsed = parse_feed_xml(
+        updated_obituary,
+        {"id": "deadline", "name": "Deadline", "kind": "entertainment_news", "slot": ""},
+    )
+    _check("publication date wins over a later update", parsed[0].published == datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+    _check("update date is kept separately", parsed[0].updated == datetime(2026, 10, 13, 22, 0, tzinfo=timezone.utc))
+
+    flow = build_morning_flow(
+        [deadline_death, wire_death, friday, spec],
+        now=NOW,
+    )
+    script = flow["michael_g_script"]
+    _check("spoken script has no bullets", "•" not in script and re.search(r"(?m)^\s*[-*]\s+\S", script) is None)
+    _check("spoken script ends with the handoff", script.strip().endswith("DJ Mo, back to you."))
+    _check("selection log stays out of the spoken script", "single source" not in script and "old obituary" not in script)
+    _check("death day open stays straight", script.splitlines()[0] == MICHAEL_STRAIGHT_OPEN)
+    _check("confirmed death is read", "died Monday" in script)
+    _check("friday movie is read", "Harbor Lights" in script)
+    _check("spec sale is not read", "Black Bear" not in script)
+    _check("operator log is on the package", any(row["status"] == "selected" for row in flow["selection_log"]))
+
+
 def main() -> None:
     test_filters()
     test_selection_and_feeds()
     test_handoff_flow()
     test_news_rules_upgrade()
     test_config_files()
+    test_discovery_ranking()
     print("OK: Michael G entertainment report verified")
     print(MOVIE_LINE)
 
