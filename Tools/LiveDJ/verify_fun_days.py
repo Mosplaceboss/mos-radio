@@ -152,6 +152,46 @@ def main() -> None:
     _check("2nd Sunday of October 2026 is the 11th", FunDays.occurs_on(FunDays.normalize_day(sunday), date(2026, 10, 11)))
     _check("2nd Sunday is not October 14", not FunDays.occurs_on(FunDays.normalize_day(sunday), TODAY))
 
+    plain = FunDays.normalize_day({"title": DESSERT, "note": "enjoy a little sweetness"})
+    _check("saved day with no category stays Fun Day", plain["category"] == "Fun Day")
+    awareness = {"title": "Breast Cancer Awareness Month", "enabled": True, "who": "Each DJ", "date": "October", "when": "Whole month", "note": "remind people about screenings"}
+    loaded = FunDays.normalize_day(awareness)
+    _check("Breast Cancer Awareness Month with no category loads as Serious Day", loaded["category"] == "Serious Day")
+    overridden = FunDays.normalize_day({"title": "Breast Cancer Awareness Month", "category": "Fun Day"})
+    _check("an explicit Fun Day choice is kept", overridden["category"] == "Fun Day")
+    marked = FunDays.normalize_day({"title": DESSERT, "category": "Serious Day"})
+    _check("an explicit Serious Day choice is kept", marked["category"] == "Serious Day")
+
+    serious_break = [{"Time": "08:20", "Host": "Mo"}]
+    serious_payload = FunDays.prompt_payload_for_break([awareness], serious_break[0], serious_break, when=TODAY)
+    _check("serious prompt names the observance once", _titles(serious_payload) == ["Breast Cancer Awareness Month"])
+    _check("serious prompt forbids jokes", "Do not joke." in serious_payload)
+    _check("serious prompt forbids not knowing", "do not know what it means" in serious_payload.lower())
+    _check("serious prompt forbids liking it", "Do not say you like it." in serious_payload)
+    _check("serious prompt names the station", "Mo's Place Radio" in serious_payload)
+    _check("serious line is the shared prompt line", FunDays.SERIOUS_PROMPT_LINE in serious_payload)
+
+    fun_payload = only_payloads[0]
+    _check("a fun day does not get the serious warning", "Do not joke." not in fun_payload and FunDays.SERIOUS_PROMPT_LINE not in fun_payload)
+
+    mixed = [
+        _day(BALD, note="own the look"),
+        awareness,
+        _day(DESSERT, note="enjoy a little sweetness"),
+        _day(BULLYING, note="stand up for someone"),
+    ]
+    mixed_payloads = [FunDays.prompt_payload_for_break(mixed, row, breaks, when=TODAY) for row in breaks]
+    mixed_titles = [_titles(payload) for payload in mixed_payloads]
+    _check(
+        "serious and fun days still rotate one per break",
+        mixed_titles == [[BALD], ["Breast Cancer Awareness Month"], [DESSERT], [BULLYING]],
+    )
+    _check("only the serious break carries the warning", "Do not joke." in mixed_payloads[1])
+    _check(
+        "fun breaks in the same rotation stay light",
+        all("Do not joke." not in payload for payload in (mixed_payloads[0], mixed_payloads[2], mixed_payloads[3])),
+    )
+
     print("verify_fun_days: OK")
 
 

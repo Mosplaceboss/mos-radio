@@ -5,6 +5,9 @@ one of them on every break. Breaks now take turns: the first break of the day
 gets the first fun day, the next break gets the next, and so on. The same
 break time and host always get the same fun day if the prompt is rebuilt.
 A single fun day still goes on every break.
+Category on Edit Fun Day is Fun Day (the default) or Serious Day. A Serious
+Day is one respectful mention. Breast Cancer Awareness Month with no saved
+category loads as Serious Day.
 
 The Fun / National Days list can still show every observance for today.
 The preview panel should call preview_prompt_payload() so it shows the
@@ -68,6 +71,22 @@ _NTH_RE = re.compile(
     r"(?P<month>january|february|march|april|may|june|july|august|september|"
     r"october|november|december)\b"
 )
+
+FUN_DAY = "Fun Day"
+SERIOUS_DAY = "Serious Day"
+# Edit Fun Day offers these two choices. A blank saved value stays Fun Day.
+CATEGORY_CHOICES = (FUN_DAY, SERIOUS_DAY)
+
+# Said once, with no joke, when the observance is a Serious Day.
+SERIOUS_PROMPT_LINE = (
+    "Mention it once in one short respectful sentence. Do not joke. "
+    "Do not say you do not know what it means. Do not say you like it. "
+    "Do not make fun of illness, survivors, or people who have died. "
+    "The station name is Mo's Place Radio."
+)
+
+# Saved before the category existed. Load it as Serious Day until the operator picks one.
+_SERIOUS_TITLES = {"breast cancer awareness month"}
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})\s*(am|pm)?$")
 _ISO_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
@@ -134,8 +153,35 @@ def _aired_flag(raw: dict) -> bool:
     return status in {"aired", "already aired", "already_aired"}
 
 
+def _stored_category(raw: dict) -> str:
+    for key in ("category", "Category"):
+        if key not in raw:
+            continue
+        value = raw.get(key)
+        if value is None:
+            continue
+        text = _collapse(value)
+        if text:
+            return text
+    return ""
+
+
+def category_for(raw: dict, title: str) -> str:
+    """Fun Day unless the record says Serious Day, or Breast Cancer Awareness Month has no category yet."""
+    stored = _stored_category(raw).lower()
+    if stored in {"serious", "serious day"}:
+        return SERIOUS_DAY
+    if stored in {"fun", "fun day"}:
+        return FUN_DAY
+    if stored:
+        return SERIOUS_DAY if "serious" in stored else FUN_DAY
+    if _collapse(title).lower().rstrip(".") in _SERIOUS_TITLES:
+        return SERIOUS_DAY
+    return FUN_DAY
+
+
 def normalize_day(raw: object) -> dict:
-    """One fun-day record with the editor's fields in a stable shape."""
+    """One observance with the Edit Fun Day fields, including Category."""
     if isinstance(raw, str):
         raw = {"title": raw}
     if not isinstance(raw, dict):
@@ -148,8 +194,10 @@ def normalize_day(raw: object) -> dict:
         or raw.get("DJs")
         or ""
     )
+    title = _collapse(raw.get("title") or raw.get("Title") or "")
     return {
-        "title": _collapse(raw.get("title") or raw.get("Title") or ""),
+        "title": title,
+        "category": category_for(raw, title),
         "enabled": _enabled_flag(raw),
         "already_aired": _aired_flag(raw),
         "aired_on": _collapse(raw.get("aired_on") or raw.get("last_aired") or ""),
@@ -563,6 +611,8 @@ def format_prompt_payload(days: list | None) -> str:
         lines.append(f"  read by: {read_by_label(day)}")
         if day["note"]:
             lines.append(f"  notes: {day['note']}")
+        if day.get("category") == SERIOUS_DAY:
+            lines.append(f"  {SERIOUS_PROMPT_LINE}")
     if not wrote:
         return ""
     return "\n".join(lines)
