@@ -15,13 +15,21 @@ Friday, Saturday, and Sunday band-rundown wav files are a separate product.
 This sheet never writes or replaces those wav files.
 
 Deploy to D:\\MPR\\Engines\\LiveDJ\\Scripts\\Bands.py on the Office PC.
-Calendar: D:\\MPR\\Weekly Events.csv
+Calendar search, first file that exists wins:
+  D:\\MPR\\Weekly Events.csv
+  D:\\MPR\\Events\\Weekly Events.csv
+  D:\\MPR\\Knowledge\\Weekly Events.csv
+  D:\\MPR\\Weekly Events\\Weekly Events.csv
+  D:\\MPR\\Engines\\LiveDJ\\Weekly Events.csv
+  D:\\MPR\\Engines\\LiveDJ\\Knowledge\\Weekly Events.csv
+  D:\\MPR\\Engines\\LiveDJ\\Weekly Events\\Weekly Events.csv
 Output: D:\\MPR\\Knowledge\\BandsTonight.txt
 The Radio PC only has the news voices. This script does not read or write them.
 
 LiveDJ's platform_paths.LIVE_BASE on the Office PC is D:\\MPR\\Engines\\LiveDJ.
-That folder is the script home, not the calendar. A weekly sheet with a blank
-Date still lives at D:\\MPR\\Weekly Events.csv.
+That folder is the script home, not the calendar. The Office PC sheet is
+D:\\MPR\\Events\\Weekly Events.csv. Weekly rows still have a blank Date and
+match on Day. D:\\MPR\\Events\\Mos_Place_Radio\\Weekly_Events.ics is not read.
 """
 
 from __future__ import annotations
@@ -128,11 +136,20 @@ def station_roots(base: Path | None = None) -> list[Path]:
 
 
 def calendar_candidates(base: Path | None = None) -> list[Path]:
+    """Paths tried for Weekly Events.csv.
+
+    D:\\MPR\\Events\\Weekly Events.csv is the Office PC sheet. It is searched
+    after D:\\MPR\\Weekly Events.csv and before the LiveDJ script folder.
+    The .ics export in that Events tree is not a candidate.
+    """
     candidates: list[Path] = []
-    for root in station_roots(base):
+    roots = station_roots(base)
+    for index, root in enumerate(roots):
+        candidates.append(root / CALENDAR_FILENAME)
+        if index == 0:
+            candidates.append(root / "Events" / CALENDAR_FILENAME)
         candidates.extend(
             (
-                root / CALENDAR_FILENAME,
                 root / "Knowledge" / CALENDAR_FILENAME,
                 root / "Weekly Events" / CALENDAR_FILENAME,
             )

@@ -137,12 +137,64 @@ def main() -> None:
                 "an existing LiveDJ Knowledge folder also receives a copy",
                 extras == [livedj / "Knowledge" / "BandsTonight.txt"],
             )
-            tried = [str(path) for path in Bands.calendar_candidates()]
+            tried = list(Bands.calendar_candidates())
             _check(
                 "the missed LiveDJ path is still searched after the station sheet",
-                str(station / "Weekly Events.csv") in tried
-                and str(livedj / "Weekly Events.csv") in tried,
+                tried.index(station / "Weekly Events.csv")
+                < tried.index(livedj / "Weekly Events.csv"),
             )
+            _check(
+                "Events csv sits after the station-root csv and before LiveDJ",
+                tried
+                == [
+                    station / "Weekly Events.csv",
+                    station / "Events" / "Weekly Events.csv",
+                    station / "Knowledge" / "Weekly Events.csv",
+                    station / "Weekly Events" / "Weekly Events.csv",
+                    livedj / "Weekly Events.csv",
+                    livedj / "Knowledge" / "Weekly Events.csv",
+                    livedj / "Weekly Events" / "Weekly Events.csv",
+                ],
+            )
+        finally:
+            Bands.live_base = original_base
+            Bands.STATION_ROOT = original_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        station = Path(tmp) / "MPR"
+        livedj = station / "Engines" / "LiveDJ"
+        livedj.mkdir(parents=True)
+        calendar = station / "Events" / "Weekly Events.csv"
+        calendar.parent.mkdir()
+        calendar.write_bytes(FIXTURE.read_bytes())
+        ics = station / "Events" / "Mos_Place_Radio" / "Weekly_Events.ics"
+        ics.parent.mkdir()
+        ics.write_text("BEGIN:VCALENDAR\n", encoding="utf-8")
+        original_base = Bands.live_base
+        original_root = Bands.STATION_ROOT
+        Bands.live_base = lambda: livedj
+        Bands.STATION_ROOT = station
+        try:
+            _check("station root has no csv", not (station / "Weekly Events.csv").is_file())
+            found = Bands.default_calendar_path()
+            output = Bands.default_output_path()
+            tried = list(Bands.calendar_candidates())
+            _check(
+                "Events calendar is selected when the station root has no csv",
+                found == calendar,
+            )
+            _check(
+                "bands file stays in the station Knowledge folder",
+                output == station / "Knowledge" / "BandsTonight.txt",
+            )
+            _check(
+                "ics export is not a calendar candidate",
+                all(path.suffix.lower() != ".ics" for path in tried),
+            )
+            written = Bands.write_bands_file(found, output, WEDNESDAY)
+            text = output.read_text(encoding="utf-8")
+            _check("Events sheet still writes Wednesday from a blank Date", written == output)
+            _check("Events sheet keeps Music Bingo with George", "Music Bingo with George" in text)
         finally:
             Bands.live_base = original_base
             Bands.STATION_ROOT = original_root
