@@ -12,12 +12,21 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from app.core.sports_report import (
+    DEFAULT_SPORTS_GAME_RULES,
+    ensure_sports_game_rules,
+    ensure_sports_personality_rules,
+    format_sports_story,
+)
 from app.core.news_content_storage import (
+    load_json_file,
     load_news_content_bundle,
     news_dev_output_dir,
     news_reports_dir,
     rss_sources_path,
+    save_json_file,
     save_news_content_bundle,
+    script_rules_path,
 )
 from app.core.platform_manager import platform_path
 from app.core.schedule_model import DAYS
@@ -112,7 +121,8 @@ def default_script_rules() -> dict[str, Any]:
         "closing": "For Mo's Place Radio, I'm {personality}.",
         "pronunciation_rules": [],
         "pause_sound_between_stories": "news_bed.mp3",
-        "news_first_personality_rules": "Lead anchor opens every newscast.",
+        "news_first_personality_rules": ensure_sports_personality_rules(""),
+        "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
         "stale_hours_warning": 12,
     }
 
@@ -218,6 +228,10 @@ def normalize_script_rules(data: dict[str, Any] | None) -> dict[str, Any]:
     merged = deepcopy(base)
     merged.update(data)
     merged.setdefault("pronunciation_rules", [])
+    merged["news_first_personality_rules"] = ensure_sports_personality_rules(
+        str(merged.get("news_first_personality_rules", ""))
+    )
+    merged["sports_game_rules"] = ensure_sports_game_rules(str(merged.get("sports_game_rules", "")))
     return merged
 
 
@@ -313,6 +327,7 @@ def seed_rss_from_studio_news(news_data: dict[str, Any], categories: list[dict[s
 
 def ensure_news_content_data(config_manager=None) -> None:
     if rss_sources_path(config_manager).exists():
+        _upgrade_saved_sports_rules(config_manager)
         return
     bundle = normalize_bundle({})
     news_config = config_manager.load("news", {"rss_feeds": []}) if config_manager else {"rss_feeds": []}
@@ -323,6 +338,21 @@ def ensure_news_content_data(config_manager=None) -> None:
     if news_config.get("last_successful_run"):
         bundle["overview"]["last_successful_run"] = news_config["last_successful_run"]
     save_news_content_bundle(bundle, config_manager)
+
+
+def _upgrade_saved_sports_rules(config_manager=None) -> None:
+    """Persist silence and playoff rules when an existing desk is missing them."""
+    path = script_rules_path(config_manager)
+    raw = load_json_file(path, {})
+    if not raw:
+        return
+    upgraded = normalize_script_rules(raw)
+    if (
+        upgraded.get("sports_game_rules") == raw.get("sports_game_rules")
+        and upgraded.get("news_first_personality_rules") == raw.get("news_first_personality_rules")
+    ):
+        return
+    save_json_file(path, upgraded)
 
 
 def test_rss_feed(url: str, timeout: float = 8.0) -> tuple[str, str]:
@@ -379,7 +409,11 @@ def list_output_files(config_manager=None) -> list[str]:
     return paths
 
 
-def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> str:
+def generate_dev_script_preview(
+    bundle: dict[str, Any],
+    config_manager=None,
+    sports_lines: list[str] | None = None,
+) -> str:
     personalities = [p for p in bundle["personalities"]["personalities"] if p.get("enabled")]
     anchor = personalities[0]["name"] if personalities else "Anchor"
     categories = [c["name"] for c in bundle["categories"]["categories"] if c.get("enabled")][: bundle["script_rules"]["maximum_stories"]]
@@ -390,7 +424,13 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
         "",
     ]
     for index, category in enumerate(categories, start=1):
-        lines.append(f"Story {index} — {category}: Sample headline for development preview.")
+        if category == "Sports" and sports_lines is not None:
+            spoken = format_sports_story(sports_lines)
+            if not spoken:
+                continue
+            lines.append(f"Story {index} — Sports: {spoken}")
+        else:
+            lines.append(f"Story {index} — {category}: Sample headline for development preview.")
         if bundle["script_rules"].get("pause_sound_between_stories"):
             lines.append(f"[pause: {bundle['script_rules']['pause_sound_between_stories']}]")
         lines.append("")
@@ -400,7 +440,7 @@ def generate_dev_script_preview(bundle: dict[str, Any], config_manager=None) -> 
     lines.append("— Development preview only. Not published to live News.")
     content = "\n".join(lines)
     output_dir = news_dev_output_dir(config_manager)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     script_path = output_dir / f"news_preview_{timestamp}.txt"
     script_path.write_text(content, encoding="utf-8")
     return str(script_path)

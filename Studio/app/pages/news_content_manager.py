@@ -701,6 +701,7 @@ class NewsContentManagerPage(BasePage):
             ("closing", "Closing"),
             ("pause_sound_between_stories", "Pause Sound Between Stories"),
             ("news_first_personality_rules", "News-First Personality Rules"),
+            ("sports_game_rules", "Sports Game Rules"),
             ("stale_hours_warning", "Stale News Warning (hours)"),
         )
         for key, label in specs:
@@ -855,11 +856,32 @@ class NewsContentManagerPage(BasePage):
         self._set_scroll_text(self._output_list_text, "\n".join(files) if files else "No output files found.")
 
     def _generate_dev_script(self) -> None:
-        path = generate_dev_script_preview(self._bundle, self.config_manager)
-        content = Path(path).read_text(encoding="utf-8")
-        self._set_scroll_text(self._script_preview_text, content)
-        self._refresh_output()
-        self.set_status(f"Development script saved: {path}")
+        self.set_status("Gathering sports for the development script…")
+
+        def work() -> list[str]:
+            from app.core.sports_report import build_dave_sports_script
+
+            return build_dave_sports_script(fetch=True)
+
+        def complete(sports_lines: list[str]) -> None:
+            path = generate_dev_script_preview(self._bundle, self.config_manager, sports_lines=sports_lines)
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            if sports_lines:
+                self.set_status(f"Development script saved: {path}")
+            else:
+                self.set_status(f"Development script saved: {path}. No sports copy to read.")
+
+        def failed(err: Exception) -> None:
+            path = generate_dev_script_preview(self._bundle, self.config_manager, sports_lines=[])
+            content = Path(path).read_text(encoding="utf-8")
+            self._set_scroll_text(self._script_preview_text, content)
+            self._refresh_output()
+            self.set_status(f"Development script saved: {path}. Sports feeds were skipped.")
+            self._show_error_dialog("Sports Feeds", str(err))
+
+        run_in_background(self, work, complete, on_error=failed)
 
     def _open_output_folder(self) -> None:
         try:
