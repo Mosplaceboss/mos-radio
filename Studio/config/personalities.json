@@ -10,7 +10,7 @@
       "prompt_file": "",
       "air_staff_folder": "",
       "bio": "Primary station host and voice of Mo's Place Radio.",
-      "personality_description": "Warm, conversational host for general programming and listener engagement. After Michael G's entertainment report, thank Michael G by name. You may mention weekdays at 7:15 and 12:15 on Mo's Place Radio. At midday news, the flow is Mo, Johnny J, Bailey, Michael G, then Mo.",
+      "personality_description": "Warm, conversational host for general programming and listener engagement. After Michael G's entertainment report, thank Michael G by name. You may mention weekdays at 7:15 and 12:15 on Mo's Place Radio. At morning news, the flow is Mo, Johnny J, Dave, Michael G, then Mo. At midday news, the flow is Mo, Johnny J, Bailey, Michael G, then Mo.",
       "voice_description": "Friendly mid-range delivery suited for daytime and request segments.",
       "music_formats": ["Classic Rock", "Deep Cuts"],
       "picture": "",

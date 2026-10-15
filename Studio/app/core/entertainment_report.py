@@ -1,15 +1,16 @@
 """Entertainment report for Michael G.
 
-Morning (7:15): after Dave's sports. Midday (12:15): Mo, Johnny J, Bailey,
-then Michael G, then Mo.
+Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
+Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
 
 Morning handoff is locked:
 
-1. Dave hands the morning news to Michael.
-2. Michael thanks Dave, then does the entertainment report. He does not
+1. Mo opens the morning news. Johnny J follows with more of today's news.
+2. Dave does sports and hands to Michael.
+3. Michael thanks Dave, then does the entertainment report. He does not
    thank Mo at the start.
-3. After the report, Michael turns it over to Mo.
-4. Mo thanks Michael, and may mention weekdays at 7:15 and 12:15 on Mo's Place Radio.
+4. After the report, Michael turns it over to Mo.
+5. Mo thanks Michael, and may mention weekdays at 7:15 and 12:15 on Mo's Place Radio.
 
 Midday handoff is locked:
 
@@ -163,12 +164,23 @@ MICHAEL_HANDOFF = "DJ Mo, back to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
 MICHAEL_EMPTY_MIDDAY = "That's all for entertainment this midday."
 MO_THANKS = "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
+MO_MORNING_OPEN = "This is Mo's Place Radio morning news."
 MO_MIDDAY_OPEN = "This is Mo's Place Radio midday news."
+JOHNNY_MORNING_BRIDGE = "Johnny J with more of today's news."
 JOHNNY_MIDDAY_BRIDGE = "Johnny J with more of today's news."
 BAILEY_MIDDAY_BRIDGE = "Bailey here with the latest."
 ENTERTAINMENT_FIRST_AIRING = "October 14, 2026 at 7:15"
-# Dave, Michael thanks Dave, Michael turns it over to Mo, Mo thanks Michael.
+# Morning entertainment lock after Mo and Johnny: Dave, Michael, Mo.
 LOCKED_HANDOFF_LINES = (
+    DAVE_SPORTS_CLOSE,
+    MICHAEL_STRAIGHT_OPEN,
+    MICHAEL_HANDOFF,
+    MO_THANKS,
+)
+# Full morning desk: Mo, Johnny, Dave, Michael thanks Dave, Michael to Mo, Mo thanks Michael.
+LOCKED_MORNING_HANDOFF_LINES = (
+    MO_MORNING_OPEN,
+    JOHNNY_MORNING_BRIDGE,
     DAVE_SPORTS_CLOSE,
     MICHAEL_STRAIGHT_OPEN,
     MICHAEL_HANDOFF,
@@ -187,7 +199,9 @@ LOCKED_MIDDAY_HANDOFF_LINES = (
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael G reads the entertainment report after Dave's sports in the morning, "
     "and again at midday after Bailey. "
-    "Morning handoff order is locked. Dave hands the morning news to Michael. "
+    "Morning the news flows Mo, Johnny J, Dave, Michael G, then Mo. "
+    "Morning handoff order is locked. Mo opens. Johnny J follows. "
+    "Dave does sports and hands to Michael. "
     "Michael thanks Dave, then reads the entertainment report. "
     "Michael does not thank Mo at the start. In the morning, Dave is the person he thanks. "
     "At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
@@ -234,6 +248,7 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
 )
 
 ENTERTAINMENT_PERSONALITY_CLAUSE = (
+    "At morning the news flows Mo, Johnny J, Dave, Michael G, then Mo. "
     "Dave hands to Michael G for the morning entertainment report "
     "instead of going straight to DJ Mo. Michael thanks Dave, then reads up to four supplied entertainment "
     "stories. At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
@@ -1986,28 +2001,96 @@ def mo_thanks_line(thanks: str = "") -> str:
     return MO_THANKS
 
 
+def _speaker_block(label: str, *chunks: str) -> str:
+    """Join a speaker label with non-empty spoken lines."""
+    body = "\n".join(chunk.strip() for chunk in chunks if str(chunk or "").strip())
+    if body:
+        return f"[{label}]\n{body}"
+    return f"[{label}]"
+
+
+def split_morning_news_copy(news_copy: str) -> tuple[str, str]:
+    """Split hard news into Mo and Johnny bodies when speaker tags exist.
+
+    Unlabeled copy rides with Johnny after the morning bridge so Mo still opens
+    the desk. Dave/Michael blocks already appended to an old bulletin are dropped
+    by the caller before this runs.
+    """
+    body = str(news_copy or "").replace("\r\n", "\n").strip()
+    if not body:
+        return "", ""
+
+    johnny_markers = ("[Johnny J]", "[Johnny]")
+    mo_markers = ("[DJ Mo]", "[Mo]")
+    lower = body.lower()
+
+    johnny_index = -1
+    johnny_marker = ""
+    for marker in johnny_markers:
+        found = lower.find(marker.lower())
+        if found >= 0 and (johnny_index < 0 or found < johnny_index):
+            johnny_index = found
+            johnny_marker = body[found : found + len(marker)]
+
+    mo_index = -1
+    mo_marker = ""
+    for marker in mo_markers:
+        found = lower.find(marker.lower())
+        if found >= 0 and (mo_index < 0 or found < mo_index):
+            mo_index = found
+            mo_marker = body[found : found + len(marker)]
+
+    if johnny_index >= 0 and mo_index >= 0 and mo_index < johnny_index:
+        mo_body = body[mo_index + len(mo_marker) : johnny_index].strip()
+        johnny_body = body[johnny_index + len(johnny_marker) :].strip()
+        return mo_body, johnny_body
+    if johnny_index >= 0:
+        before = body[:johnny_index].strip()
+        johnny_body = body[johnny_index + len(johnny_marker) :].strip()
+        if before.lower().startswith(tuple(m.lower() for m in mo_markers)):
+            for marker in mo_markers:
+                if before.lower().startswith(marker.lower()):
+                    before = before[len(marker) :].strip()
+                    break
+        return before, johnny_body
+    if mo_index >= 0:
+        return body[mo_index + len(mo_marker) :].strip(), ""
+    return "", body
+
+
 def build_morning_flow(
     stories: list[EntertainmentStory] | None = None,
     *,
     sports_close: str = "",
+    sports_body: str = "",
+    mo_body: str = "",
+    johnny_body: str = "",
     mo_thanks: str = "",
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Morning order after the hard-news block: Dave, Michael G, then DJ Mo."""
+    """Morning order: Mo, Johnny J, Dave, Michael G, then Mo."""
     ranked = rank_entertainment_stories(list(stories or []), now=now)
     selected = ranked["stories"]
     dave_close = sports_close_hands_to_michael(sports_close)
     michael_script = michael_g_script(selected, thanks_to="Dave")
     thanks = mo_thanks_line(mo_thanks)
+    mo_open = MO_MORNING_OPEN
+    johnny_bridge = JOHNNY_MORNING_BRIDGE
+    dave_chunks = [chunk for chunk in (sports_body, dave_close) if str(chunk or "").strip()]
     return {
-        "order": ["news", "dave_sports", "michael_g_entertainment", "mo_thanks"],
+        "order": ["mo_open", "johnny_j", "dave_sports", "michael_g_entertainment", "mo_thanks"],
         "slot": "morning",
         "story_count": len(selected),
         "stories": selected,
         "selection_log": ranked["log"],
         "selection_audit": ranked["audit"]["text"],
         "selection_audit_rows": ranked["audit"]["rows"],
+        "mo_open": mo_open,
+        "mo_body": str(mo_body or "").strip(),
+        "johnny_bridge": johnny_bridge,
+        "johnny_body": str(johnny_body or "").strip(),
+        "dave_sports_body": str(sports_body or "").strip(),
         "dave_sports_close": dave_close,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(
@@ -2016,12 +2099,11 @@ def build_morning_flow(
         "mo_thanks": thanks,
         "script": "\n\n".join(
             [
-                "[Dave]",
-                dave_close,
-                "[Michael G]",
-                michael_script,
-                "[DJ Mo]",
-                thanks,
+                _speaker_block("DJ Mo", mo_open, str(mo_body or "")),
+                _speaker_block("Johnny J", johnny_bridge, str(johnny_body or "")),
+                _speaker_block("Dave", *dave_chunks),
+                _speaker_block("Michael G", michael_script),
+                _speaker_block("DJ Mo", thanks),
             ]
         ),
     }
@@ -2095,6 +2177,12 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
     thanks = mo_thanks_line(str(payload.get("mo_entertainment_thanks", "")))
     return [
         "[Morning handoff]",
+        "[DJ Mo]",
+        MO_MORNING_OPEN,
+        "",
+        "[Johnny J]",
+        JOHNNY_MORNING_BRIDGE,
+        "",
         "[Dave]",
         close,
         "",
@@ -2224,17 +2312,26 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     personality = str(rules.get("news_first_personality_rules") or "").strip()
     lower_personality = personality.lower()
     needs_michael = "michael g" not in lower_personality
+    needs_morning = "mo, johnny j, dave" not in lower_personality
     needs_midday = "bailey" not in lower_personality or "12:15" not in lower_personality
-    if needs_michael or needs_midday:
+    if needs_michael or needs_morning or needs_midday:
         if personality:
             if needs_michael:
                 personality = f"{personality.rstrip('. ')}. {ENTERTAINMENT_PERSONALITY_CLAUSE}"
-            elif needs_midday:
-                personality = (
-                    f"{personality.rstrip('. ')}. At midday the news flows Mo, Johnny J, "
-                    "Bailey, Michael G, then Mo. Bailey hands to Michael. Michael thanks Bailey. "
-                    "DJ Mo may mention weekdays at 7:15 and 12:15 on Mo's Place Radio."
-                )
+            else:
+                extras: list[str] = []
+                if needs_morning:
+                    extras.append(
+                        "At morning the news flows Mo, Johnny J, Dave, Michael G, then Mo."
+                    )
+                if needs_midday:
+                    extras.append(
+                        "At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
+                        "Bailey hands to Michael. Michael thanks Bailey. "
+                        "DJ Mo may mention weekdays at 7:15 and 12:15 on Mo's Place Radio."
+                    )
+                if extras:
+                    personality = f"{personality.rstrip('. ')}. {' '.join(extras)}"
         else:
             personality = f"Lead anchor opens every newscast. {ENTERTAINMENT_PERSONALITY_CLAUSE}"
     rules["news_first_personality_rules"] = personality
@@ -2265,6 +2362,7 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     has_locked_handoff = (
         "does not thank mo at the start" in lowered_rules
         and "dave is the person he thanks" in lowered_rules
+        and "mo, johnny j, dave" in lowered_rules
         and "bailey" in lowered_rules
         and "turns it over to mo" in lowered_rules
         and "weekdays at 7:15 and 12:15" in lowered_rules

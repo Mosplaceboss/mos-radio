@@ -668,15 +668,20 @@ def test_handoff_flow() -> None:
     ]
     flow = build_morning_flow(stories, sports_close="Back to you, Mo.")
     _check(
-        "order is news, sports, entertainment, thanks",
-        flow["order"] == ["news", "dave_sports", "michael_g_entertainment", "mo_thanks"],
+        "order is Mo, Johnny, Dave, Michael, Mo",
+        flow["order"] == ["mo_open", "johnny_j", "dave_sports", "michael_g_entertainment", "mo_thanks"],
     )
     _check("four stories in the package", flow["story_count"] == 4)
     script = flow["script"]
+    mo_open_at = script.index("[DJ Mo]")
+    johnny_at = script.index("[Johnny J]")
     dave_at = script.index("[Dave]")
     michael_at = script.index("[Michael G]")
-    mo_at = script.index("[DJ Mo]")
-    _check("speakers run Dave then Michael G then Mo", dave_at < michael_at < mo_at)
+    mo_close_at = script.rindex("[DJ Mo]")
+    _check(
+        "speakers run Mo, Johnny, Dave, Michael G, Mo",
+        mo_open_at < johnny_at < dave_at < michael_at < mo_close_at,
+    )
     _check("dave does not hand straight to Mo", "Back to you, Mo." not in script.split("[Michael G]")[0])
     _check("dave close is the entertainment handoff", DAVE_SPORTS_CLOSE in script)
     _check("michael script thanks Dave", flow["michael_g_script"].startswith("Thanks, Dave."))
@@ -1053,6 +1058,7 @@ def test_news_rules_upgrade() -> None:
     _check("rules say he does not read his biography", "does not read his biography" in rules)
     _check("rules lock the handoff", "does not thank mo at the start" in rules and "dave is the person he thanks" in rules)
     _check("rules turn the show over to mo", "turns it over to mo" in rules)
+    _check("rules name morning mo johnny dave order", "mo, johnny j, dave" in rules)
     _check("rules name midday bailey handoff", "bailey" in rules and "mo, johnny j, bailey" in rules)
     _check("rules let mo mention 7:15 and 12:15", "weekdays at 7:15 and 12:15" in rules)
     _check("rules name the first airing", ENTERTAINMENT_FIRST_AIRING.lower() in rules)
@@ -1197,7 +1203,15 @@ def test_news_rules_upgrade() -> None:
     preview = build_dev_script_lines(normalize_bundle({}))
     text = "\n".join(preview)
     _check("preview keeps the news opening", "This is Mo's Place Radio news." in text)
-    _check("preview order", text.index("[Dave]") < text.index("[Michael G]") < text.index("[DJ Mo]"))
+    _check("preview opens morning with Mo", "This is Mo's Place Radio morning news." in text)
+    _check(
+        "preview order",
+        text.index("[DJ Mo]")
+        < text.index("[Johnny J]")
+        < text.index("[Dave]")
+        < text.index("[Michael G]")
+        < text.rindex("[DJ Mo]"),
+    )
     _check("preview thanks Michael G", "Thanks, Michael G." in text)
     _check("preview does not invent a headline", "Do not invent stories in this preview." in text)
     _check("preview introduces the entertainment report", MICHAEL_STRAIGHT_OPEN in text)
@@ -1294,11 +1308,16 @@ def test_config_files() -> None:
         "weekdays at 7:15 and 12:15" in mo["personality_description"].lower(),
     )
     _check(
+        "mo personality names morning flow",
+        "mo, johnny j, dave, michael g, then mo" in mo["personality_description"].lower(),
+    )
+    _check(
         "mo personality names midday flow",
         "mo, johnny j, bailey, michael g, then mo" in mo["personality_description"].lower(),
     )
     news_desk = next(voice for voice in voices["voices"] if voice["id"] == "vb-news-desk")
     _check("news desk hands to Michael G", "hands to Michael G" in news_desk["personality_prompt"])
+    _check("news desk names morning flow", "mo, johnny j, dave" in news_desk["personality_prompt"].lower())
     _check("news desk names midday flow", "mo, johnny j, bailey" in news_desk["personality_prompt"].lower())
     mo_voice = next(voice for voice in voices["voices"] if voice["id"] == "vb-mo-primary")
     _check("Mo voice thanks Michael G", "thank Michael G" in mo_voice["personality_prompt"])

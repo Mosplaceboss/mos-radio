@@ -1,3 +1,12 @@
 @echo off
-REM Copy to engine.local.cmd and point at your real News runner script.
+REM Office PC file that must be updated before morning/midday changes:
+REM   D:\MosPlaceRadioPlatform\Automation\News\engine.local.cmd
+REM
+REM Speak this script, which build_bulletin.py writes:
+REM   D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt
+REM
+REM Morning order is locked:
+REM   Mo, Johnny J, Dave, Michael G, then Mo.
+REM A 12:15 bulletin says 12:15.
+REM Do not air yesterday's newscast.
 exit /b 0
