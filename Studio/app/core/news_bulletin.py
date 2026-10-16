@@ -93,7 +93,7 @@ def thanks_for_air(air: str) -> str:
     if clock == "7:15":
         return MO_THANKS
     if clock == "12:15" or not clock:
-        return "Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio."
+        return "Love you, hun. Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio."
     return f"Thanks, Michael G. Weekdays at {clock} on Mo's Place Radio."
 
 

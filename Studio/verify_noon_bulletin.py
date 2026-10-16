@@ -58,8 +58,11 @@ def main() -> None:
     michael_block = script.split("[Michael G]", 1)[1].split("[Bailey]", 1)[0]
     assert "Bailey, over to you." in michael_block
     assert "DJ Mo, back to you." not in michael_block
-    assert BAILEY_MIDDAY_CLOSE in script or "DJ Mo, back to you." in script
-    assert "Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio." in script
+    assert BAILEY_MIDDAY_CLOSE in script or "Love you, bye." in script
+    assert "Love you, bye." in script
+    assert script.index("Love you, bye.") < script.rindex("[DJ Mo]")
+    assert "Love you, hun. Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio." in script
+    assert script.rindex("Love you, hun.") > script.index("[Bailey]")
     assert "Thanks, Michael G. Weekdays at 12:15" not in script
     assert "7:15" not in script
     assert "In movie news" in script

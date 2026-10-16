@@ -1362,7 +1362,8 @@ def test_midday_handoff_flow() -> None:
     _check("michael thanks Dave at midday", flow["michael_g_script"].startswith("Thanks, Dave."))
     _check("michael does not thank Bailey at midday", "Thanks, Bailey." not in flow["michael_g_script"])
     _check("michael hands to Bailey at midday", "Bailey, over to you." in flow["michael_g_script"])
-    _check("bailey hands to Mo", "DJ Mo, back to you." in flow["bailey_close"])
+    _check("bailey ends with love you bye", "Love you, bye." in flow["bailey_close"])
+    _check("mo starts with love you hun", flow["mo_thanks"].startswith("Love you, hun."))
     _check("mo thanks Bailey after midday", "Thanks, Bailey." in flow["mo_thanks"])
     _check(
         "locked midday lines",
@@ -1373,8 +1374,8 @@ def test_midday_handoff_flow() -> None:
             "That's sports for this midday. Michael G has the entertainment report.",
             "Thanks, Dave. Michael G here with the entertainment report.",
             "Bailey, over to you.",
-            "Bailey here with the latest. DJ Mo, back to you.",
-            "Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
+            "Bailey here with the latest. Love you, bye.",
+            "Love you, hun. Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
         ),
     )
     mo_open_at = script.index("[DJ Mo]")
@@ -1431,7 +1432,7 @@ def test_midday_handoff_flow() -> None:
     _check("midday preview has Dave", "[Dave]" in midday_preview)
     _check("midday preview has Bailey", "[Bailey]" in midday_preview)
     _check("midday preview michael thanks Dave", "Thanks, Dave." in midday_preview)
-    _check("midday preview mo thanks Bailey", "Thanks, Bailey." in midday_preview)
+    _check("midday preview mo thanks Bailey", "Love you, hun." in midday_preview and "Thanks, Bailey." in midday_preview)
     _check("midday slot default is 12:15", any(
         slot.get("slot_type") == "midday" and slot.get("time") == "12:15"
         for slot in bundle["schedule"]["slots"]
