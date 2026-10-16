@@ -48,6 +48,7 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Maintain the live-radio feel between songs.",
         "Remind listeners who they are listening to.",
         "Tease upcoming music without listing too many songs.",
+        "Mention Request Song or Community in this break, not both — alternating later is fine.",
     ],
     "Music Story": [
         "Share a short story connected to the upcoming artist or song.",

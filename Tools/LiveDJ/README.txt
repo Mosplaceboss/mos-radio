@@ -11,3 +11,5 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Every DJ: mention Request Song or Community in a break, not both. Alternating across breaks is fine.

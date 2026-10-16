@@ -37,37 +37,67 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Yacht Rock",
 )
 
+# DJs were stacking Request Song and Community in one cart. One listener CTA per
+# break is enough — alternate across breaks. Applies to every host.
+_LISTENER_CTA_COACHING = """
+Never mention both song requests and Community in the same break.
+Pick one listener CTA per break — Request Song or Community — and save the other for a later break.
+Alternating across breaks is fine. This applies to every host/DJ.
+Do not repeat the same CTA or closer line twice inside one break.
+""".strip()
+
+_LISTENER_CTA_EVENT_TYPES = frozenset(
+    {
+        "Show Open",
+        "Check-In",
+        "Weekend Check-In",
+        "Artist Spotlight",
+        "Music Story",
+        "Coming Up",
+        "Coming Up Next",
+        "Today's Countdown",
+        "Final Half Hour",
+        "Listener Memory",
+        "Format Change",
+    }
+)
+
 EVENT_COACHING: dict[str, str] = {
-    "Show Open": """
+    "Show Open": f"""
 Welcome listeners.
 Mention the day and time naturally.
 Mention the show's format.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Check-In": """
+    "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Weekend Check-In": """
+    "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Artist Spotlight": """
+    "Artist Spotlight": f"""
 Share one verified fact about the next artist using only supplied context.
 Do not invent biographical details.
 Transition naturally into the next song.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Music Story": """
+    "Music Story": f"""
 Share a brief music-related observation tied to an upcoming song or artist.
 Use only supplied context — do not invent facts.
 Keep it conversational, not encyclopedic.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "This Day in Music History": """
 Open warmly and personally — something in the spirit of: you're sitting there thinking back on music history and you'd like to share a few with the listener.
@@ -84,34 +114,40 @@ Topics can be music, movies, TV, sports, pop culture, or other popular 1970s mom
 Do not invent dates, titles, scores, or other history.
 Keep it nostalgic and conversational, then return to the music.
 """.strip(),
-    "Coming Up": """
+    "Coming Up": f"""
 Tease several upcoming artists or songs from the supplied list.
 Do not sound repetitive or like a laundry list.
 Do not promise exact timing or order.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Coming Up Next": """
+    "Coming Up Next": f"""
 Tease what is coming up next on the show from the supplied music context.
 Mention the time of day when natural (for example noon or the final hour).
 Keep it conversational and avoid promising exact song order.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Today's Countdown": """
+    "Today's Countdown": f"""
 Talk about why this era of music remains memorable.
 Reference the show format naturally.
 Tease the next song or artist from the supplied queue without inventing chart ranks.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Final Half Hour": """
+    "Final Half Hour": f"""
 Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Listener Memory": """
+    "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
+{_LISTENER_CTA_COACHING}
 """.strip(),
-    "Format Change": """
+    "Format Change": f"""
 Acknowledge the shift in format or show direction naturally.
 Set expectations for what listeners will hear next.
 Keep it brief.
+{_LISTENER_CTA_COACHING}
 """.strip(),
     "Handoff": """
 Wrap up briefly.
@@ -152,9 +188,18 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
     "daily_mix_welcome": "Welcome listeners to the Daily Mix and tease upcoming artists.",
     "lunchtime_welcome": "Welcome listeners to the lunchtime show and set a relaxed mood.",
     "music_story": "Share a brief music-related observation tied to an upcoming song or artist.",
-    "personality": "Check in with listeners in the host's natural voice.",
-    "current_or_facebook": "Check in with listeners and reference the current daypart naturally.",
-    "current_item": "Check in with listeners and reference the current song or daypart.",
+    "personality": (
+        "Check in with listeners in the host's natural voice. "
+        "Mention Request Song or Community in this break, not both."
+    ),
+    "current_or_facebook": (
+        "Check in with listeners and reference the current daypart naturally. "
+        "Mention Request Song or Community in this break, not both."
+    ),
+    "current_item": (
+        "Check in with listeners and reference the current song or daypart. "
+        "Mention Request Song or Community in this break, not both."
+    ),
     "pre_handoff_lunch": "Wrap up briefly and hand off to the next host.",
     "signoff_to_johnny": "Thank listeners and hand off to the next host.",
     "signoff": "Thank listeners and hand off to the next format or host.",
@@ -166,8 +211,14 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
 
 DEFAULT_MISSIONS: dict[str, str] = {
     "Show Open": "Welcome listeners, mention the day, introduce the format, and tease upcoming music.",
-    "Check-In": "Check in with listeners and reference the current daypart naturally.",
-    "Weekend Check-In": "Weekend check-in and mention two upcoming artists.",
+    "Check-In": (
+        "Check in with listeners and reference the current daypart naturally. "
+        "Mention Request Song or Community in this break, not both — alternating later is fine."
+    ),
+    "Weekend Check-In": (
+        "Weekend check-in and mention two upcoming artists. "
+        "Mention Request Song or Community in this break, not both."
+    ),
     "Artist Spotlight": "Share one brief verified fact about an upcoming artist.",
     "Music Story": "Share a brief music-related observation tied to an upcoming song or artist.",
     "This Day in Music History": (
@@ -321,23 +372,96 @@ def event_type_for_row(row: dict) -> str:
     return "Check-In"
 
 
+def listener_cta_mission_hint(row: dict) -> str:
+    """Remind speaking breaks: Request Song or Community — not both in one cart."""
+    event_type = event_type_for_row(row)
+    if event_type not in _LISTENER_CTA_EVENT_TYPES:
+        return ""
+    return (
+        "Mention Request Song or Community in this break, not both — "
+        "alternating across breaks is fine for every DJ."
+    )
+
+
+def apply_listener_cta_rules_to_mission(row: dict, mission: str) -> str:
+    hint = listener_cta_mission_hint(row)
+    text = str(mission or "").strip()
+    if not hint:
+        return text
+    lower = text.lower()
+    if "request song or community" in lower and "not both" in lower:
+        return text
+    if not text:
+        return hint
+    return f"{text} {hint}".strip()
+
+
+def _script_mentions_song_request(script: str) -> bool:
+    lower = str(script or "").lower()
+    needles = (
+        "request song",
+        "song request",
+        "request a song",
+        "requests are open",
+        "submit a request",
+        "send a request",
+        "make a request",
+        "listener request",
+    )
+    return any(needle in lower for needle in needles)
+
+
+def _script_mentions_community(script: str) -> bool:
+    lower = str(script or "").lower()
+    needles = (
+        "click community",
+        "community to share",
+        "through community",
+        "on community",
+        " community ",
+        "community.",
+        "community!",
+        "community,",
+    )
+    if "community" not in lower:
+        return False
+    # Avoid false hits on "community radio" style phrases without a CTA.
+    return any(needle in lower for needle in needles) or lower.strip().startswith("community")
+
+
+def dual_listener_cta_symptoms(script: str) -> list[str]:
+    """Flag scripts that mention both song requests and Community in one break."""
+    text = str(script or "").strip()
+    if not text:
+        return []
+    symptoms: list[str] = []
+    has_request = _script_mentions_song_request(text)
+    has_community = _script_mentions_community(text)
+    if has_request and has_community:
+        symptoms.append("request_and_community_same_break")
+    return symptoms
+
+
+def script_mentions_request_and_community(script: str) -> bool:
+    """True when one break pitches both Request Song and Community."""
+    return "request_and_community_same_break" in dual_listener_cta_symptoms(script)
+
+
 def mission_text_for_row(row: dict) -> str:
     mission = str(row.get("Mission") or row.get("mission") or "").strip()
     event_type = event_type_for_row(row)
     if not mission:
-        return default_mission_for_event_type(event_type)
+        mission = default_mission_for_event_type(event_type)
+    else:
+        legacy_key = _legacy_mission_key(mission)
+        if legacy_key in LEGACY_MISSION_TEXT:
+            mission = LEGACY_MISSION_TEXT[legacy_key]
+        elif legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
+            mission = LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
+        elif _mission_is_event_type_name(mission, event_type):
+            mission = default_mission_for_event_type(event_type)
 
-    legacy_key = _legacy_mission_key(mission)
-    if legacy_key in LEGACY_MISSION_TEXT:
-        return LEGACY_MISSION_TEXT[legacy_key]
-
-    if legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
-        return LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
-
-    if _mission_is_event_type_name(mission, event_type):
-        return default_mission_for_event_type(event_type)
-
-    return mission
+    return apply_listener_cta_rules_to_mission(row, mission)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -366,7 +490,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = mission
+    result["Mission"] = apply_listener_cta_rules_to_mission(result, mission)
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
@@ -379,3 +503,12 @@ def schedule_type_for_event(event_type: str) -> str:
 def event_coaching(event_type: str) -> str:
     normalized = normalize_event_type(event_type)
     return EVENT_COACHING.get(normalized, EVENT_COACHING["Check-In"])
+
+
+def event_coaching_for_row(row: dict) -> str:
+    """Coaching for a schedule row, including Request Song / Community alternate rules."""
+    base = event_coaching(event_type_for_row(row))
+    hint = listener_cta_mission_hint(row)
+    if not hint or hint.lower() in base.lower():
+        return base
+    return f"{base}\n{hint}".strip()
