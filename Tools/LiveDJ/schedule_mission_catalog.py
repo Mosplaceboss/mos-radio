@@ -36,11 +36,11 @@ EVENT_TYPE_TO_CATEGORY: dict[str, str] = {
 
 DEFAULT_CATEGORIES: dict[str, list[str]] = {
     "Welcome / Show Open": [
-        "Welcome listeners and introduce the show.",
-        "Set the mood for the current music format.",
-        "Preview what listeners can expect during the show.",
-        "Introduce the DJ and invite listeners to stay tuned.",
-        "Open the show with energy and a clear sense of direction.",
+        "Welcome listeners and introduce the show. Do not close or hand off.",
+        "Set the mood for the current music format. Do not close or hand off.",
+        "Preview what listeners can expect during the show. Do not close or hand off.",
+        "Introduce the DJ and invite listeners to stay tuned. Do not close or hand off.",
+        "Open the show with energy and a clear sense of direction. Do not close or hand off.",
     ],
     "General Check-In": [
         "Reconnect with listeners and keep the show moving.",

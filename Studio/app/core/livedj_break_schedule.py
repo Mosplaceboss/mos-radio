@@ -459,6 +459,11 @@ def validate_break_row(
 
     if event_type in {"Handoff", "Show Close"} and not str(row.get("NextHost") or "").strip():
         messages.append("Handoff and show close breaks should name the next host when possible.")
+    if event_type and event_type not in {"Handoff", "Show Close"} and str(row.get("NextHost") or "").strip():
+        messages.append(
+            "Next host is only used for Handoff and Show Close. "
+            "Clear it for show opens and mid-show breaks so opens do not close or invent a handoff."
+        )
 
     return messages
 
