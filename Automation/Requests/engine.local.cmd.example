@@ -1,3 +1,6 @@
 @echo off
-REM Copy to engine.local.cmd and point at your real Request Watcher script.
+REM Copy to engine.local.cmd and point at your real Request Watcher.
+REM Example (adjust path to your installed MoRequestsWatcher):
+REM   start "" "D:\MosPlaceRadioPlatform\Automation\Requests\MoRequestsWatcher.exe"
+REM   echo. > "%~dp0.running"
 exit /b 0

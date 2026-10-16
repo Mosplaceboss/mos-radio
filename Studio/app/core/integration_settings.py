@@ -12,12 +12,27 @@ DEFAULT_INTEGRATION: dict[str, Any] = {
     "radiodj_process": "RadioDJ.exe",
     "voicebox_api_url": "http://127.0.0.1:7860",
     "voicebox_health_path": "/",
-    "livedj_process": "python.exe",
-    "livedj_process_match": "livedj",
-    "request_watcher_process": "python.exe",
-    "request_watcher_match": "request",
-    "news_process": "python.exe",
-    "news_process_match": "news",
+    "livedj_process": "MosLiveDJ.exe",
+    "livedj_process_match": "",
+    "livedj_process_fallbacks": [
+        ["MosLiveDJ.exe", ""],
+        ["python.exe", "livedj"],
+        ["pythonw.exe", "livedj"],
+    ],
+    "request_watcher_process": "MoRequestsWatcher.exe",
+    "request_watcher_match": "",
+    "request_watcher_process_fallbacks": [
+        ["MoRequestsWatcher.exe", ""],
+        ["python.exe", "request"],
+        ["pythonw.exe", "request"],
+    ],
+    "news_process": "MosNews.exe",
+    "news_process_match": "",
+    "news_process_fallbacks": [
+        ["MosNews.exe", ""],
+        ["python.exe", "news"],
+        ["pythonw.exe", "news"],
+    ],
     "live_paths": {
         "livedj": {
             "personalities": "Automation/LiveDJ/personalities.json",

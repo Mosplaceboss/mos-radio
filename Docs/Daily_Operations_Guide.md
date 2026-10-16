@@ -32,6 +32,7 @@ Every action asks for confirmation first.
 | RadioDJ stopped | Open RadioDJ or check the broadcast PC |
 | Voicebox disconnected | Confirm Voicebox is running and the API address is correct |
 | Watcher stopped | Restart the approved watcher from Daily Operations |
+| Watcher looks frozen | Restart LiveDJ and/or Request Watcher; also confirm Voicebox is running |
 | Missing audio | Check the Audio Monitoring tab in Broadcasting |
 | Stale news | Run News Now or check the News automation folder |
 

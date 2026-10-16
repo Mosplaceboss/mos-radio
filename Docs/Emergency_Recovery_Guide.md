@@ -24,6 +24,7 @@ Refresh status and read alerts in plain English. Note which service is red:
 | RadioDJ not running | Open RadioDJ from Daily Operations |
 | Voicebox down | Restart Voicebox on its PC, then refresh |
 | LiveDJ watcher stopped | Restart LiveDJ Watcher (confirm when asked) |
+| LiveDJ / Requests look frozen | Restart the matching watcher; confirm Voicebox is up (Kathy and request intros need it) |
 | News stale | Run News Now (confirm when asked) |
 | Requests unavailable | Restart Request Watcher (confirm when asked) |
 

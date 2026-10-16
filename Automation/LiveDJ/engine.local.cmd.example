@@ -1,5 +1,9 @@
 @echo off
-REM Copy to engine.local.cmd and point at your real LiveDJ watcher script.
-REM Example:
-REM   python "D:\MoPlaceStudio\your-live-utilities\livedj_watcher.py"
+REM Copy to engine.local.cmd and point at your real LiveDJ watcher.
+REM Example (adjust path to your installed MosLiveDJ):
+REM   start "" "D:\MosPlaceRadioPlatform\Automation\LiveDJ\MosLiveDJ.exe"
+REM   echo. > "%~dp0.running"
+REM Or for a Python watcher:
+REM   python "D:\MPR\Engines\LiveDJ\livedj_watcher.py"
+REM   echo. > "%~dp0.running"
 exit /b 0
