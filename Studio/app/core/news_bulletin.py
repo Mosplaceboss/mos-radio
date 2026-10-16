@@ -1,7 +1,7 @@
 """Build the spoken newscast written beside the News launcher.
 
 Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
-Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
+Midday (12:15): Mo, Johnny J, Dave, Michael G, Bailey, then Mo.
 Yesterday's news_copy is skipped so stale hard news cannot air. A down feed
 is logged and the rest is still written.
 
@@ -21,7 +21,9 @@ from zoneinfo import ZoneInfo
 from app.core.entertainment_report import (
     DAVE_SPORTS_CLOSE,
     MICHAEL_HANDOFF,
+    MICHAEL_MIDDAY_HANDOFF,
     MO_THANKS,
+    MO_THANKS_BAILEY,
     EntertainmentStory,
     build_midday_flow,
     build_morning_flow,
@@ -86,12 +88,12 @@ def is_midday_air(air: str) -> bool:
 
 
 def thanks_for_air(air: str) -> str:
-    """Mo's thanks. 7:15 keeps the locked morning line. Other clocks name themselves."""
+    """Mo's thanks. 7:15 thanks Michael G. Midday thanks Bailey after her close."""
     clock = normalize_air(air)
     if clock == "7:15":
         return MO_THANKS
-    if not clock:
-        clock = "12:15"
+    if clock == "12:15" or not clock:
+        return "Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio."
     return f"Thanks, Michael G. Weekdays at {clock} on Mo's Place Radio."
 
 
@@ -203,6 +205,7 @@ def _build_flow(
     if is_midday_air(air):
         return build_midday_flow(
             selected,
+            sports_body=sports_body,
             mo_body=mo_body,
             johnny_body=johnny_body,
             mo_thanks=thanks,
@@ -225,7 +228,7 @@ def build_bulletin_text(
     stories: list[EntertainmentStory] | None = None,
     news_dir: Path | None = None,
 ) -> str:
-    """Spoken bulletin for the air clock: morning Dave desk or midday Bailey desk."""
+    """Spoken bulletin for the air clock: morning or midday desk order."""
     script, _audit = assemble_bulletin(
         air=air,
         fetch=fetch,
@@ -254,11 +257,9 @@ def assemble_bulletin(
     if audit:
         LOGGER.info("Entertainment story selection audit:\n%s", audit)
 
-    sports = ""
-    if not is_midday_air(air):
-        sports = _sports_sentence(fetch, sports_lines, folder)
-        if not sports:
-            _log_failure("Sports copy is empty; Dave still hands to Michael G", folder)
+    sports = _sports_sentence(fetch, sports_lines, folder)
+    if not sports:
+        _log_failure("Sports copy is empty; Dave still hands to Michael G", folder)
 
     try:
         flow = _build_flow(
@@ -279,7 +280,8 @@ def assemble_bulletin(
         )
 
     script = str(flow.get("script") or "").strip() + "\n"
-    if MICHAEL_HANDOFF not in script:
+    expected_handoff = MICHAEL_MIDDAY_HANDOFF if is_midday_air(air) else MICHAEL_HANDOFF
+    if expected_handoff not in script:
         _log_failure(
             "Michael G handoff was missing; the rest of the bulletin was still written",
             folder,

@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 REM Write today's newscast first.
 REM Morning: Mo, Johnny, Dave, Michael G, Mo.
-REM Midday: Mo, Johnny, Bailey, Michael G, Mo.
+REM Midday: Mo, Johnny, Dave, Michael G, Bailey, Mo.
 REM Studio installs this bat and build_bulletin into Automation\News.
 call "%~dp0build_bulletin.bat" %*
 if errorlevel 1 echo %DATE% %TIME% build_bulletin failed >> "%~dp0news.log"

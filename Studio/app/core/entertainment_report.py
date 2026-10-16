@@ -1,7 +1,7 @@
 """Entertainment report for Michael G.
 
 Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
-Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
+Midday (12:15): Mo, Johnny J, Dave, Michael G, Bailey, then Mo.
 
 Morning handoff is locked:
 
@@ -14,12 +14,13 @@ Morning handoff is locked:
 
 Midday handoff is locked:
 
-1. Mo opens. Johnny J and Bailey follow.
-2. Bailey hands to Michael.
-3. Michael thanks Bailey, then does the entertainment report. He does not
+1. Mo opens. Johnny J follows.
+2. Dave does sports and hands to Michael.
+3. Michael thanks Dave, then does the entertainment report. He does not
    thank Mo at the start.
-4. After the report, Michael turns it over to Mo.
-5. Mo thanks Michael.
+4. After the report, Michael turns it over to Bailey.
+5. Bailey wraps midday and turns it over to Mo.
+6. Mo thanks Bailey.
 
 On a normal day Michael adds one short conversational beat that sounds like
 him talking, using coffee or classic rock. He does not read his biography.
@@ -136,7 +137,10 @@ _RETIRED_FEED_MARKERS = (
 )
 
 DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertainment report."
+DAVE_SPORTS_CLOSE_MIDDAY = "That's sports for this midday. Michael G has the entertainment report."
+# Kept for older saved rules that still name Bailey before Michael.
 BAILEY_ENTERTAINMENT_CLOSE = "Michael G has the entertainment report."
+BAILEY_MO_CLOSE = "DJ Mo, back to you."
 BAILEY_NEWS_ID = "bailey"
 BAILEY_NAME = "Bailey"
 JOHNNY_J_NEWS_ID = "johnny_j"
@@ -148,10 +152,11 @@ MICHAEL_G_BIO = (
     "Oh, right. I drink a lot of coffee and enjoy listening to classic rock and talking about all the different sub genres of rock music going back to the golden age."
 )
 MICHAEL_OPEN = "Thanks, Dave."
-MICHAEL_MIDDAY_OPEN = "Thanks, Bailey."
+# Midday also thanks Dave — Bailey comes after Michael G.
+MICHAEL_MIDDAY_OPEN = MICHAEL_OPEN
 MICHAEL_REPORT = "Michael G here with the entertainment report."
 MICHAEL_STRAIGHT_OPEN = f"{MICHAEL_OPEN} {MICHAEL_REPORT}"
-MICHAEL_MIDDAY_STRAIGHT_OPEN = f"{MICHAEL_MIDDAY_OPEN} {MICHAEL_REPORT}"
+MICHAEL_MIDDAY_STRAIGHT_OPEN = MICHAEL_STRAIGHT_OPEN
 # Stable fallback for a normal day. The model may vary the sentence.
 # This one sounds like him talking about coffee and classic rock.
 # It is not the biography, and it is not a disconnected gag.
@@ -161,14 +166,17 @@ MICHAEL_BEAT = (
 MICHAEL_WARM_OPEN = f"{MICHAEL_STRAIGHT_OPEN} {MICHAEL_BEAT}"
 MICHAEL_INTRO = MICHAEL_WARM_OPEN
 MICHAEL_HANDOFF = "DJ Mo, back to you."
+MICHAEL_MIDDAY_HANDOFF = "Bailey, over to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
 MICHAEL_EMPTY_MIDDAY = "That's all for entertainment this midday."
 MO_THANKS = "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
+MO_THANKS_BAILEY = "Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
 MO_MORNING_OPEN = "This is Mo's Place Radio morning news."
 MO_MIDDAY_OPEN = "This is Mo's Place Radio midday news."
 JOHNNY_MORNING_BRIDGE = "Johnny J with more of today's news."
 JOHNNY_MIDDAY_BRIDGE = "Johnny J with more of today's news."
 BAILEY_MIDDAY_BRIDGE = "Bailey here with the latest."
+BAILEY_MIDDAY_CLOSE = f"{BAILEY_MIDDAY_BRIDGE} {BAILEY_MO_CLOSE}"
 ENTERTAINMENT_FIRST_AIRING = "October 14, 2026 at 7:15"
 # Morning entertainment lock after Mo and Johnny: Dave, Michael, Mo.
 LOCKED_HANDOFF_LINES = (
@@ -186,27 +194,28 @@ LOCKED_MORNING_HANDOFF_LINES = (
     MICHAEL_HANDOFF,
     MO_THANKS,
 )
-# Midday: Mo, Johnny, Bailey, Michael thanks Bailey, Michael to Mo, Mo thanks Michael.
+# Midday: Mo, Johnny, Dave, Michael thanks Dave, Michael to Bailey, Bailey to Mo, Mo thanks Bailey.
 LOCKED_MIDDAY_HANDOFF_LINES = (
     MO_MIDDAY_OPEN,
     JOHNNY_MIDDAY_BRIDGE,
-    f"{BAILEY_MIDDAY_BRIDGE} {BAILEY_ENTERTAINMENT_CLOSE}",
+    DAVE_SPORTS_CLOSE_MIDDAY,
     MICHAEL_MIDDAY_STRAIGHT_OPEN,
-    MICHAEL_HANDOFF,
-    MO_THANKS,
+    MICHAEL_MIDDAY_HANDOFF,
+    BAILEY_MIDDAY_CLOSE,
+    MO_THANKS_BAILEY,
 )
 
 DEFAULT_ENTERTAINMENT_REPORT_RULES = (
-    "Michael G reads the entertainment report after Dave's sports in the morning, "
-    "and again at midday after Bailey. "
+    "Michael G reads the entertainment report after Dave's sports in the morning and at midday. "
     "Morning the news flows Mo, Johnny J, Dave, Michael G, then Mo. "
     "Morning handoff order is locked. Mo opens. Johnny J follows. "
     "Dave does sports and hands to Michael. "
     "Michael thanks Dave, then reads the entertainment report. "
-    "Michael does not thank Mo at the start. In the morning, Dave is the person he thanks. "
-    "At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
-    "Bailey hands to Michael. Michael thanks Bailey, then reads the entertainment report. "
-    "After the report, Michael turns it over to Mo. Mo thanks Michael. "
+    "Michael does not thank Mo at the start. Dave is the person he thanks. "
+    "At midday the news flows Mo, Johnny J, Dave, Michael G, Bailey, then Mo. "
+    "Dave hands to Michael. Michael thanks Dave, then reads the entertainment report. "
+    "After the report, Michael turns it over to Bailey. Bailey wraps midday and turns it over to Mo. "
+    "Mo thanks Bailey. "
     "Mo may mention weekdays at 7:15 and 12:15 on Mo's Place Radio. "
     "The first morning airing is October 14, 2026 at 7:15. "
     "Four stories, refreshed every morning and midday. "
@@ -214,13 +223,13 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "His personality is comical: light and warm, one short beat, then the stories. "
     "Not sarcastic about death or illness. Not a long monologue. "
     'On a normal morning, open with "Thanks, Dave. Michael G here with the entertainment report." '
-    'On a normal midday, open with "Thanks, Bailey. Michael G here with the entertainment report." '
+    'On a normal midday, open with "Thanks, Dave. Michael G here with the entertainment report." '
     "Then one short conversational beat that sounds like him talking, using coffee or classic rock. "
     "One sentence. Not a disconnected gag. "
     "One short beat. Not a biography. Not the degrees or the universities. Not the same sentence every day. "
     "A death, obituary, or mourning item leads, and the whole open is straight. "
     'Morning death open: exactly "Thanks, Dave. Michael G here with the entertainment report." '
-    'Midday death open: exactly "Thanks, Bailey. Michael G here with the entertainment report." '
+    'Midday death open: exactly "Thanks, Dave. Michael G here with the entertainment report." '
     "No coffee, no classic rock, no popcorn joke, no grandkids joke, no dog joke, and no husband joke. "
     "The death story itself stays straight. "
     "Do not invent a movie title or a person's death for the joke. "
@@ -242,19 +251,21 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "A death airs only after at least two independent reputable sources, "
     "and an old obituary is not breaking news. "
     "Do not name the outlets on the air. "
-    "Thank the person who handed to him, then read the supplied stories, then turn the show over to DJ Mo. "
+    "Thank Dave, then read the supplied stories, then turn the show over to Bailey at midday or DJ Mo in the morning. "
     "Do not open with thanks to Mo. "
-    "DJ Mo's next line thanks Michael G by name."
+    "At morning, DJ Mo's next line thanks Michael G by name. "
+    "At midday, Bailey follows Michael and DJ Mo thanks Bailey by name."
 )
 
 ENTERTAINMENT_PERSONALITY_CLAUSE = (
     "At morning the news flows Mo, Johnny J, Dave, Michael G, then Mo. "
     "Dave hands to Michael G for the morning entertainment report "
     "instead of going straight to DJ Mo. Michael thanks Dave, then reads up to four supplied entertainment "
-    "stories. At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
-    "Bailey hands to Michael. Michael thanks Bailey. He does not thank Mo at the start. "
-    "Michael turns it over to DJ Mo. "
-    "DJ Mo thanks Michael G by name and may mention weekdays at 7:15 and 12:15 on Mo's Place Radio."
+    "stories. At midday the news flows Mo, Johnny J, Dave, Michael G, Bailey, then Mo. "
+    "Dave hands to Michael. Michael thanks Dave. He does not thank Mo at the start. "
+    "Michael turns it over to Bailey. Bailey wraps midday and turns it over to DJ Mo. "
+    "DJ Mo thanks Bailey by name at midday, and thanks Michael G by name in the morning, "
+    "and may mention weekdays at 7:15 and 12:15 on Mo's Place Radio."
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -1875,15 +1886,18 @@ def spoken_story(story: EntertainmentStory) -> str:
     )
 
 
-def sports_close_hands_to_michael(close: str) -> str:
+def sports_close_hands_to_michael(close: str = "", *, midday: bool = False) -> str:
     """Dave's sports close hands to Michael G, not straight to DJ Mo."""
+    default = DAVE_SPORTS_CLOSE_MIDDAY if midday else DAVE_SPORTS_CLOSE
     text = _WS_RE.sub(" ", str(close or "")).strip()
     if not text:
-        return DAVE_SPORTS_CLOSE
+        return default
     if re.search(r"(?i)\bmichael\s+g\b", text):
+        if midday and re.search(r"(?i)\bthis morning\b", text):
+            return re.sub(r"(?i)\bthis morning\b", "this midday", text)
         return text
     if _STRAIGHT_TO_MO_RE.search(text):
-        return DAVE_SPORTS_CLOSE
+        return default
     if text[-1] not in ".!?":
         text += "."
     return f"{text} Michael G has the entertainment report."
@@ -1894,6 +1908,7 @@ def michael_g_script(
     *,
     thanks_to: str = "Dave",
     empty_line: str = MICHAEL_EMPTY,
+    handoff: str = MICHAEL_HANDOFF,
 ) -> str:
     """Spoken fallback. The introduction is here even when OpenAI is not called."""
     selected = list(stories or [])[:ENTERTAINMENT_STORY_COUNT]
@@ -1906,7 +1921,7 @@ def michael_g_script(
         )
     else:
         lines.append(empty_line)
-    lines.append(MICHAEL_HANDOFF)
+    lines.append(handoff or MICHAEL_HANDOFF)
     return "\n".join(lines)
 
 
@@ -1926,10 +1941,13 @@ def format_entertainment_prompt(
     *,
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
     thanks_to: str = "Dave",
+    handoff_to: str = "DJ Mo",
+    mo_thanks: str = MO_THANKS,
 ) -> str:
     """Local-AI prompt: sports-style rules plus only the supplied stories."""
     thanks_name = michael_thanks_name(thanks_to)
     open_line = michael_straight_open_for(thanks_name)
+    handoff_name = _WS_RE.sub(" ", str(handoff_to or "DJ Mo")).strip() or "DJ Mo"
     selected = list(stories)[:ENTERTAINMENT_STORY_COUNT]
     lines = [rules.strip(), "", "SUPPLIED STORIES:"]
     filled = 0
@@ -1954,7 +1972,7 @@ def format_entertainment_prompt(
             "Read those and do not invent stories to reach four."
         )
     else:
-        lines.append("No usable stories were supplied. Do not invent any. Hand off to DJ Mo.")
+        lines.append(f"No usable stories were supplied. Do not invent any. Hand off to {handoff_name}.")
     lines.append("Do not name Deadline, TMZ, or Variety on the air.")
     lines.append(
         "Short sentences. No bullet points. "
@@ -1983,22 +2001,34 @@ def format_entertainment_prompt(
         )
     lines.append(
         f"Thank {thanks_name}. Do not thank Mo at the start. {thanks_name} is the person he thanks. "
-        "After the stories, turn the show over to DJ Mo."
+        f"After the stories, turn the show over to {handoff_name}."
     )
-    lines.append(f"DJ Mo's next line is: {MO_THANKS}")
+    lines.append(f"DJ Mo's next line is: {mo_thanks or MO_THANKS}")
     return "\n".join(lines)
 
 
-def mo_thanks_line(thanks: str = "") -> str:
-    """Mo thanks Michael. A bare thanks picks up the weekday 7:15 and 12:15 mention."""
+def mo_thanks_line(thanks: str = "", *, thank: str = "Michael G") -> str:
+    """Mo thanks the last desk handoff. A bare thanks picks up the weekday airtime mention."""
+    who = _WS_RE.sub(" ", str(thank or "Michael G")).strip() or "Michael G"
+    default = MO_THANKS_BAILEY if who.lower().startswith("bailey") else MO_THANKS
     text = _WS_RE.sub(" ", str(thanks or "")).strip()
-    if not text or re.fullmatch(r"(?i)thanks,?\s+michael\s+g\.?", text):
-        return MO_THANKS
+    if not text:
+        return default
+    if re.fullmatch(r"(?i)thanks,?\s+michael\s+g\.?", text):
+        return MO_THANKS if who.lower().startswith("michael") else default
+    if re.fullmatch(r"(?i)thanks,?\s+bailey\.?", text):
+        return MO_THANKS_BAILEY
     if re.search(r"(?i)\bmichael\s+g\b", text) and re.search(r"(?i)\bthanks\b", text):
+        if who.lower().startswith("bailey"):
+            return MO_THANKS_BAILEY
         if "7:15" in text and "12:15" not in text:
             return MO_THANKS
         return text
-    return MO_THANKS
+    if re.search(r"(?i)\bbailey\b", text) and re.search(r"(?i)\bthanks\b", text):
+        if "7:15" in text and "12:15" not in text:
+            return MO_THANKS_BAILEY
+        return text
+    return default
 
 
 def _speaker_block(label: str, *chunks: str) -> str:
@@ -2109,21 +2139,31 @@ def build_morning_flow(
     }
 
 
-def bailey_hands_to_michael(close: str = "") -> str:
-    """Bailey's midday close hands to Michael G."""
+def bailey_hands_to_mo(close: str = "") -> str:
+    """Bailey's midday close hands back to Mo after Michael G."""
     text = _WS_RE.sub(" ", str(close or "")).strip()
     if not text:
-        return f"{BAILEY_MIDDAY_BRIDGE} {BAILEY_ENTERTAINMENT_CLOSE}"
-    if re.search(r"(?i)\bmichael\s+g\b", text):
+        return BAILEY_MIDDAY_CLOSE
+    if re.search(r"(?i)\bdj\s*mo\b|\bback to you\b", text):
         return text
+    # Upgrade older Bailey-to-Michael closes to Bailey-to-Mo.
+    if re.search(r"(?i)\bmichael\s+g\b", text):
+        return BAILEY_MIDDAY_CLOSE
     if text[-1] not in ".!?":
         text += "."
-    return f"{text} {BAILEY_ENTERTAINMENT_CLOSE}"
+    return f"{text} {BAILEY_MO_CLOSE}"
+
+
+def bailey_hands_to_michael(close: str = "") -> str:
+    """Compatibility wrapper. Midday Bailey now hands to Mo after Michael G."""
+    return bailey_hands_to_mo(close)
 
 
 def build_midday_flow(
     stories: list[EntertainmentStory] | None = None,
     *,
+    sports_close: str = "",
+    sports_body: str = "",
     bailey_close: str = "",
     mo_body: str = "",
     johnny_body: str = "",
@@ -2131,18 +2171,30 @@ def build_midday_flow(
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Midday order: Mo, Johnny J, Bailey, Michael G, then Mo."""
+    """Midday order: Mo, Johnny J, Dave, Michael G, Bailey, then Mo."""
     ranked = rank_entertainment_stories(list(stories or []), now=now)
     selected = ranked["stories"]
-    bailey_line = bailey_hands_to_michael(bailey_close)
+    dave_close = sports_close_hands_to_michael(sports_close, midday=True)
     michael_script = michael_g_script(
-        selected, thanks_to="Bailey", empty_line=MICHAEL_EMPTY_MIDDAY
+        selected,
+        thanks_to="Dave",
+        empty_line=MICHAEL_EMPTY_MIDDAY,
+        handoff=MICHAEL_MIDDAY_HANDOFF,
     )
-    thanks = mo_thanks_line(mo_thanks)
+    bailey_line = bailey_hands_to_mo(bailey_close)
+    thanks = mo_thanks_line(mo_thanks, thank="Bailey") if mo_thanks else MO_THANKS_BAILEY
     mo_open = MO_MIDDAY_OPEN
     johnny_bridge = JOHNNY_MIDDAY_BRIDGE
+    dave_chunks = [chunk for chunk in (sports_body, dave_close) if str(chunk or "").strip()]
     return {
-        "order": ["mo_open", "johnny_j", "bailey", "michael_g_entertainment", "mo_thanks"],
+        "order": [
+            "mo_open",
+            "johnny_j",
+            "dave_sports",
+            "michael_g_entertainment",
+            "bailey",
+            "mo_thanks",
+        ],
         "slot": "midday",
         "story_count": len(selected),
         "stories": selected,
@@ -2153,18 +2205,25 @@ def build_midday_flow(
         "mo_body": str(mo_body or "").strip(),
         "johnny_bridge": johnny_bridge,
         "johnny_body": str(johnny_body or "").strip(),
+        "dave_sports_body": str(sports_body or "").strip(),
+        "dave_sports_close": dave_close,
         "bailey_close": bailey_line,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(
-            selected, rules=rules, thanks_to="Bailey"
+            selected,
+            rules=rules,
+            thanks_to="Dave",
+            handoff_to="Bailey",
+            mo_thanks=thanks,
         ),
         "mo_thanks": thanks,
         "script": "\n\n".join(
             [
                 _speaker_block("DJ Mo", mo_open, str(mo_body or "")),
                 _speaker_block("Johnny J", johnny_bridge, str(johnny_body or "")),
-                _speaker_block("Bailey", bailey_line),
+                _speaker_block("Dave", *dave_chunks),
                 _speaker_block("Michael G", michael_script),
+                _speaker_block("Bailey", bailey_line),
                 _speaker_block("DJ Mo", thanks),
             ]
         ),
@@ -2201,8 +2260,9 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
 def midday_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
     """Development preview of the midday handoff. Does not invent on-air stories."""
     payload = rules or {}
-    bailey_line = bailey_hands_to_michael(str(payload.get("bailey_entertainment_close", "")))
-    thanks = mo_thanks_line(str(payload.get("mo_entertainment_thanks", "")))
+    dave_close = sports_close_hands_to_michael(str(payload.get("sports_close", "")), midday=True)
+    bailey_line = bailey_hands_to_mo(str(payload.get("bailey_entertainment_close", "")))
+    thanks = mo_thanks_line(str(payload.get("mo_entertainment_thanks", "")), thank="Bailey")
     return [
         "[Midday handoff]",
         "[DJ Mo]",
@@ -2211,13 +2271,16 @@ def midday_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
         "[Johnny J]",
         JOHNNY_MIDDAY_BRIDGE,
         "",
-        "[Bailey]",
-        bailey_line,
+        "[Dave]",
+        dave_close,
         "",
         "[Michael G]",
-        *michael_open_lines([], thanks_to="Bailey"),
+        *michael_open_lines([], thanks_to="Dave"),
         "[Four stories when the feeds supply them. A death leads. Other stories are new movies when the feeds have them. Do not invent stories in this preview.]",
-        MICHAEL_HANDOFF,
+        MICHAEL_MIDDAY_HANDOFF,
+        "",
+        "[Bailey]",
+        bailey_line,
         "",
         "[DJ Mo]",
         thanks,
@@ -2265,24 +2328,29 @@ def _is_bailey(record: dict[str, Any]) -> bool:
 
 
 def ensure_bailey_personality(personalities: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Insert Bailey after Johnny J when an existing news desk is missing her."""
+    """Keep Bailey on the desk after Michael G (midday closes after entertainment)."""
+    bailey: dict[str, Any] | None = None
     updated: list[dict[str, Any]] = []
-    found = False
     for record in personalities:
         if _is_bailey(record):
-            updated.append(_bailey_record(record))
-            found = True
-        else:
-            updated.append(record)
-    if found:
-        return updated
+            bailey = _bailey_record(record)
+            continue
+        updated.append(record)
+
+    if bailey is None:
+        bailey = _bailey_record()
 
     insert_at = len(updated)
     for index, record in enumerate(updated):
-        if record.get("id") == JOHNNY_J_NEWS_ID:
+        if _is_michael(record):
             insert_at = index + 1
             break
-    updated.insert(insert_at, _bailey_record())
+    else:
+        for index, record in enumerate(updated):
+            if record.get("id") == JOHNNY_J_NEWS_ID:
+                insert_at = index + 1
+                break
+    updated.insert(insert_at, bailey)
     return updated
 
 
@@ -2314,7 +2382,10 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     lower_personality = personality.lower()
     needs_michael = "michael g" not in lower_personality
     needs_morning = "mo, johnny j, dave" not in lower_personality
-    needs_midday = "bailey" not in lower_personality or "12:15" not in lower_personality
+    needs_midday = (
+        "mo, johnny j, dave, michael g, bailey" not in lower_personality
+        or "12:15" not in lower_personality
+    )
     if needs_michael or needs_morning or needs_midday:
         if personality:
             if needs_michael:
@@ -2327,8 +2398,8 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
                     )
                 if needs_midday:
                     extras.append(
-                        "At midday the news flows Mo, Johnny J, Bailey, Michael G, then Mo. "
-                        "Bailey hands to Michael. Michael thanks Bailey. "
+                        "At midday the news flows Mo, Johnny J, Dave, Michael G, Bailey, then Mo. "
+                        "Dave hands to Michael. Michael thanks Dave, then Bailey wraps midday to Mo. "
                         "DJ Mo may mention weekdays at 7:15 and 12:15 on Mo's Place Radio."
                     )
                 if extras:
@@ -2338,7 +2409,7 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
     rules["news_first_personality_rules"] = personality
 
     rules["sports_close"] = sports_close_hands_to_michael(str(rules.get("sports_close", "")))
-    rules["bailey_entertainment_close"] = bailey_hands_to_michael(
+    rules["bailey_entertainment_close"] = bailey_hands_to_mo(
         str(rules.get("bailey_entertainment_close", ""))
     )
     rules["mo_entertainment_thanks"] = mo_thanks_line(str(rules.get("mo_entertainment_thanks", "")))
@@ -2364,8 +2435,8 @@ def apply_entertainment_script_rules(rules: dict[str, Any]) -> dict[str, Any]:
         "does not thank mo at the start" in lowered_rules
         and "dave is the person he thanks" in lowered_rules
         and "mo, johnny j, dave" in lowered_rules
-        and "bailey" in lowered_rules
-        and "turns it over to mo" in lowered_rules
+        and "mo, johnny j, dave, michael g, bailey" in lowered_rules
+        and "turns it over to bailey" in lowered_rules
         and "weekdays at 7:15 and 12:15" in lowered_rules
     )
     has_verified_deaths = "two independent" in lowered_rules and "350" in lowered_rules

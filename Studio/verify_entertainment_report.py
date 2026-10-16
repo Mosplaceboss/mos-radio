@@ -1059,7 +1059,10 @@ def test_news_rules_upgrade() -> None:
     _check("rules lock the handoff", "does not thank mo at the start" in rules and "dave is the person he thanks" in rules)
     _check("rules turn the show over to mo", "turns it over to mo" in rules)
     _check("rules name morning mo johnny dave order", "mo, johnny j, dave" in rules)
-    _check("rules name midday bailey handoff", "bailey" in rules and "mo, johnny j, bailey" in rules)
+    _check(
+        "rules name midday dave michael bailey handoff",
+        "bailey" in rules and "mo, johnny j, dave, michael g, bailey" in rules,
+    )
     _check("rules let mo mention 7:15 and 12:15", "weekdays at 7:15 and 12:15" in rules)
     _check("rules name the first airing", ENTERTAINMENT_FIRST_AIRING.lower() in rules)
     _check("rules say a death leads", "a death, obituary, or mourning item leads" in rules)
@@ -1313,12 +1316,15 @@ def test_config_files() -> None:
     )
     _check(
         "mo personality names midday flow",
-        "mo, johnny j, bailey, michael g, then mo" in mo["personality_description"].lower(),
+        "mo, johnny j, dave, michael g, bailey, then mo" in mo["personality_description"].lower(),
     )
     news_desk = next(voice for voice in voices["voices"] if voice["id"] == "vb-news-desk")
     _check("news desk hands to Michael G", "hands to Michael G" in news_desk["personality_prompt"])
     _check("news desk names morning flow", "mo, johnny j, dave" in news_desk["personality_prompt"].lower())
-    _check("news desk names midday flow", "mo, johnny j, bailey" in news_desk["personality_prompt"].lower())
+    _check(
+        "news desk names midday flow",
+        "mo, johnny j, dave, michael g, bailey" in news_desk["personality_prompt"].lower(),
+    )
     mo_voice = next(voice for voice in voices["voices"] if voice["id"] == "vb-mo-primary")
     _check("Mo voice thanks Michael G", "thank Michael G" in mo_voice["personality_prompt"])
 
@@ -1338,39 +1344,51 @@ def test_midday_handoff_flow() -> None:
             kind="film_news",
         ),
     ]
-    flow = build_midday_flow(stories)
+    flow = build_midday_flow(stories, sports_body="The Celtics beat the Knicks.")
     script = flow["script"]
     _check("midday slot tag", flow["slot"] == "midday")
     _check(
-        "midday order is Mo, Johnny, Bailey, Michael, Mo",
-        flow["order"] == ["mo_open", "johnny_j", "bailey", "michael_g_entertainment", "mo_thanks"],
+        "midday order is Mo, Johnny, Dave, Michael, Bailey, Mo",
+        flow["order"]
+        == [
+            "mo_open",
+            "johnny_j",
+            "dave_sports",
+            "michael_g_entertainment",
+            "bailey",
+            "mo_thanks",
+        ],
     )
-    _check("michael thanks Bailey at midday", flow["michael_g_script"].startswith("Thanks, Bailey."))
-    _check("michael does not thank Dave at midday", "Thanks, Dave." not in flow["michael_g_script"])
-    _check("bailey hands to michael", "Michael G has the entertainment report." in flow["bailey_close"])
-    _check("mo thanks after midday report", flow["mo_thanks"] == MO_THANKS)
+    _check("michael thanks Dave at midday", flow["michael_g_script"].startswith("Thanks, Dave."))
+    _check("michael does not thank Bailey at midday", "Thanks, Bailey." not in flow["michael_g_script"])
+    _check("michael hands to Bailey at midday", "Bailey, over to you." in flow["michael_g_script"])
+    _check("bailey hands to Mo", "DJ Mo, back to you." in flow["bailey_close"])
+    _check("mo thanks Bailey after midday", "Thanks, Bailey." in flow["mo_thanks"])
     _check(
         "locked midday lines",
         LOCKED_MIDDAY_HANDOFF_LINES
         == (
             "This is Mo's Place Radio midday news.",
             "Johnny J with more of today's news.",
-            "Bailey here with the latest. Michael G has the entertainment report.",
-            "Thanks, Bailey. Michael G here with the entertainment report.",
-            "DJ Mo, back to you.",
-            "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
+            "That's sports for this midday. Michael G has the entertainment report.",
+            "Thanks, Dave. Michael G here with the entertainment report.",
+            "Bailey, over to you.",
+            "Bailey here with the latest. DJ Mo, back to you.",
+            "Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
         ),
     )
     mo_open_at = script.index("[DJ Mo]")
     johnny_at = script.index("[Johnny J]")
-    bailey_at = script.index("[Bailey]")
+    dave_at = script.index("[Dave]")
     michael_at = script.index("[Michael G]")
+    bailey_at = script.index("[Bailey]")
     mo_close_at = script.rindex("[DJ Mo]")
     _check(
         "midday script order",
-        mo_open_at < johnny_at < bailey_at < michael_at < mo_close_at,
+        mo_open_at < johnny_at < dave_at < michael_at < bailey_at < mo_close_at,
     )
-    _check("midday prompt thanks Bailey", "thank bailey" in flow["michael_g_prompt"].lower())
+    _check("midday prompt thanks Dave", "thank dave" in flow["michael_g_prompt"].lower())
+    _check("midday prompt hands to Bailey", "turn the show over to bailey" in flow["michael_g_prompt"].lower())
     _check("midday open constant", MICHAEL_MIDDAY_STRAIGHT_OPEN in flow["michael_g_script"])
 
     death = _story(
@@ -1379,9 +1397,11 @@ def test_midday_handoff_flow() -> None:
         source_id="tmz",
         kind="celebrity",
     )
-    death_script = michael_g_script([death], thanks_to="Bailey")
+    death_script = michael_g_script(
+        [death], thanks_to="Dave", handoff="Bailey, over to you."
+    )
     _check(
-        "midday death open thanks Bailey straight",
+        "midday death open thanks Dave straight",
         death_script.splitlines()[0] == MICHAEL_MIDDAY_STRAIGHT_OPEN,
     )
     _check("midday death drops the beat", MICHAEL_BEAT not in death_script)
@@ -1408,8 +1428,10 @@ def test_midday_handoff_flow() -> None:
     midday_preview = "\n".join(build_dev_script_lines(bundle, slot_type="midday"))
     _check("midday preview greets afternoon", "Good afternoon" in midday_preview)
     _check("midday preview has Johnny", "[Johnny J]" in midday_preview)
+    _check("midday preview has Dave", "[Dave]" in midday_preview)
     _check("midday preview has Bailey", "[Bailey]" in midday_preview)
-    _check("midday preview thanks Bailey", "Thanks, Bailey." in midday_preview)
+    _check("midday preview michael thanks Dave", "Thanks, Dave." in midday_preview)
+    _check("midday preview mo thanks Bailey", "Thanks, Bailey." in midday_preview)
     _check("midday slot default is 12:15", any(
         slot.get("slot_type") == "midday" and slot.get("time") == "12:15"
         for slot in bundle["schedule"]["slots"]
@@ -1418,8 +1440,8 @@ def test_midday_handoff_flow() -> None:
     names = [person["name"] for person in personalities]
     _check("bailey is on the news desk", "Bailey" in names)
     _check(
-        "desk order keeps Johnny before Bailey before Michael",
-        names.index("Johnny J") < names.index("Bailey") < names.index("Michael G"),
+        "desk order keeps Johnny before Michael before Bailey",
+        names.index("Johnny J") < names.index("Michael G") < names.index("Bailey"),
     )
 
 

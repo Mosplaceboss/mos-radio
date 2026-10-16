@@ -173,8 +173,8 @@ def normalize_personalities(data: dict[str, Any] | None) -> dict[str, Any]:
         record.setdefault("enabled", True)
         record.setdefault("notes", "")
         normalized.append(record)
-    with_bailey = ensure_bailey_personality(normalized)
-    return {"personalities": ensure_michael_g_personality(with_bailey)}
+    with_michael = ensure_michael_g_personality(normalized)
+    return {"personalities": ensure_bailey_personality(with_michael)}
 
 
 def normalize_categories(data: dict[str, Any] | None) -> dict[str, Any]:

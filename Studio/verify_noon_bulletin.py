@@ -1,4 +1,4 @@
-"""The 12:15 bulletin is Mo, Johnny, Bailey, Michael G, Mo and names 12:15."""
+"""The 12:15 bulletin is Mo, Johnny, Dave, Michael G, Bailey, Mo and names 12:15."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ sys.path.insert(0, str(ROOT / "Studio"))
 
 from app.core.news_bulletin import build_bulletin_text  # noqa: E402
 from app.core.entertainment_report import (  # noqa: E402
-    BAILEY_ENTERTAINMENT_CLOSE,
+    BAILEY_MIDDAY_CLOSE,
+    DAVE_SPORTS_CLOSE_MIDDAY,
     JOHNNY_MIDDAY_BRIDGE,
-    MICHAEL_HANDOFF,
+    MICHAEL_MIDDAY_HANDOFF,
     MO_MIDDAY_OPEN,
     EntertainmentStory,
 )
@@ -45,15 +46,21 @@ def main() -> None:
     assert MO_MIDDAY_OPEN in script
     assert JOHNNY_MIDDAY_BRIDGE in script
     assert "The council meets tonight at town hall." in script
-    assert script.index("[DJ Mo]") < script.index("[Johnny J]") < script.index("[Bailey]")
-    assert script.index("[Bailey]") < script.index("[Michael G]") < script.rindex("[DJ Mo]")
-    assert "[Dave]" not in script
-    assert "Celtics" not in script
-    assert BAILEY_ENTERTAINMENT_CLOSE in script
-    assert "Thanks, Bailey. Michael G here with the entertainment report." in script
-    assert "Thanks, Dave." not in script
-    assert MICHAEL_HANDOFF in script
-    assert "Thanks, Michael G. Weekdays at 12:15 on Mo's Place Radio." in script
+    assert script.index("[DJ Mo]") < script.index("[Johnny J]") < script.index("[Dave]")
+    assert script.index("[Dave]") < script.index("[Michael G]") < script.index("[Bailey]")
+    assert script.index("[Bailey]") < script.rindex("[DJ Mo]")
+    assert "[Dave]" in script
+    assert "Celtics" in script
+    assert DAVE_SPORTS_CLOSE_MIDDAY in script or "Michael G has the entertainment report." in script
+    assert "Thanks, Dave. Michael G here with the entertainment report." in script
+    assert "Thanks, Bailey. Michael G here" not in script
+    assert MICHAEL_MIDDAY_HANDOFF in script
+    michael_block = script.split("[Michael G]", 1)[1].split("[Bailey]", 1)[0]
+    assert "Bailey, over to you." in michael_block
+    assert "DJ Mo, back to you." not in michael_block
+    assert BAILEY_MIDDAY_CLOSE in script or "DJ Mo, back to you." in script
+    assert "Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio." in script
+    assert "Thanks, Michael G. Weekdays at 12:15" not in script
     assert "7:15" not in script
     assert "In movie news" in script
     assert "Ocean Light" in script
@@ -76,10 +83,10 @@ def main() -> None:
         )
     assert "Headlines still air." in failed
     assert "[Bailey]" in failed
-    assert "[Dave]" not in failed
-    assert MICHAEL_HANDOFF in failed
+    assert "[Dave]" in failed
+    assert MICHAEL_MIDDAY_HANDOFF in failed
     assert "12:15" in failed
-    print("OK: 12:15 bulletin is Mo, Johnny, Bailey, Michael G, Mo and the 12:15 clock")
+    print("OK: 12:15 bulletin is Mo, Johnny, Dave, Michael G, Bailey, Mo and the 12:15 clock")
 
 
 if __name__ == "__main__":
