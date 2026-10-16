@@ -1362,21 +1362,44 @@ def test_midday_handoff_flow() -> None:
     _check("michael thanks Dave at midday", flow["michael_g_script"].startswith("Thanks, Dave."))
     _check("michael does not thank Bailey at midday", "Thanks, Bailey." not in flow["michael_g_script"])
     _check("michael hands to Bailey at midday", "Bailey, over to you." in flow["michael_g_script"])
-    _check("bailey ends with love you bye", "Love you, bye." in flow["bailey_close"])
+    _check("bailey ends with love you bye", "Love you, bye" in flow["bailey_close"])
     _check("mo starts with love you hun", flow["mo_thanks"].startswith("Love you, hun."))
     _check("mo thanks Bailey after midday", "Thanks, Bailey." in flow["mo_thanks"])
+    _check("michael stays at four stories", flow["story_count"] <= 4)
+    from app.core.bailey_report import (
+        BAILEY_GOOD_NEWS_WAG,
+        BAILEY_HIDDEN_BOSTON_OPEN,
+        BAILEY_LAST_LINE,
+        BaileyStory,
+        bailey_midday_script,
+    )
+
+    bailey_full = bailey_midday_script(
+        hidden_boston=[
+            BaileyStory("Brown Jug", "Pizza in Chelsea.", "hidden_boston", "hidden_boston")
+        ],
+        animals=[BaileyStory("Rescue pup", "Maple was adopted.", "gnn", "animal")],
+    )
+    full_flow = build_midday_flow(stories, sports_body="The Celtics beat the Knicks.", bailey_script=bailey_full)
+    _check("bailey speaks Hidden Boston", BAILEY_HIDDEN_BOSTON_OPEN in full_flow["bailey_close"])
+    _check("bailey speaks Good News Wag", BAILEY_GOOD_NEWS_WAG in full_flow["bailey_close"])
+    _check("bailey full close Love you bye", BAILEY_LAST_LINE in full_flow["bailey_close"])
     _check(
-        "locked midday lines",
-        LOCKED_MIDDAY_HANDOFF_LINES
+        "locked midday handoff constants",
+        LOCKED_MIDDAY_HANDOFF_LINES[:5]
         == (
             "This is Mo's Place Radio midday news.",
             "Johnny J with more of today's news.",
             "That's sports for this midday. Michael G has the entertainment report.",
             "Thanks, Dave. Michael G here with the entertainment report.",
             "Bailey, over to you.",
-            "Bailey here with the latest. Love you, bye.",
-            "Love you, hun. Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
         ),
+    )
+    _check("locked midday still names Bailey close fallback", "Love you, bye." in LOCKED_MIDDAY_HANDOFF_LINES[5])
+    _check(
+        "locked midday Mo Love you hun",
+        LOCKED_MIDDAY_HANDOFF_LINES[6]
+        == "Love you, hun. Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio.",
     )
     mo_open_at = script.index("[DJ Mo]")
     johnny_at = script.index("[Johnny J]")
@@ -1431,6 +1454,8 @@ def test_midday_handoff_flow() -> None:
     _check("midday preview has Johnny", "[Johnny J]" in midday_preview)
     _check("midday preview has Dave", "[Dave]" in midday_preview)
     _check("midday preview has Bailey", "[Bailey]" in midday_preview)
+    _check("midday preview names Hidden Boston", "Hidden Boston" in midday_preview)
+    _check("midday preview names Good News Wag", "Good News Wag" in midday_preview)
     _check("midday preview michael thanks Dave", "Thanks, Dave." in midday_preview)
     _check("midday preview mo thanks Bailey", "Love you, hun." in midday_preview and "Thanks, Bailey." in midday_preview)
     _check("midday slot default is 12:15", any(

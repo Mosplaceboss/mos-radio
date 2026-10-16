@@ -12,9 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Studio"))
 
 from app.core.news_bulletin import build_bulletin_text  # noqa: E402
+from app.core.bailey_report import (  # noqa: E402
+    BAILEY_GOOD_NEWS_WAG,
+    BAILEY_HIDDEN_BOSTON_OPEN,
+    BAILEY_LAST_LINE,
+    BaileyStory,
+    bailey_midday_script,
+)
 from app.core.entertainment_report import (  # noqa: E402
-    BAILEY_MIDDAY_CLOSE,
     DAVE_SPORTS_CLOSE_MIDDAY,
+    ENTERTAINMENT_STORY_COUNT,
     JOHNNY_MIDDAY_BRIDGE,
     MICHAEL_MIDDAY_HANDOFF,
     MO_MIDDAY_OPEN,
@@ -33,6 +40,24 @@ def main() -> None:
         slot="variety_film_news",
         published=datetime.now(timezone.utc),
     )
+    bailey_page = bailey_midday_script(
+        hidden_boston=[
+            BaileyStory(
+                "Brown Jug Chelsea",
+                "Pizza and wings in Chelsea.",
+                "hidden_boston",
+                "hidden_boston",
+            )
+        ],
+        animals=[
+            BaileyStory(
+                "Rescue pup finds forever home",
+                "A shelter dog named Maple was adopted.",
+                "gnn",
+                "animal",
+            )
+        ],
+    )
     script = build_bulletin_text(
         air="12:15",
         fetch=False,
@@ -42,6 +67,7 @@ def main() -> None:
             "The Celtics beat the Knicks.",
         ],
         stories=[story],
+        bailey_script=bailey_page,
     )
     assert MO_MIDDAY_OPEN in script
     assert JOHNNY_MIDDAY_BRIDGE in script
@@ -51,6 +77,7 @@ def main() -> None:
     assert script.index("[Bailey]") < script.rindex("[DJ Mo]")
     assert "[Dave]" in script
     assert "Celtics" in script
+    assert "The Patriots are not playing." not in script  # Dave silence
     assert DAVE_SPORTS_CLOSE_MIDDAY in script or "Michael G has the entertainment report." in script
     assert "Thanks, Dave. Michael G here with the entertainment report." in script
     assert "Thanks, Bailey. Michael G here" not in script
@@ -58,9 +85,15 @@ def main() -> None:
     michael_block = script.split("[Michael G]", 1)[1].split("[Bailey]", 1)[0]
     assert "Bailey, over to you." in michael_block
     assert "DJ Mo, back to you." not in michael_block
-    assert BAILEY_MIDDAY_CLOSE in script or "Love you, bye." in script
-    assert "Love you, bye." in script
-    assert script.index("Love you, bye.") < script.rindex("[DJ Mo]")
+    assert ENTERTAINMENT_STORY_COUNT == 4
+    bailey_block = script.split("[Bailey]", 1)[1].split("[DJ Mo]", 1)[0]
+    assert BAILEY_HIDDEN_BOSTON_OPEN in bailey_block
+    assert "Brown Jug Chelsea" in bailey_block
+    assert BAILEY_GOOD_NEWS_WAG in bailey_block
+    assert "Maple" in bailey_block
+    assert BAILEY_LAST_LINE in bailey_block or "Love you, bye!" in bailey_block
+    assert "Love you, bye" in bailey_block
+    assert script.index("Love you, bye") < script.rindex("[DJ Mo]")
     assert "Love you, hun. Thanks, Bailey. Weekdays at 12:15 on Mo's Place Radio." in script
     assert script.rindex("Love you, hun.") > script.index("[Bailey]")
     assert "Thanks, Michael G. Weekdays at 12:15" not in script

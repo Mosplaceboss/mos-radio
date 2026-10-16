@@ -177,6 +177,8 @@ JOHNNY_MORNING_BRIDGE = "Johnny J with more of today's news."
 JOHNNY_MIDDAY_BRIDGE = "Johnny J with more of today's news."
 BAILEY_MIDDAY_BRIDGE = "Bailey here with the latest."
 BAILEY_MIDDAY_CLOSE = f"{BAILEY_MIDDAY_BRIDGE} {BAILEY_MO_CLOSE}"
+# Full midday page (Hidden Boston + Good News Wag) lives in bailey_report.
+# BAILEY_MIDDAY_CLOSE is only the fallback when those feeds supply nothing.
 ENTERTAINMENT_FIRST_AIRING = "October 14, 2026 at 7:15"
 # Morning entertainment lock after Mo and Johnny: Dave, Michael, Mo.
 LOCKED_HANDOFF_LINES = (
@@ -214,8 +216,10 @@ DEFAULT_ENTERTAINMENT_REPORT_RULES = (
     "Michael does not thank Mo at the start. Dave is the person he thanks. "
     "At midday the news flows Mo, Johnny J, Dave, Michael G, Bailey, then Mo. "
     "Dave hands to Michael. Michael thanks Dave, then reads the entertainment report. "
-    "After the report, Michael turns it over to Bailey. Bailey wraps midday and turns it over to Mo. "
-    "Mo thanks Bailey. "
+    "After the report, Michael turns it over to Bailey. "
+    "Bailey reads Hidden Boston food spots, then Bailey's Good News Wag animal stories, "
+    "then ends with Love you, bye, and turns it over to Mo. "
+    "Mo starts with Love you, hun, then thanks Bailey. "
     "Mo may mention weekdays at 7:15 and 12:15 on Mo's Place Radio. "
     "The first morning airing is October 14, 2026 at 7:15. "
     "Four stories, refreshed every morning and midday. "
@@ -2144,18 +2148,30 @@ def build_morning_flow(
 
 
 def bailey_hands_to_mo(close: str = "") -> str:
-    """Bailey's midday close hands back to Mo after Michael G."""
-    text = _WS_RE.sub(" ", str(close or "")).strip()
+    """Bailey's midday close hands back to Mo after Michael G.
+
+    Prefer a full Hidden Boston + Good News Wag page when supplied. Older saved
+    closes that only hand to Michael or Mo are upgraded to the short fallback.
+    """
+    from app.core.bailey_report import BAILEY_LAST_LINE
+
+    text = str(close or "").strip()
     if not text:
         return BAILEY_MIDDAY_CLOSE
-    if re.search(r"(?i)\blove you,?\s*bye\b", text):
-        return text
+    # Full midday page already ends with Love you, bye.
+    if "Hidden Boston" in text or "Good News Wag" in text or "Love you, bye!" in text:
+        if re.search(r"(?i)\blove you,?\s*bye\b", text):
+            return text
+        return f"{text.rstrip()}\n\n{BAILEY_LAST_LINE}"
+    collapsed = _WS_RE.sub(" ", text).strip()
+    if re.search(r"(?i)\blove you,?\s*bye\b", collapsed):
+        return collapsed
     # Upgrade older Bailey closes (Michael handoff or plain Mo handoff).
-    if re.search(r"(?i)\bmichael\s+g\b|\bdj\s*mo\b|\bback to you\b", text):
+    if re.search(r"(?i)\bmichael\s+g\b|\bdj\s*mo\b|\bback to you\b", collapsed):
         return BAILEY_MIDDAY_CLOSE
-    if text[-1] not in ".!?":
-        text += "."
-    return f"{text} {BAILEY_MO_CLOSE}"
+    if collapsed[-1] not in ".!?":
+        collapsed += "."
+    return f"{collapsed} {BAILEY_MO_CLOSE}"
 
 
 def bailey_hands_to_michael(close: str = "") -> str:
@@ -2169,13 +2185,18 @@ def build_midday_flow(
     sports_close: str = "",
     sports_body: str = "",
     bailey_close: str = "",
+    bailey_script: str = "",
     mo_body: str = "",
     johnny_body: str = "",
     mo_thanks: str = "",
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Midday order: Mo, Johnny J, Dave, Michael G, Bailey, then Mo."""
+    """Midday order: Mo, Johnny J, Dave, Michael G, Bailey, then Mo.
+
+    Bailey speaks Hidden Boston + Good News Wag when `bailey_script` is supplied.
+    Michael still reads up to four entertainment stories.
+    """
     ranked = rank_entertainment_stories(list(stories or []), now=now)
     selected = ranked["stories"]
     dave_close = sports_close_hands_to_michael(sports_close, midday=True)
@@ -2185,7 +2206,7 @@ def build_midday_flow(
         empty_line=MICHAEL_EMPTY_MIDDAY,
         handoff=MICHAEL_MIDDAY_HANDOFF,
     )
-    bailey_line = bailey_hands_to_mo(bailey_close)
+    bailey_line = bailey_hands_to_mo(bailey_script or bailey_close)
     thanks = mo_thanks_line(mo_thanks, thank="Bailey") if mo_thanks else MO_THANKS_BAILEY
     mo_open = MO_MIDDAY_OPEN
     johnny_bridge = JOHNNY_MIDDAY_BRIDGE
@@ -2212,6 +2233,7 @@ def build_midday_flow(
         "dave_sports_body": str(sports_body or "").strip(),
         "dave_sports_close": dave_close,
         "bailey_close": bailey_line,
+        "bailey_script": bailey_line,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(
             selected,
@@ -2263,9 +2285,27 @@ def morning_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
 
 def midday_preview_lines(rules: dict[str, Any] | None = None) -> list[str]:
     """Development preview of the midday handoff. Does not invent on-air stories."""
+    from app.core.bailey_report import (
+        BAILEY_GOOD_NEWS_WAG,
+        BAILEY_HIDDEN_BOSTON_OPEN,
+        BAILEY_LAST_LINE,
+    )
+
     payload = rules or {}
     dave_close = sports_close_hands_to_michael(str(payload.get("sports_close", "")), midday=True)
-    bailey_line = bailey_hands_to_mo(str(payload.get("bailey_entertainment_close", "")))
+    saved = str(payload.get("bailey_entertainment_close", "")).strip()
+    if "Hidden Boston" in saved or "Good News Wag" in saved:
+        bailey_line = bailey_hands_to_mo(saved)
+    else:
+        bailey_line = "\n\n".join(
+            [
+                BAILEY_HIDDEN_BOSTON_OPEN,
+                "[Hidden Boston restaurant spots when the favorites feed supplies them.]",
+                BAILEY_GOOD_NEWS_WAG,
+                "[Animal stories when the Good News Wag feeds supply them. Do not invent stories in this preview.]",
+                BAILEY_LAST_LINE,
+            ]
+        )
     thanks = mo_thanks_line(str(payload.get("mo_entertainment_thanks", "")), thank="Bailey")
     return [
         "[Midday handoff]",

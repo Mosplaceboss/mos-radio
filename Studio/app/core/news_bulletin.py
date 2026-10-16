@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.bailey_report import collect_bailey_report
 from app.core.entertainment_report import (
     DAVE_SPORTS_CLOSE,
     MICHAEL_HANDOFF,
@@ -200,6 +201,7 @@ def _build_flow(
     sports_body: str = "",
     mo_body: str = "",
     johnny_body: str = "",
+    bailey_script: str = "",
 ) -> dict:
     thanks = thanks_for_air(air)
     if is_midday_air(air):
@@ -208,6 +210,7 @@ def _build_flow(
             sports_body=sports_body,
             mo_body=mo_body,
             johnny_body=johnny_body,
+            bailey_script=bailey_script,
             mo_thanks=thanks,
         )
     return build_morning_flow(
@@ -219,6 +222,22 @@ def _build_flow(
     )
 
 
+def _collect_bailey(
+    fetch: bool,
+    bailey_script: str | None,
+    news_dir: Path,
+) -> str:
+    """Bailey's Hidden Boston + Good News Wag page. Midday only."""
+    if bailey_script is not None:
+        return str(bailey_script or "").strip()
+    try:
+        report = collect_bailey_report(fetch=fetch)
+        return str(report.get("script") or "").strip()
+    except Exception as exc:
+        _log_failure(f"Bailey Hidden Boston / animal feeds skipped: {exc}", news_dir)
+        return ""
+
+
 def build_bulletin_text(
     *,
     air: str = "12:15",
@@ -226,6 +245,7 @@ def build_bulletin_text(
     news_copy: str = "",
     sports_lines: list[str] | None = None,
     stories: list[EntertainmentStory] | None = None,
+    bailey_script: str | None = None,
     news_dir: Path | None = None,
 ) -> str:
     """Spoken bulletin for the air clock: morning or midday desk order."""
@@ -235,6 +255,7 @@ def build_bulletin_text(
         news_copy=news_copy,
         sports_lines=sports_lines,
         stories=stories,
+        bailey_script=bailey_script,
         news_dir=news_dir,
     )
     return script
@@ -247,6 +268,7 @@ def assemble_bulletin(
     news_copy: str = "",
     sports_lines: list[str] | None = None,
     stories: list[EntertainmentStory] | None = None,
+    bailey_script: str | None = None,
     news_dir: Path | None = None,
 ) -> tuple[str, str]:
     """Script text plus the operator audit. The audit is not part of the script."""
@@ -261,6 +283,10 @@ def assemble_bulletin(
     if not sports:
         _log_failure("Sports copy is empty; Dave still hands to Michael G", folder)
 
+    bailey_page = ""
+    if is_midday_air(air):
+        bailey_page = _collect_bailey(fetch, bailey_script, folder)
+
     try:
         flow = _build_flow(
             air,
@@ -268,6 +294,7 @@ def assemble_bulletin(
             sports_body=sports,
             mo_body=mo_body,
             johnny_body=johnny_body,
+            bailey_script=bailey_page,
         )
     except Exception as exc:
         _log_failure(f"Entertainment handoff skipped: {exc}", folder)
@@ -277,6 +304,7 @@ def assemble_bulletin(
             sports_body=sports,
             mo_body=mo_body,
             johnny_body=johnny_body,
+            bailey_script=bailey_page,
         )
 
     script = str(flow.get("script") or "").strip() + "\n"
