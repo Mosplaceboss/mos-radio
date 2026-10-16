@@ -24,6 +24,7 @@ class NavigationPanel(ttk.Frame):
         ("personalities", "Personalities"),
         ("voice_library", "Voice Library"),
         ("schedule", "Schedule"),
+        ("fun_days", "Fun / National Days"),
         ("requests", "Requests"),
         ("advertising_manager", "Advertising"),
         ("website_audience_manager", "Website & Audience"),
@@ -41,7 +42,7 @@ class NavigationPanel(ttk.Frame):
         ("Control", ("daily_operations", "station_manager", "dashboard", "help")),
         (
             "On Air",
-            ("programming", "music_manager", "personalities", "voice_library", "schedule", "requests"),
+            ("programming", "music_manager", "personalities", "voice_library", "schedule", "fun_days", "requests"),
         ),
         ("Station Content", ("advertising_manager", "website_audience_manager", "news_content_manager")),
         ("Operations", ("inventory", "broadcasting_manager", "operations_manager", "reports")),

@@ -21,6 +21,7 @@ from app.pages.broadcasting_manager import BroadcastingManagerPage
 from app.pages.connection import ConnectionSetupPage
 from app.pages.daily_operations import DailyOperationsPage
 from app.pages.dashboard import DashboardPage
+from app.pages.fun_days import FunDaysPage
 from app.pages.help import HelpPage
 from app.pages.inventory import InventoryPage
 from app.pages.livedj import LiveDJPage
@@ -60,6 +61,7 @@ class MainWindow(ttk.Frame):
         "personalities": PersonalitiesPage,
         "voice_library": VoiceLibraryPage,
         "schedule": SchedulePage,
+        "fun_days": FunDaysPage,
         "requests": RequestsPage,
         "advertising_manager": AdvertisingManagerPage,
         "advertising": AdvertisingPage,

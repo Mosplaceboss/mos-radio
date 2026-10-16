@@ -379,3 +379,30 @@ def schedule_type_for_event(event_type: str) -> str:
 def event_coaching(event_type: str) -> str:
     normalized = normalize_event_type(event_type)
     return EVENT_COACHING.get(normalized, EVENT_COACHING["Check-In"])
+
+
+def fun_day_context_for_row(
+    row: dict,
+    fun_days: list | None = None,
+    day_rows: list | None = None,
+    when=None,
+) -> str:
+    """Prompt block for this break: one fun day, rotated across the day.
+
+    Same-day observances are not stacked into the prompt. One fun day still
+    goes on every break. Missing FunDays.py leaves the break unchanged.
+    """
+    if not fun_days:
+        return ""
+    import importlib
+    import sys
+    from pathlib import Path
+
+    folder = str(Path(__file__).resolve().parent)
+    if folder not in sys.path:
+        sys.path.insert(0, folder)
+    try:
+        fun_days_mod = importlib.import_module("FunDays")
+    except ImportError:
+        return ""
+    return fun_days_mod.prompt_payload_for_break(fun_days, row, day_rows, when=when)
