@@ -19,8 +19,8 @@ Midday handoff is locked:
 3. Michael thanks Dave, then does the entertainment report. He does not
    thank Mo at the start.
 4. After the report, Michael turns it over to Bailey.
-5. Bailey wraps midday and turns it over to Mo.
-6. Mo thanks Bailey.
+5. Bailey wraps midday and ends with love you, bye.
+6. Mo starts with love you, hun, then thanks Bailey.
 
 On a normal day Michael adds one short conversational beat that sounds like
 him talking, using coffee or classic rock. He does not read his biography.
@@ -140,7 +140,7 @@ DAVE_SPORTS_CLOSE = "That's sports for this morning. Michael G has the entertain
 DAVE_SPORTS_CLOSE_MIDDAY = "That's sports for this midday. Michael G has the entertainment report."
 # Kept for older saved rules that still name Bailey before Michael.
 BAILEY_ENTERTAINMENT_CLOSE = "Michael G has the entertainment report."
-BAILEY_MO_CLOSE = "DJ Mo, back to you."
+BAILEY_MO_CLOSE = "Love you, bye."
 BAILEY_NEWS_ID = "bailey"
 BAILEY_NAME = "Bailey"
 JOHNNY_J_NEWS_ID = "johnny_j"
@@ -170,7 +170,7 @@ MICHAEL_MIDDAY_HANDOFF = "Bailey, over to you."
 MICHAEL_EMPTY = "That's all for entertainment this morning."
 MICHAEL_EMPTY_MIDDAY = "That's all for entertainment this midday."
 MO_THANKS = "Thanks, Michael G. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
-MO_THANKS_BAILEY = "Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
+MO_THANKS_BAILEY = "Love you, hun. Thanks, Bailey. Weekdays at 7:15 and 12:15 on Mo's Place Radio."
 MO_MORNING_OPEN = "This is Mo's Place Radio morning news."
 MO_MIDDAY_OPEN = "This is Mo's Place Radio midday news."
 JOHNNY_MORNING_BRIDGE = "Johnny J with more of today's news."
@@ -2025,6 +2025,10 @@ def mo_thanks_line(thanks: str = "", *, thank: str = "Michael G") -> str:
             return MO_THANKS
         return text
     if re.search(r"(?i)\bbailey\b", text) and re.search(r"(?i)\bthanks\b", text):
+        if "love you, hun" not in text.lower():
+            return MO_THANKS_BAILEY if "12:15" in text and "7:15" in text else (
+                f"Love you, hun. {text}" if text[0].isupper() else MO_THANKS_BAILEY
+            )
         if "7:15" in text and "12:15" not in text:
             return MO_THANKS_BAILEY
         return text
@@ -2144,10 +2148,10 @@ def bailey_hands_to_mo(close: str = "") -> str:
     text = _WS_RE.sub(" ", str(close or "")).strip()
     if not text:
         return BAILEY_MIDDAY_CLOSE
-    if re.search(r"(?i)\bdj\s*mo\b|\bback to you\b", text):
+    if re.search(r"(?i)\blove you,?\s*bye\b", text):
         return text
-    # Upgrade older Bailey-to-Michael closes to Bailey-to-Mo.
-    if re.search(r"(?i)\bmichael\s+g\b", text):
+    # Upgrade older Bailey closes (Michael handoff or plain Mo handoff).
+    if re.search(r"(?i)\bmichael\s+g\b|\bdj\s*mo\b|\bback to you\b", text):
         return BAILEY_MIDDAY_CLOSE
     if text[-1] not in ".!?":
         text += "."

@@ -141,7 +141,7 @@ def default_script_rules() -> dict[str, Any]:
         ),
         "sports_game_rules": DEFAULT_SPORTS_GAME_RULES,
         "sports_close": DAVE_SPORTS_CLOSE,
-        "bailey_entertainment_close": "Bailey here with the latest. DJ Mo, back to you.",
+        "bailey_entertainment_close": "Bailey here with the latest. Love you, bye.",
         "entertainment_report_rules": DEFAULT_ENTERTAINMENT_REPORT_RULES,
         "entertainment_story_count": ENTERTAINMENT_STORY_COUNT,
         "entertainment_feeds": entertainment_feed_urls(),
