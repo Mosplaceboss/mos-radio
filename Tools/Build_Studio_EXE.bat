@@ -10,6 +10,7 @@ python -m PyInstaller ^
   --name "MoPlaceStudio" ^
   --add-data "config;config" ^
   --add-data "assets;assets" ^
+  --add-data "runtime;runtime" ^
   app\main.py
 echo.
 echo EXE created in Studio\dist\MoPlaceStudio\

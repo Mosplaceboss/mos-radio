@@ -1,322 +1,77 @@
-"""Write the spoken newscast the news launcher can hand to the engine.
+"""Thin launcher for Task Scheduler / run_news_now.bat.
 
-Office PC files:
-  D:\\MosPlaceRadioPlatform\\Automation\\News\\build_bulletin.py
-  D:\\MosPlaceRadioPlatform\\Automation\\News\\bulletin.txt
-
-run_news_now.bat runs this builder, then still calls engine.local.cmd when
-that file is present. engine.local.cmd is not in git. Until that Office PC
-file speaks bulletin.txt, the old newscast is what airs.
-
-Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
-Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
-Yesterday's news_copy is skipped so stale hard news cannot air. A down feed
-is logged and the rest is still written.
+Studio owns the bulletin builder. This file prefers the Studio Python package
+on disk, then falls back to Studio.exe --build-news-bulletin for EXE installs.
+Studio Run News Now installs this file into Automation/News automatically.
 """
 
 from __future__ import annotations
 
-import argparse
-import logging
+import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "Studio"))
-
-from app.core.entertainment_report import (  # noqa: E402
-    DAVE_SPORTS_CLOSE,
-    MICHAEL_HANDOFF,
-    MO_THANKS,
-    EntertainmentStory,
-    build_midday_flow,
-    build_morning_flow,
-    collect_entertainment_report,
-    split_morning_news_copy,
-)
-from app.core.sports_report import build_dave_sports_script, format_sports_story  # noqa: E402
-
-LOGGER = logging.getLogger("mos.news.bulletin")
-STATION_TZ = ZoneInfo("America/New_York")
-NEWS_DIR = Path(__file__).resolve().parent
-BULLETIN_NAME = "bulletin.txt"
-AUDIT_NAME = "bulletin-audit.txt"
-NEWS_COPY_NAME = "news_copy.txt"
-# Hard news older than this is treated as yesterday's copy and skipped.
-NEWS_COPY_MAX_AGE = timedelta(hours=18)
-
-# Air clocks on the station schedule. The label is what Mo says.
-AIR_SLOTS = (
-    (7 * 60 + 15, "7:15"),
-    (12 * 60 + 15, "12:15"),
-    (17 * 60 + 15, "5:15"),
-)
 
 
-def next_air_label(now: datetime | None = None) -> str:
-    """Next 7:15, 12:15, or 5:15 air time in Eastern time."""
-    current = now or datetime.now(STATION_TZ)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=STATION_TZ)
-    else:
-        current = current.astimezone(STATION_TZ)
-    minutes = current.hour * 60 + current.minute
-    for slot, label in AIR_SLOTS:
-        if minutes < slot:
-            return label
-    return "7:15"
+def _news_dir() -> Path:
+    return Path(__file__).resolve().parent
 
 
-def normalize_air(air: str) -> str:
-    clock = str(air or "").strip().lower().replace(" pm", "").replace(" am", "")
-    if clock in {"07:15", "7:15"}:
-        return "7:15"
-    if clock in {"12:15"}:
-        return "12:15"
-    if clock in {"17:15", "5:15"}:
-        return "5:15"
-    return clock or "7:15"
+def _studio_candidates() -> list[Path]:
+    here = _news_dir()
+    return [
+        here.parents[1] / "Studio",  # D:\\MosPlaceRadioPlatform\\Studio
+        here.parents[2] / "Studio",  # repo checkout layout
+    ]
 
 
-def is_midday_air(air: str) -> bool:
-    return normalize_air(air) == "12:15"
+def _bootstrap_studio_source() -> bool:
+    for studio in _studio_candidates():
+        if (studio / "app" / "core" / "news_bulletin.py").is_file():
+            text = str(studio)
+            if text not in sys.path:
+                sys.path.insert(0, text)
+            return True
+    return False
 
 
-def thanks_for_air(air: str) -> str:
-    """Mo's thanks. 7:15 keeps the locked morning line. Other clocks name themselves."""
-    clock = normalize_air(air)
-    if clock == "7:15":
-        return MO_THANKS
-    if not clock:
-        clock = "12:15"
-    return f"Thanks, Michael G. Weekdays at {clock} on Mo's Place Radio."
-
-
-def _strip_previous_handoff(text: str) -> str:
-    """Keep the hard-news body. Drop a Dave/Michael/Bailey block already appended."""
-    body = str(text or "").replace("\r\n", "\n").strip()
-    if not body:
-        return ""
-    for marker in ("[Dave]", DAVE_SPORTS_CLOSE, "[Bailey]", "[Michael G]"):
-        index = body.find(marker)
-        if index >= 0:
-            body = body[:index]
-    return body.strip()
-
-
-def news_copy_is_fresh(path: Path, *, now: datetime | None = None) -> bool:
-    """True when news_copy was written today in Eastern time, within max age."""
-    current = now or datetime.now(STATION_TZ)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=STATION_TZ)
-    else:
-        current = current.astimezone(STATION_TZ)
-    try:
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=STATION_TZ)
-    except OSError:
-        return False
-    if mtime.date() != current.date():
-        return False
-    return (current - mtime) <= NEWS_COPY_MAX_AGE
-
-
-def load_news_copy(path: Path | None = None, *, now: datetime | None = None) -> str:
-    """Today's hard-news copy beside the launcher. Yesterday's file is skipped."""
-    candidate = path if path is not None else NEWS_DIR / NEWS_COPY_NAME
-    if not candidate.is_file():
-        return ""
-    if not news_copy_is_fresh(candidate, now=now):
-        _log_failure(
-            f"Existing news copy skipped as stale ({candidate}); "
-            "Mo and Johnny still open, and sports/entertainment still refresh"
-        )
-        return ""
-    try:
-        return _strip_previous_handoff(candidate.read_text(encoding="utf-8"))
-    except OSError as exc:
-        _log_failure(f"Existing news copy skipped ({candidate}): {exc}")
-        return ""
-
-
-def _log_failure(message: str) -> None:
-    LOGGER.warning(message)
-    try:
-        with (NEWS_DIR / "news.log").open("a", encoding="utf-8") as handle:
-            handle.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {message}\n")
-    except OSError:
-        LOGGER.warning("Could not append news.log")
-
-
-def _sports_sentence(fetch: bool, sports_lines: list[str] | None) -> str:
-    if sports_lines is not None:
-        return format_sports_story(sports_lines)
-    try:
-        return format_sports_story(build_dave_sports_script(fetch=fetch))
-    except Exception as exc:
-        _log_failure(f"Sports feed skipped: {exc}")
-        return ""
-
-
-def _collect_stories(
-    fetch: bool,
-    stories: list[EntertainmentStory] | None,
-) -> tuple[list[EntertainmentStory], str]:
-    if stories is not None:
-        return list(stories), ""
-    try:
-        report = collect_entertainment_report(fetch=fetch)
-        selected = list(report.get("stories") or [])
-        audit = ""
-        audit_payload = report.get("audit") if isinstance(report, dict) else None
-        if isinstance(audit_payload, dict):
-            audit = str(audit_payload.get("text") or "")
-        return selected, audit
-    except Exception as exc:
-        _log_failure(f"Entertainment feed skipped: {exc}")
-        return [], ""
-
-
-def _build_flow(
-    air: str,
-    selected: list[EntertainmentStory],
-    *,
-    sports_body: str = "",
-    mo_body: str = "",
-    johnny_body: str = "",
-) -> dict:
-    thanks = thanks_for_air(air)
-    if is_midday_air(air):
-        return build_midday_flow(
-            selected,
-            mo_body=mo_body,
-            johnny_body=johnny_body,
-            mo_thanks=thanks,
-        )
-    return build_morning_flow(
-        selected,
-        sports_body=sports_body,
-        mo_body=mo_body,
-        johnny_body=johnny_body,
-        mo_thanks=thanks,
-    )
-
-
-def build_bulletin_text(
-    *,
-    air: str = "12:15",
-    fetch: bool = False,
-    news_copy: str = "",
-    sports_lines: list[str] | None = None,
-    stories: list[EntertainmentStory] | None = None,
-) -> str:
-    """Spoken bulletin for the air clock: morning Dave desk or midday Bailey desk."""
-    script, _audit = assemble_bulletin(
-        air=air,
-        fetch=fetch,
-        news_copy=news_copy,
-        sports_lines=sports_lines,
-        stories=stories,
-    )
-    return script
-
-
-def assemble_bulletin(
-    *,
-    air: str = "12:15",
-    fetch: bool = False,
-    news_copy: str = "",
-    sports_lines: list[str] | None = None,
-    stories: list[EntertainmentStory] | None = None,
-) -> tuple[str, str]:
-    """Script text plus the operator audit. The audit is not part of the script."""
-    body = _strip_previous_handoff(news_copy)
-    mo_body, johnny_body = split_morning_news_copy(body)
-    selected, audit = _collect_stories(fetch, stories)
-    if audit:
-        LOGGER.info("Entertainment story selection audit:\n%s", audit)
-
-    sports = ""
-    if not is_midday_air(air):
-        sports = _sports_sentence(fetch, sports_lines)
-        if not sports:
-            _log_failure("Sports copy is empty; Dave still hands to Michael G")
-
-    try:
-        flow = _build_flow(
-            air,
-            selected,
-            sports_body=sports,
-            mo_body=mo_body,
-            johnny_body=johnny_body,
-        )
-    except Exception as exc:
-        _log_failure(f"Entertainment handoff skipped: {exc}")
-        flow = _build_flow(
-            air,
-            [],
-            sports_body=sports,
-            mo_body=mo_body,
-            johnny_body=johnny_body,
-        )
-
-    script = str(flow.get("script") or "").strip() + "\n"
-    if MICHAEL_HANDOFF not in script:
-        _log_failure("Michael G handoff was missing; the rest of the bulletin was still written")
-    return script, audit
-
-
-def write_bulletin(
-    *,
-    air: str,
-    fetch: bool = True,
-    news_file: Path | None = None,
-    output: Path | None = None,
-    sports_lines: list[str] | None = None,
-    stories: list[EntertainmentStory] | None = None,
-    now: datetime | None = None,
-) -> Path:
-    """Write bulletin.txt. The audit file is for the operator, not the air."""
-    if news_file is not None:
-        news_copy = load_news_copy(news_file, now=now)
-    else:
-        news_copy = load_news_copy(now=now)
-    if not news_copy:
-        _log_failure(
-            "No fresh news copy was supplied; Mo and Johnny still open, "
-            "and the rest of the bulletin was still written"
-        )
-    script, audit = assemble_bulletin(
-        air=air,
-        fetch=fetch,
-        news_copy=news_copy,
-        sports_lines=sports_lines,
-        stories=stories,
-    )
-    destination = output or (NEWS_DIR / BULLETIN_NAME)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(script, encoding="utf-8")
-    if audit:
-        audit_path = destination.with_name(AUDIT_NAME) if output is not None else NEWS_DIR / AUDIT_NAME
-        audit_path.write_text(audit + "\n", encoding="utf-8")
-    return destination
+def _studio_exe() -> Path | None:
+    for studio in _studio_candidates():
+        for name in ("Studio.exe", "MoPlaceStudio.exe"):
+            candidate = studio / name
+            if candidate.is_file():
+                return candidate
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Write the spoken news bulletin.")
-    parser.add_argument("--air", default="", help="7:15, 12:15, or 5:15. Default is the next Eastern air time.")
-    parser.add_argument("--news-file", default="", help="Existing news copy. Defaults to news_copy.txt beside this script.")
-    parser.add_argument("--output", default="", help="Defaults to bulletin.txt beside this script.")
-    parser.add_argument("--no-fetch", action="store_true", help="Skip the network and write the handoff only.")
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
-    air = args.air.strip() or next_air_label()
-    news_file = Path(args.news_file) if args.news_file else None
-    output = Path(args.output) if args.output else None
-    path = write_bulletin(air=air, fetch=not args.no_fetch, news_file=news_file, output=output)
-    print(path)
-    return 0
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if "--news-dir" not in args:
+        args = ["--news-dir", str(_news_dir()), *args]
+
+    if _bootstrap_studio_source():
+        try:
+            from app.core.news_bulletin import main as bulletin_main
+
+            return bulletin_main(args)
+        except ImportError:
+            pass
+
+    exe = _studio_exe()
+    if exe is not None:
+        completed = subprocess.run(
+            [str(exe), "--build-news-bulletin", *args],
+            cwd=str(_news_dir()),
+            check=False,
+        )
+        return int(completed.returncode)
+
+    print(
+        "Could not import Studio news bulletin builder. "
+        "Open Mo's Place Studio once so it can install the news launcher, "
+        "or confirm Studio is installed beside the platform root.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 if __name__ == "__main__":

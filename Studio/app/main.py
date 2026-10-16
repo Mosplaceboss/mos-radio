@@ -18,6 +18,7 @@ from app.core.live_connector import ensure_local_integration_template
 from app.core.logger import setup_logging
 from app.core.music_model import ensure_music_data
 from app.core.news_content_model import ensure_news_content_data
+from app.core.news_runtime import ensure_news_runtime_scripts
 from app.core.operations_manager_model import ensure_operations_data
 from app.core.paths import ensure_default_configs
 from app.core.platform_manager import ensure_default_platform_config
@@ -41,6 +42,11 @@ class StudioApplication:
         ensure_programming_data(self.config_manager)
         ensure_music_data(self.config_manager)
         ensure_news_content_data(self.config_manager)
+        try:
+            ensure_news_runtime_scripts()
+        except Exception:
+            # Non-fatal: Run News Now will retry. Keep Studio startup reliable.
+            pass
         ensure_operations_data(self.config_manager)
         ensure_advertising_data(self.config_manager)
         ensure_website_audience_data(self.config_manager)
@@ -66,7 +72,13 @@ class StudioApplication:
         self.root.mainloop()
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = list(sys.argv[1:] if argv is None else argv)
+    # Task Scheduler / run_news_now.bat can call the frozen Studio EXE without opening the UI.
+    if args and args[0] == "--build-news-bulletin":
+        from app.core.news_bulletin import main as bulletin_main
+
+        raise SystemExit(bulletin_main(args[1:]))
     StudioApplication().run()
 
 

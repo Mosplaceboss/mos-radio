@@ -55,9 +55,34 @@ def restart_livedj_watcher(integration: dict) -> tuple[bool, str]:
 
 
 def run_news_now(integration: dict) -> tuple[bool, str]:
+    """Install news launcher files, write bulletin.txt, then run the local engine hook."""
     paths = news_live_paths(integration)
-    script = resolve_engine_script(integration, "news_run_now", paths["run_now_script"])
-    return _run_script(script, "News run now")
+    news_dir = Path(paths["run_now_script"]).parent
+    from app.core.news_runtime import ensure_news_runtime_scripts
+
+    ok, message = ensure_news_runtime_scripts(news_dir)
+    if not ok:
+        append_automation_log(f"News runtime install failed: {message}")
+        return False, message
+    append_automation_log(message)
+
+    try:
+        from app.core.news_bulletin import next_air_label, write_bulletin
+
+        bulletin_path = write_bulletin(air=next_air_label(), fetch=True, news_dir=news_dir)
+        append_automation_log(f"Wrote news bulletin {bulletin_path}")
+    except Exception as exc:
+        logger.error("News bulletin build failed: %s", exc)
+        append_automation_log(f"News bulletin build failed: {exc}")
+        return False, f"News bulletin build failed: {exc}"
+
+    engine = news_dir / "engine.local.cmd"
+    if engine.exists():
+        return _run_script(engine, "News engine")
+
+    # No local engine hook yet — bulletin is ready for the next scheduled speak.
+    append_automation_log("Wrote bulletin.txt; engine.local.cmd is not beside the news folder")
+    return True, "News bulletin written. engine.local.cmd is not installed yet (local station hook only)."
 
 
 def refresh_all_statuses(settings: dict) -> tuple[bool, str]:

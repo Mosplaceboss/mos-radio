@@ -11,9 +11,8 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Studio"))
-sys.path.insert(0, str(ROOT / "Automation" / "News"))
 
-from build_bulletin import (  # noqa: E402
+from app.core.news_bulletin import (  # noqa: E402
     build_bulletin_text,
     load_news_copy,
     news_copy_is_fresh,
@@ -87,14 +86,14 @@ def main() -> None:
         fresh_mtime = now.timestamp()
         os.utime(fresh, (fresh_mtime, fresh_mtime))
         assert news_copy_is_fresh(fresh, now=now)
-        assert "Fresh local headlines" in load_news_copy(fresh, now=now)
+        assert "Fresh local headlines" in load_news_copy(fresh, now=now, news_dir=folder)
 
         stale = folder / "stale_copy.txt"
         stale.write_text("Yesterday's leftover headlines.", encoding="utf-8")
         stale_mtime = (now - timedelta(days=1)).timestamp()
         os.utime(stale, (stale_mtime, stale_mtime))
         assert not news_copy_is_fresh(stale, now=now)
-        assert load_news_copy(stale, now=now) == ""
+        assert load_news_copy(stale, now=now, news_dir=folder) == ""
 
         out = folder / "bulletin.txt"
         path = write_bulletin(
@@ -105,6 +104,7 @@ def main() -> None:
             sports_lines=["The Celtics beat the Knicks."],
             stories=[story],
             now=now,
+            news_dir=folder,
         )
         text = path.read_text(encoding="utf-8")
         assert "Yesterday's leftover headlines." not in text
@@ -116,10 +116,10 @@ def main() -> None:
     def boom(*_args, **_kwargs):
         raise RuntimeError("feed exploded")
 
-    import build_bulletin
+    import app.core.news_bulletin as news_bulletin
 
-    with patch.object(build_bulletin, "build_dave_sports_script", boom), patch.object(
-        build_bulletin, "collect_entertainment_report", boom
+    with patch.object(news_bulletin, "build_dave_sports_script", boom), patch.object(
+        news_bulletin, "collect_entertainment_report", boom
     ):
         failed = build_bulletin_text(
             air="7:15",
@@ -127,6 +127,7 @@ def main() -> None:
             news_copy="Headlines still air.",
             sports_lines=None,
             stories=None,
+            news_dir=Path(tempfile.gettempdir()),
         )
     assert "Headlines still air." in failed
     assert MO_MORNING_OPEN in failed

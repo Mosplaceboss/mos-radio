@@ -1,13 +1,11 @@
 @echo off
-REM Office PC file that must be updated before morning/midday changes:
+REM Local-only Office PC file (not replaced by Studio updates):
 REM   D:\MosPlaceRadioPlatform\Automation\News\engine.local.cmd
 REM
-REM Speak this script, which build_bulletin.py writes:
+REM Speak the script Studio / run_news_now writes:
 REM   D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt
 REM
-REM Morning (7:15) order is locked:
-REM   Mo, Johnny J, Dave, Michael G, then Mo.
-REM Midday (12:15) order is locked:
-REM   Mo, Johnny J, Bailey, Michael G, then Mo.
+REM Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
+REM Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
 REM Do not air yesterday's newscast.
 exit /b 0

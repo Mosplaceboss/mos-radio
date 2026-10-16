@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Studio"))
-sys.path.insert(0, str(ROOT / "Automation" / "News"))
 
-from build_bulletin import build_bulletin_text  # noqa: E402
+from app.core.news_bulletin import build_bulletin_text  # noqa: E402
 from app.core.entertainment_report import (  # noqa: E402
     BAILEY_ENTERTAINMENT_CLOSE,
     JOHNNY_MIDDAY_BRIDGE,
@@ -61,10 +61,10 @@ def main() -> None:
     def boom(*_args, **_kwargs):
         raise RuntimeError("feed exploded")
 
-    import build_bulletin
+    import app.core.news_bulletin as news_bulletin
 
-    with patch.object(build_bulletin, "build_dave_sports_script", boom), patch.object(
-        build_bulletin, "collect_entertainment_report", boom
+    with patch.object(news_bulletin, "build_dave_sports_script", boom), patch.object(
+        news_bulletin, "collect_entertainment_report", boom
     ):
         failed = build_bulletin_text(
             air="12:15",
@@ -72,6 +72,7 @@ def main() -> None:
             news_copy="Headlines still air.",
             sports_lines=None,
             stories=None,
+            news_dir=Path(tempfile.gettempdir()),
         )
     assert "Headlines still air." in failed
     assert "[Bailey]" in failed

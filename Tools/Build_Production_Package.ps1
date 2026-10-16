@@ -50,13 +50,23 @@ foreach ($name in $configFiles) {
 }
 
 # Remove development artifacts from the runtime bundle.
+# Keep Studio\runtime\News\*.py — those install into Automation\News on the Office PC.
 $devPatterns = @("*.py", "*.pyc", "*.pyo", ".git", ".gitignore", "__pycache__")
 foreach ($pattern in $devPatterns) {
     Get-ChildItem -Path $ProdRoot -Recurse -Force -Filter $pattern -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\runtime\\News\\' } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 Get-ChildItem -Path $ProdRoot -Recurse -Force -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Guarantee News launcher templates ship even if PyInstaller layout differs.
+$RuntimeNewsSource = Join-Path $StudioRoot "runtime\News"
+$RuntimeNewsDest = Join-Path $ProdRoot "runtime\News"
+if (Test-Path $RuntimeNewsSource) {
+    New-Item -ItemType Directory -Force -Path $RuntimeNewsDest | Out-Null
+    Copy-Item -Path (Join-Path $RuntimeNewsSource "*") -Destination $RuntimeNewsDest -Force
+}
 
 # Drop runtime logs copied from local test runs.
 Get-ChildItem -Path (Join-Path $ProdRoot "logs") -File -ErrorAction SilentlyContinue | Remove-Item -Force
