@@ -8,9 +8,10 @@ run_news_now.bat runs this builder, then still calls engine.local.cmd when
 that file is present. engine.local.cmd is not in git. Until that Office PC
 file speaks bulletin.txt, the old newscast is what airs.
 
-Morning order is locked: Mo, Johnny J, Dave, Michael G, then Mo.
-A 12:15 bulletin says 12:15. Yesterday's news_copy is skipped so stale hard
-news cannot air. A down feed is logged and the rest is still written.
+Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
+Midday (12:15): Mo, Johnny J, Bailey, Michael G, then Mo.
+Yesterday's news_copy is skipped so stale hard news cannot air. A down feed
+is logged and the rest is still written.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from app.core.entertainment_report import (  # noqa: E402
     MICHAEL_HANDOFF,
     MO_THANKS,
     EntertainmentStory,
+    build_midday_flow,
     build_morning_flow,
     collect_entertainment_report,
     split_morning_news_copy,
@@ -67,24 +69,37 @@ def next_air_label(now: datetime | None = None) -> str:
     return "7:15"
 
 
+def normalize_air(air: str) -> str:
+    clock = str(air or "").strip().lower().replace(" pm", "").replace(" am", "")
+    if clock in {"07:15", "7:15"}:
+        return "7:15"
+    if clock in {"12:15"}:
+        return "12:15"
+    if clock in {"17:15", "5:15"}:
+        return "5:15"
+    return clock or "7:15"
+
+
+def is_midday_air(air: str) -> bool:
+    return normalize_air(air) == "12:15"
+
+
 def thanks_for_air(air: str) -> str:
     """Mo's thanks. 7:15 keeps the locked morning line. Other clocks name themselves."""
-    clock = str(air or "").strip().lower().replace(" pm", "").replace(" am", "")
-    if clock in {"7:15", "07:15"}:
+    clock = normalize_air(air)
+    if clock == "7:15":
         return MO_THANKS
-    if clock in {"17:15", "5:15"}:
-        clock = "5:15"
     if not clock:
         clock = "12:15"
     return f"Thanks, Michael G. Weekdays at {clock} on Mo's Place Radio."
 
 
 def _strip_previous_handoff(text: str) -> str:
-    """Keep the hard-news body. Drop a Dave/Michael block already appended."""
+    """Keep the hard-news body. Drop a Dave/Michael/Bailey block already appended."""
     body = str(text or "").replace("\r\n", "\n").strip()
     if not body:
         return ""
-    for marker in ("[Dave]", DAVE_SPORTS_CLOSE, "[Michael G]"):
+    for marker in ("[Dave]", DAVE_SPORTS_CLOSE, "[Bailey]", "[Michael G]"):
         index = body.find(marker)
         if index >= 0:
             body = body[:index]
@@ -144,49 +159,48 @@ def _sports_sentence(fetch: bool, sports_lines: list[str] | None) -> str:
         return ""
 
 
-def _entertainment_flow(
+def _collect_stories(
     fetch: bool,
     stories: list[EntertainmentStory] | None,
+) -> tuple[list[EntertainmentStory], str]:
+    if stories is not None:
+        return list(stories), ""
+    try:
+        report = collect_entertainment_report(fetch=fetch)
+        selected = list(report.get("stories") or [])
+        audit = ""
+        audit_payload = report.get("audit") if isinstance(report, dict) else None
+        if isinstance(audit_payload, dict):
+            audit = str(audit_payload.get("text") or "")
+        return selected, audit
+    except Exception as exc:
+        _log_failure(f"Entertainment feed skipped: {exc}")
+        return [], ""
+
+
+def _build_flow(
     air: str,
+    selected: list[EntertainmentStory],
     *,
     sports_body: str = "",
     mo_body: str = "",
     johnny_body: str = "",
-) -> tuple[dict, str]:
-    selected: list[EntertainmentStory] = []
-    audit = ""
-    if stories is not None:
-        selected = list(stories)
-    else:
-        try:
-            report = collect_entertainment_report(fetch=fetch)
-            selected = list(report.get("stories") or [])
-            audit_payload = report.get("audit") if isinstance(report, dict) else None
-            if isinstance(audit_payload, dict):
-                audit = str(audit_payload.get("text") or "")
-        except Exception as exc:
-            _log_failure(f"Entertainment feed skipped: {exc}")
-            selected = []
-    if audit:
-        LOGGER.info("Entertainment story selection audit:\n%s", audit)
-    try:
-        flow = build_morning_flow(
+) -> dict:
+    thanks = thanks_for_air(air)
+    if is_midday_air(air):
+        return build_midday_flow(
             selected,
-            sports_body=sports_body,
             mo_body=mo_body,
             johnny_body=johnny_body,
-            mo_thanks=thanks_for_air(air),
+            mo_thanks=thanks,
         )
-    except Exception as exc:
-        _log_failure(f"Entertainment handoff skipped: {exc}")
-        flow = build_morning_flow(
-            [],
-            sports_body=sports_body,
-            mo_body=mo_body,
-            johnny_body=johnny_body,
-            mo_thanks=thanks_for_air(air),
-        )
-    return flow, audit
+    return build_morning_flow(
+        selected,
+        sports_body=sports_body,
+        mo_body=mo_body,
+        johnny_body=johnny_body,
+        mo_thanks=thanks,
+    )
 
 
 def build_bulletin_text(
@@ -197,7 +211,7 @@ def build_bulletin_text(
     sports_lines: list[str] | None = None,
     stories: list[EntertainmentStory] | None = None,
 ) -> str:
-    """Spoken bulletin in Mo, Johnny, Dave, Michael G, Mo order."""
+    """Spoken bulletin for the air clock: morning Dave desk or midday Bailey desk."""
     script, _audit = assemble_bulletin(
         air=air,
         fetch=fetch,
@@ -217,19 +231,36 @@ def assemble_bulletin(
     stories: list[EntertainmentStory] | None = None,
 ) -> tuple[str, str]:
     """Script text plus the operator audit. The audit is not part of the script."""
-    sports = _sports_sentence(fetch, sports_lines)
-    if not sports:
-        _log_failure("Sports copy is empty; Dave still hands to Michael G")
     body = _strip_previous_handoff(news_copy)
     mo_body, johnny_body = split_morning_news_copy(body)
-    flow, audit = _entertainment_flow(
-        fetch,
-        stories,
-        air,
-        sports_body=sports,
-        mo_body=mo_body,
-        johnny_body=johnny_body,
-    )
+    selected, audit = _collect_stories(fetch, stories)
+    if audit:
+        LOGGER.info("Entertainment story selection audit:\n%s", audit)
+
+    sports = ""
+    if not is_midday_air(air):
+        sports = _sports_sentence(fetch, sports_lines)
+        if not sports:
+            _log_failure("Sports copy is empty; Dave still hands to Michael G")
+
+    try:
+        flow = _build_flow(
+            air,
+            selected,
+            sports_body=sports,
+            mo_body=mo_body,
+            johnny_body=johnny_body,
+        )
+    except Exception as exc:
+        _log_failure(f"Entertainment handoff skipped: {exc}")
+        flow = _build_flow(
+            air,
+            [],
+            sports_body=sports,
+            mo_body=mo_body,
+            johnny_body=johnny_body,
+        )
+
     script = str(flow.get("script") or "").strip() + "\n"
     if MICHAEL_HANDOFF not in script:
         _log_failure("Michael G handoff was missing; the rest of the bulletin was still written")
@@ -254,7 +285,7 @@ def write_bulletin(
     if not news_copy:
         _log_failure(
             "No fresh news copy was supplied; Mo and Johnny still open, "
-            "and sports and entertainment were still written"
+            "and the rest of the bulletin was still written"
         )
     script, audit = assemble_bulletin(
         air=air,

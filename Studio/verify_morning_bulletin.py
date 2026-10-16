@@ -40,7 +40,7 @@ def main() -> None:
         source_name="Variety",
         kind="film_news",
         slot="variety_film_news",
-        published=datetime(2026, 10, 15, 14, 0, tzinfo=timezone.utc),
+        published=datetime.now(timezone.utc),
     )
     script = build_bulletin_text(
         air="7:15",
@@ -77,19 +77,21 @@ def main() -> None:
     assert mo_body == "Good morning from the newsroom."
     assert johnny_body == "Town hall is packed tonight."
 
-    now = datetime(2026, 10, 15, 6, 30, tzinfo=STATION_TZ)
+    now = datetime.now(STATION_TZ).replace(hour=6, minute=30, second=0, microsecond=0)
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)
+        import os
+
         fresh = folder / "news_copy.txt"
         fresh.write_text("Fresh local headlines for today.", encoding="utf-8")
+        fresh_mtime = now.timestamp()
+        os.utime(fresh, (fresh_mtime, fresh_mtime))
         assert news_copy_is_fresh(fresh, now=now)
         assert "Fresh local headlines" in load_news_copy(fresh, now=now)
 
         stale = folder / "stale_copy.txt"
         stale.write_text("Yesterday's leftover headlines.", encoding="utf-8")
         stale_mtime = (now - timedelta(days=1)).timestamp()
-        import os
-
         os.utime(stale, (stale_mtime, stale_mtime))
         assert not news_copy_is_fresh(stale, now=now)
         assert load_news_copy(stale, now=now) == ""

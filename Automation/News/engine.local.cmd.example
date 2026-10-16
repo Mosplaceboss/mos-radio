@@ -5,8 +5,9 @@ REM
 REM Speak this script, which build_bulletin.py writes:
 REM   D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt
 REM
-REM Morning order is locked:
+REM Morning (7:15) order is locked:
 REM   Mo, Johnny J, Dave, Michael G, then Mo.
-REM A 12:15 bulletin says 12:15.
+REM Midday (12:15) order is locked:
+REM   Mo, Johnny J, Bailey, Michael G, then Mo.
 REM Do not air yesterday's newscast.
 exit /b 0

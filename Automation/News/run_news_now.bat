@@ -1,7 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-REM Write today's newscast first: Mo, Johnny, Dave, Michael G, Mo.
+REM Write today's newscast first.
+REM Morning: Mo, Johnny, Dave, Michael G, Mo.
+REM Midday: Mo, Johnny, Bailey, Michael G, Mo.
 REM bulletin.txt is D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt on the Office PC.
 call "%~dp0build_bulletin.bat" %*
 if errorlevel 1 echo %DATE% %TIME% build_bulletin failed >> "%~dp0news.log"

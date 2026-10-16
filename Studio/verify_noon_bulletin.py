@@ -1,4 +1,4 @@
-"""The 12:15 bulletin keeps Mo, Johnny, Dave, Michael G, Mo and names 12:15."""
+"""The 12:15 bulletin is Mo, Johnny, Bailey, Michael G, Mo and names 12:15."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ sys.path.insert(0, str(ROOT / "Automation" / "News"))
 
 from build_bulletin import build_bulletin_text  # noqa: E402
 from app.core.entertainment_report import (  # noqa: E402
-    DAVE_SPORTS_CLOSE,
-    JOHNNY_MORNING_BRIDGE,
+    BAILEY_ENTERTAINMENT_CLOSE,
+    JOHNNY_MIDDAY_BRIDGE,
     MICHAEL_HANDOFF,
-    MO_MORNING_OPEN,
+    MO_MIDDAY_OPEN,
     EntertainmentStory,
 )
 
@@ -30,7 +30,7 @@ def main() -> None:
         source_name="Variety",
         kind="film_news",
         slot="variety_film_news",
-        published=datetime(2026, 10, 14, 14, 0, tzinfo=timezone.utc),
+        published=datetime.now(timezone.utc),
     )
     script = build_bulletin_text(
         air="12:15",
@@ -38,25 +38,23 @@ def main() -> None:
         news_copy="The council meets tonight at town hall.",
         sports_lines=[
             "The Patriots are not playing.",
-            "The Red Sox have no game today.",
             "The Celtics beat the Knicks.",
-            "The Bruins are idle.",
-            "The Lowell Spinners are not playing.",
         ],
         stories=[story],
     )
-    assert MO_MORNING_OPEN in script
-    assert JOHNNY_MORNING_BRIDGE in script
+    assert MO_MIDDAY_OPEN in script
+    assert JOHNNY_MIDDAY_BRIDGE in script
     assert "The council meets tonight at town hall." in script
-    assert script.index("[DJ Mo]") < script.index("[Johnny J]") < script.index("[Dave]")
-    assert script.index("[Dave]") < script.index("[Michael G]") < script.rindex("[DJ Mo]")
-    assert DAVE_SPORTS_CLOSE in script
-    assert "Thanks, Dave. Michael G here with the entertainment report." in script
+    assert script.index("[DJ Mo]") < script.index("[Johnny J]") < script.index("[Bailey]")
+    assert script.index("[Bailey]") < script.index("[Michael G]") < script.rindex("[DJ Mo]")
+    assert "[Dave]" not in script
+    assert "Celtics" not in script
+    assert BAILEY_ENTERTAINMENT_CLOSE in script
+    assert "Thanks, Bailey. Michael G here with the entertainment report." in script
+    assert "Thanks, Dave." not in script
     assert MICHAEL_HANDOFF in script
     assert "Thanks, Michael G. Weekdays at 12:15 on Mo's Place Radio." in script
     assert "7:15" not in script
-    assert "not playing" not in script.lower()
-    assert "Celtics" in script
     assert "In movie news" in script
     assert "Ocean Light" in script
 
@@ -76,10 +74,11 @@ def main() -> None:
             stories=None,
         )
     assert "Headlines still air." in failed
-    assert DAVE_SPORTS_CLOSE in failed
+    assert "[Bailey]" in failed
+    assert "[Dave]" not in failed
     assert MICHAEL_HANDOFF in failed
     assert "12:15" in failed
-    print("OK: 12:15 bulletin keeps Mo, Johnny, Dave, Michael G, Mo and the 12:15 clock")
+    print("OK: 12:15 bulletin is Mo, Johnny, Bailey, Michael G, Mo and the 12:15 clock")
 
 
 if __name__ == "__main__":

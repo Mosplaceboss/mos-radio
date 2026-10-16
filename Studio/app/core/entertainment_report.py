@@ -2125,6 +2125,8 @@ def build_midday_flow(
     stories: list[EntertainmentStory] | None = None,
     *,
     bailey_close: str = "",
+    mo_body: str = "",
+    johnny_body: str = "",
     mo_thanks: str = "",
     rules: str = DEFAULT_ENTERTAINMENT_REPORT_RULES,
     now: datetime | None = None,
@@ -2137,6 +2139,8 @@ def build_midday_flow(
         selected, thanks_to="Bailey", empty_line=MICHAEL_EMPTY_MIDDAY
     )
     thanks = mo_thanks_line(mo_thanks)
+    mo_open = MO_MIDDAY_OPEN
+    johnny_bridge = JOHNNY_MIDDAY_BRIDGE
     return {
         "order": ["mo_open", "johnny_j", "bailey", "michael_g_entertainment", "mo_thanks"],
         "slot": "midday",
@@ -2145,8 +2149,10 @@ def build_midday_flow(
         "selection_log": ranked["log"],
         "selection_audit": ranked["audit"]["text"],
         "selection_audit_rows": ranked["audit"]["rows"],
-        "mo_open": MO_MIDDAY_OPEN,
-        "johnny_bridge": JOHNNY_MIDDAY_BRIDGE,
+        "mo_open": mo_open,
+        "mo_body": str(mo_body or "").strip(),
+        "johnny_bridge": johnny_bridge,
+        "johnny_body": str(johnny_body or "").strip(),
         "bailey_close": bailey_line,
         "michael_g_script": michael_script,
         "michael_g_prompt": format_entertainment_prompt(
@@ -2155,16 +2161,11 @@ def build_midday_flow(
         "mo_thanks": thanks,
         "script": "\n\n".join(
             [
-                "[DJ Mo]",
-                MO_MIDDAY_OPEN,
-                "[Johnny J]",
-                JOHNNY_MIDDAY_BRIDGE,
-                "[Bailey]",
-                bailey_line,
-                "[Michael G]",
-                michael_script,
-                "[DJ Mo]",
-                thanks,
+                _speaker_block("DJ Mo", mo_open, str(mo_body or "")),
+                _speaker_block("Johnny J", johnny_bridge, str(johnny_body or "")),
+                _speaker_block("Bailey", bailey_line),
+                _speaker_block("Michael G", michael_script),
+                _speaker_block("DJ Mo", thanks),
             ]
         ),
     }
