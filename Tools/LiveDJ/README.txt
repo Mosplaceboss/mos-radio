@@ -11,3 +11,10 @@ Operator folders on the platform:
 
 Mo Mon-Fri 10:45 = This Day in Music History
 Casey Sat/Sun 10:45 = On This Day in the 70s (1970-1979 only)
+
+Format mention guards (livedj_events.py):
+  Kathy must not mention Country / country music unless Format is Country.
+  LB must not mention Yacht Rock unless Format is Yacht Rock.
+  Prefer event_coaching_for_row / mission_text_for_row / finalize_schedule_row so bans reach prompts.
+  Optional script check: banned_format_mentions_in_text(row, script).
+  Verify with: python verify_host_format_mentions.py
