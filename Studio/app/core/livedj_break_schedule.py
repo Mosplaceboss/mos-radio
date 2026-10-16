@@ -63,7 +63,7 @@ FILTER_ERRORS = "Errors Only"
 EVENT_FILTER_MAP = {
     FILTER_ALL: None,
     FILTER_SHOW_OPENS: {"Show Open"},
-    FILTER_CHECK_INS: {"Check-In", "Weekend Check-In"},
+    FILTER_CHECK_INS: {"Check-In", "Weekend Check-In", "Request Reminder"},
     FILTER_STORIES: {"Music Story", "Artist Spotlight", "Listener Memory", "This Day in Music History", "On This Day in the 70s"},
     FILTER_HANDOFFS: {"Handoff", "Show Close"},
     FILTER_FORMAT_CHANGES: {"Format Change"},

@@ -107,11 +107,21 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Add a familiar local touch without turning it into a news report.",
     ],
     "Requests": [
-        "Remind listeners that requests are open.",
-        "Encourage listeners to submit a request through the website.",
+        (
+            'Remind listeners that song requests are open. '
+            'Tell them to click "Request Song" at mosplaceradio.com. '
+            "Do not mention Community for song requests."
+        ),
+        (
+            'Encourage listeners to request a song by clicking "Request Song" '
+            "at mosplaceradio.com — never Community."
+        ),
         "Introduce an upcoming listener request.",
         "Thank listeners for helping shape the music.",
-        "Mention request availability without interrupting the flow.",
+        (
+            'Mention that song requests are open and point listeners to '
+            '"Request Song" at mosplaceradio.com.'
+        ),
     ],
     "Community Mention": [
         "Highlight a local event or community activity.",
@@ -119,6 +129,10 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Recognize a local business, fundraiser, or organization.",
         "Encourage community support in a natural way.",
         "Share a brief local announcement and return to the music.",
+        (
+            "Community is not for song requests. If a song request comes up, "
+            'tell listeners to click "Request Song" at mosplaceradio.com.'
+        ),
     ],
     "Format Change": [
         "Acknowledge that the music format is changing.",
@@ -180,8 +194,38 @@ def ensure_catalog_files() -> None:
                 "categories": DEFAULT_CATEGORIES,
             },
         )
+    else:
+        _sync_missing_default_missions()
     if not CUSTOM_FILE.is_file():
         _write_json(CUSTOM_FILE, {"version": 1, "missions": []})
+
+
+def _sync_missing_default_missions() -> None:
+    """Append new built-in missions without removing operator edits."""
+    data = _read_json(CATEGORIES_FILE)
+    categories = data.get("categories")
+    if not isinstance(categories, dict):
+        return
+    changed = False
+    for name, defaults in DEFAULT_CATEGORIES.items():
+        existing = categories.get(name)
+        if not isinstance(existing, list):
+            categories[name] = list(defaults)
+            changed = True
+            continue
+        known = {str(item).strip() for item in existing if str(item).strip()}
+        for text in defaults:
+            cleaned = str(text).strip()
+            if cleaned and cleaned not in known:
+                existing.append(cleaned)
+                known.add(cleaned)
+                changed = True
+        categories[name] = existing
+    if changed:
+        data["categories"] = categories
+        data.setdefault("version", 1)
+        data.setdefault("description", "LiveDJ mission categories and ready-to-use objectives.")
+        _write_json(CATEGORIES_FILE, data)
 
 
 def load_builtin_categories() -> dict[str, list[str]]:

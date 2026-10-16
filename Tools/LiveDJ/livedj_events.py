@@ -21,9 +21,25 @@ EVENT_TYPES: tuple[str, ...] = (
     "Final Half Hour",
     "Listener Memory",
     "Weekend Check-In",
+    "Request Reminder",
     "Format Change",
     "Handoff",
     "Show Close",
+)
+
+# Song requests (every DJ) always go to Request Song — never Community.
+REQUEST_SONG_CTA = (
+    'Tell listeners to click "Request Song" at mosplaceradio.com.'
+)
+REQUEST_SONG_COACHING = f"""
+If this break mentions song requests, {REQUEST_SONG_CTA}
+This applies to every host/DJ — never send song requests to Community, Facebook, email, or any other link.
+Keep the ask brief and natural, then return to the music.
+""".strip()
+REQUEST_REMINDER_MISSION = (
+    'Remind listeners that song requests are open. '
+    'Tell them to click "Request Song" at mosplaceradio.com. '
+    "Do not mention Community for song requests."
 )
 
 DEFAULT_STATION_FORMATS: tuple[str, ...] = (
@@ -38,26 +54,29 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
 )
 
 EVENT_COACHING: dict[str, str] = {
-    "Show Open": """
+    "Show Open": f"""
 Welcome listeners.
 Mention the day and time naturally.
 Mention the show's format.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
+{REQUEST_SONG_COACHING}
 """.strip(),
-    "Check-In": """
+    "Check-In": f"""
 Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+{REQUEST_SONG_COACHING}
 """.strip(),
-    "Weekend Check-In": """
+    "Weekend Check-In": f"""
 Mention the current time of day.
 Comment on the weekend mood naturally using the CURRENT calendar in STATION CONTEXT.
 If today is Saturday or Sunday, we are already in the weekend — never say "this coming weekend".
 Reference a previous or upcoming song when it feels natural.
 Keep it relaxed and conversational.
+{REQUEST_SONG_COACHING}
 """.strip(),
     "Artist Spotlight": """
 Share one verified fact about the next artist using only supplied context.
@@ -104,9 +123,16 @@ Preview the final half hour of the show.
 Tease upcoming music from the supplied queue.
 Keep energy appropriate for winding down while still sounding engaged.
 """.strip(),
-    "Listener Memory": """
+    "Listener Memory": f"""
 Connect with listeners in a warm, personal way when appropriate.
 Do not invent caller names, dedications, or request details unless supplied.
+{REQUEST_SONG_COACHING}
+""".strip(),
+    "Request Reminder": f"""
+Remind listeners that song requests are open.
+{REQUEST_SONG_CTA}
+Never send song requests to Community, Facebook, email, or any other link.
+Keep it brief and return to the music.
 """.strip(),
     "Format Change": """
 Acknowledge the shift in format or show direction naturally.
@@ -137,6 +163,8 @@ LEGACY_MISSION_MAP: dict[str, str] = {
     "personality": "Check-In",
     "current_or_facebook": "Check-In",
     "current_item": "Check-In",
+    "request_reminder": "Request Reminder",
+    "request_song": "Request Reminder",
     "pre_handoff_lunch": "Handoff",
     "signoff_to_johnny": "Handoff",
     "signoff": "Handoff",
@@ -155,6 +183,8 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
     "personality": "Check in with listeners in the host's natural voice.",
     "current_or_facebook": "Check in with listeners and reference the current daypart naturally.",
     "current_item": "Check in with listeners and reference the current song or daypart.",
+    "request_reminder": REQUEST_REMINDER_MISSION,
+    "request_song": REQUEST_REMINDER_MISSION,
     "pre_handoff_lunch": "Wrap up briefly and hand off to the next host.",
     "signoff_to_johnny": "Thank listeners and hand off to the next host.",
     "signoff": "Thank listeners and hand off to the next format or host.",
@@ -185,6 +215,7 @@ DEFAULT_MISSIONS: dict[str, str] = {
     "Today's Countdown": "Talk about why this era of music remains memorable and tease the next song.",
     "Final Half Hour": "Preview the final half hour and tease upcoming music.",
     "Listener Memory": "Connect with listeners in a warm, personal way when appropriate.",
+    "Request Reminder": REQUEST_REMINDER_MISSION,
     "Format Change": "Acknowledge the format change and set expectations for what is coming next.",
     "Handoff": "Wrap up briefly and hand off to the next host.",
     "Show Close": "Thank listeners, close the show, and hand off to the next host or format.",
@@ -211,6 +242,7 @@ EVENT_TO_TYPE: dict[str, str] = {
     "Today's Countdown": "check_in",
     "Final Half Hour": "check_in",
     "Listener Memory": "check_in",
+    "Request Reminder": "check_in",
     "Format Change": "format_change",
     "Handoff": "handoff",
     "Show Close": "close",
@@ -294,11 +326,58 @@ def _infer_event_type_from_mission_text(mission: str) -> str | None:
         ("on this day in the 1970s", "On This Day in the 70s"),
         ("on this day in the 70s", "On This Day in the 70s"),
         ("70s on this day", "On This Day in the 70s"),
+        ("request song", "Request Reminder"),
+        ("song requests are open", "Request Reminder"),
+        ("listener request", "Request Reminder"),
+        ("requests are open", "Request Reminder"),
+        ("submit a request", "Request Reminder"),
     )
     for needle, event_type in hints:
         if needle in lower:
             return event_type
     return None
+
+
+def _mission_mentions_song_request(mission: str) -> bool:
+    lower = str(mission or "").strip().lower()
+    if not lower:
+        return False
+    markers = (
+        "request song",
+        "song request",
+        "listener request",
+        "requests are open",
+        "submit a request",
+        "request a song",
+        "send a request",
+        "make a request",
+    )
+    return any(marker in lower for marker in markers)
+
+
+def _mission_sends_requests_to_community(mission: str) -> bool:
+    lower = str(mission or "").strip().lower()
+    if not _mission_mentions_song_request(mission):
+        return False
+    return "community" in lower
+
+
+def apply_request_song_cta(mission: str, event_type: str = "") -> str:
+    """Force song-request missions onto Request Song at mosplaceradio.com."""
+    text = str(mission or "").strip()
+    normalized = normalize_event_type(event_type) if event_type else ""
+    if normalized == "Request Reminder" or _mission_sends_requests_to_community(text):
+        return REQUEST_REMINDER_MISSION
+    if not _mission_mentions_song_request(text):
+        return text
+    if 'request song' in text.lower() and "mosplaceradio.com" in text.lower():
+        if "community" in text.lower():
+            return REQUEST_REMINDER_MISSION
+        return text
+    return (
+        f'{text.rstrip(".")}. {REQUEST_SONG_CTA} '
+        "Do not mention Community for song requests."
+    )
 
 
 def event_type_for_row(row: dict) -> str:
@@ -325,19 +404,17 @@ def mission_text_for_row(row: dict) -> str:
     mission = str(row.get("Mission") or row.get("mission") or "").strip()
     event_type = event_type_for_row(row)
     if not mission:
-        return default_mission_for_event_type(event_type)
+        mission = default_mission_for_event_type(event_type)
+    else:
+        legacy_key = _legacy_mission_key(mission)
+        if legacy_key in LEGACY_MISSION_TEXT:
+            mission = LEGACY_MISSION_TEXT[legacy_key]
+        elif legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
+            mission = LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
+        elif _mission_is_event_type_name(mission, event_type):
+            mission = default_mission_for_event_type(event_type)
 
-    legacy_key = _legacy_mission_key(mission)
-    if legacy_key in LEGACY_MISSION_TEXT:
-        return LEGACY_MISSION_TEXT[legacy_key]
-
-    if legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
-        return LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
-
-    if _mission_is_event_type_name(mission, event_type):
-        return default_mission_for_event_type(event_type)
-
-    return mission
+    return apply_request_song_cta(mission, event_type)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -366,7 +443,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = mission
+    result["Mission"] = apply_request_song_cta(mission, result["EventType"])
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
