@@ -125,7 +125,13 @@ def publish_news(config_manager, integration: dict[str, Any]) -> tuple[bool, str
 
     _write_json(destination, data)
     config_manager.save("news", data)
-    return True, "Published news configuration to live path with backup."
+
+    from app.core.news_runtime import ensure_news_runtime_scripts
+
+    runtime_ok, runtime_msg = ensure_news_runtime_scripts(destination.parent)
+    if not runtime_ok:
+        return False, f"Published news.json, but launcher install failed: {runtime_msg}"
+    return True, f"Published news configuration to live path with backup. {runtime_msg}"
 
 
 def restore_livedj_backup(integration: dict[str, Any]) -> tuple[bool, str]:

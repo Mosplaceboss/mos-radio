@@ -1,3 +1,11 @@
 @echo off
-REM Copy to engine.local.cmd and point at your real News runner script.
+REM Local-only Office PC file (not replaced by Studio updates):
+REM   D:\MosPlaceRadioPlatform\Automation\News\engine.local.cmd
+REM
+REM Speak the script Studio / run_news_now writes:
+REM   D:\MosPlaceRadioPlatform\Automation\News\bulletin.txt
+REM
+REM Morning (7:15): Mo, Johnny J, Dave, Michael G, then Mo.
+REM Midday (12:15): Mo, Johnny J, Dave, Michael G, Bailey, then Mo.
+REM Do not air yesterday's newscast.
 exit /b 0

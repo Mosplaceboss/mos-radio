@@ -58,6 +58,21 @@ foreach ($sidecar in $Preserve) {
     New-Item -ItemType Directory -Force -Path (Join-Path $InstallRoot $sidecar) | Out-Null
 }
 
+# Install News launcher scripts the same way Studio does at runtime.
+$NewsRuntime = Join-Path $InstallRoot "runtime\News"
+if (-not (Test-Path $NewsRuntime)) {
+    $NewsRuntime = Join-Path $RepoRoot "Studio\runtime\News"
+}
+$NewsDest = Join-Path $PlatformRoot "Automation\News"
+if (Test-Path $NewsRuntime) {
+    foreach ($name in @("run_news_now.bat", "build_bulletin.bat", "build_bulletin.py")) {
+        $source = Join-Path $NewsRuntime $name
+        if (Test-Path $source) {
+            Copy-Item -Path $source -Destination (Join-Path $NewsDest $name) -Force
+        }
+    }
+}
+
 $DocsSource = Join-Path $RepoRoot "Docs"
 if (-not (Test-Path $DocsSource)) {
     $DocsSource = Join-Path $RepoRoot "docs"
