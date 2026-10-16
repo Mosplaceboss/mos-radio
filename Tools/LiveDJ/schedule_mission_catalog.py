@@ -41,6 +41,10 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Preview what listeners can expect during the show.",
         "Introduce the DJ and invite listeners to stay tuned.",
         "Open the show with energy and a clear sense of direction.",
+        (
+            "Welcome listeners to The Friday Mix Up (Friday night with Kathy only). "
+            "Never call it Daily Mix on this break."
+        ),
     ],
     "General Check-In": [
         "Reconnect with listeners and keep the show moving.",
@@ -133,6 +137,10 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "Make the transition sound live and natural.",
         "Clearly identify who is leaving and who is taking over.",
         "Keep the handoff brief and upbeat.",
+        (
+            "Hand off to Kathy for The Friday Mix Up (Friday night only). "
+            "Introduce her show as The Friday Mix Up — never Daily Mix."
+        ),
     ],
     "Show Close": [
         "Thank listeners and close the show.",
@@ -140,6 +148,10 @@ DEFAULT_CATEGORIES: dict[str, list[str]] = {
         "End with a natural final thought.",
         "Hand off to the next show or DJ.",
         "Leave listeners with a warm station reminder.",
+        (
+            "Close out and hand off to Kathy for The Friday Mix Up (Friday night only). "
+            "Introduce her show as The Friday Mix Up — never Daily Mix."
+        ),
     ],
     "Custom": [
         "Write my own mission.",
@@ -180,8 +192,38 @@ def ensure_catalog_files() -> None:
                 "categories": DEFAULT_CATEGORIES,
             },
         )
+    else:
+        _sync_missing_default_missions()
     if not CUSTOM_FILE.is_file():
         _write_json(CUSTOM_FILE, {"version": 1, "missions": []})
+
+
+def _sync_missing_default_missions() -> None:
+    """Append new built-in missions without removing operator edits."""
+    data = _read_json(CATEGORIES_FILE)
+    categories = data.get("categories")
+    if not isinstance(categories, dict):
+        return
+    changed = False
+    for name, defaults in DEFAULT_CATEGORIES.items():
+        existing = categories.get(name)
+        if not isinstance(existing, list):
+            categories[name] = list(defaults)
+            changed = True
+            continue
+        known = {str(item).strip() for item in existing if str(item).strip()}
+        for text in defaults:
+            cleaned = str(text).strip()
+            if cleaned and cleaned not in known:
+                existing.append(cleaned)
+                known.add(cleaned)
+                changed = True
+        categories[name] = existing
+    if changed:
+        data["categories"] = categories
+        data.setdefault("version", 1)
+        data.setdefault("description", "LiveDJ mission categories and ready-to-use objectives.")
+        _write_json(CATEGORIES_FILE, data)
 
 
 def load_builtin_categories() -> dict[str, list[str]]:

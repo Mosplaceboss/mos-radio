@@ -512,16 +512,28 @@ def preview_break(row: dict[str, str], hosts: dict[str, dict[str, Any]] | None =
     host = roster.get(host_key, {})
     voice = str(host.get("voice_id") or host.get("voicebox_voice_id") or "—")
     wav = str(row.get("TargetWav") or host.get("wav_path") or host.get("wav_output_path") or "—")
+    finalized = dict(row)
+    spoken_format = str(row.get("Format") or "")
+    try:
+        finalized = finalize_row(row)
+        _schedule, events = _engine()
+        if hasattr(events, "spoken_format_for_row"):
+            spoken_format = str(events.spoken_format_for_row(finalized) or spoken_format)
+        else:
+            spoken_format = str(finalized.get("Format") or spoken_format)
+    except Exception:
+        finalized = dict(row)
+        spoken_format = str(row.get("Format") or "")
     return {
         "day": str(row.get("day_of_week") or ""),
         "time": format_time_friendly(str(row.get("Time") or "")),
         "time_internal": str(row.get("Time") or ""),
         "dj": host_label_for_key(host_key, roster),
         "host_key": host_key,
-        "event_type": str(row.get("EventType") or ""),
-        "format": str(row.get("Format") or ""),
-        "mission": str(row.get("Mission") or ""),
-        "schedule_type": str(row.get("Type") or ""),
+        "event_type": str(finalized.get("EventType") or row.get("EventType") or ""),
+        "format": spoken_format,
+        "mission": str(finalized.get("Mission") or row.get("Mission") or ""),
+        "schedule_type": str(finalized.get("Type") or row.get("Type") or ""),
         "voicebox_profile": voice or "—",
         "output_path": wav,
         "cart_id": str(row.get("CartId") or host.get("cart_id") or "—"),

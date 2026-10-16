@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 _MPR_ROOT = Path(__file__).resolve().parents[3]
@@ -37,11 +38,26 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
     "Yacht Rock",
 )
 
+# Friday night only: Kathy's Daily Mix is spoken as The Friday Mix Up (daytime stays Daily Mix).
+FRIDAY_MIX_UP_NAME = "The Friday Mix Up"
+FRIDAY_NIGHT_START_HOUR = 18
+_DAILY_MIX_LABELS = {"daily mix", "the daily mix", FRIDAY_MIX_UP_NAME.lower()}
+_FRIDAY_MIX_UP_MISSION_HINT = (
+    f"Call the show {FRIDAY_MIX_UP_NAME} — never say Daily Mix on this Friday night break."
+)
+FRIDAY_MIX_UP_COACHING = f"""
+This is Friday night {FRIDAY_MIX_UP_NAME}.
+Call the show {FRIDAY_MIX_UP_NAME} — never say Daily Mix on this break.
+If Kathy is hosting, welcome listeners to {FRIDAY_MIX_UP_NAME}.
+If handing off to Kathy (including Johnny's handoff), introduce her and {FRIDAY_MIX_UP_NAME} by that name.
+""".strip()
+
 EVENT_COACHING: dict[str, str] = {
     "Show Open": """
 Welcome listeners.
 Mention the day and time naturally.
 Mention the show's format.
+If the mission names The Friday Mix Up, call the show The Friday Mix Up — never say Daily Mix.
 Tease two or three upcoming artists from the supplied music context.
 Sound like the host's personality profile — never read like a generic announcer.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
@@ -51,6 +67,7 @@ Mention the current time of day.
 Comment on the mood that fits this daypart.
 Reference a previous or upcoming song when it feels natural.
 Keep it conversational.
+If the mission names The Friday Mix Up, call the show The Friday Mix Up — never say Daily Mix.
 """.strip(),
     "Weekend Check-In": """
 Mention the current time of day.
@@ -119,12 +136,14 @@ Thank listeners if natural.
 Clearly identify who is leaving and who is taking over.
 Hand off ONLY to the Next host named in the schedule context.
 Never invent a next host and never default to Mo unless Next host is Mo.
+If the next show is The Friday Mix Up, introduce Kathy and that show name — never say Daily Mix.
 """.strip(),
     "Show Close": """
 Wrap up the shift.
 Thank listeners sincerely.
 If a Next host is named in the schedule context, hand off to that host by name.
 Never invent a next host and never default to Mo unless Next host is Mo.
+If handing off into The Friday Mix Up, introduce Kathy and that show name — never say Daily Mix.
 """.strip(),
 }
 
@@ -132,6 +151,7 @@ LEGACY_MISSION_MAP: dict[str, str] = {
     "welcome": "Show Open",
     "drive_home_welcome": "Show Open",
     "daily_mix_welcome": "Show Open",
+    "friday_mix_up_welcome": "Show Open",
     "lunchtime_welcome": "Show Open",
     "music_story": "Music Story",
     "personality": "Check-In",
@@ -141,6 +161,7 @@ LEGACY_MISSION_MAP: dict[str, str] = {
     "signoff_to_johnny": "Handoff",
     "signoff": "Handoff",
     "handoff": "Handoff",
+    "handoff_to_kathy_friday_mix_up": "Handoff",
     "format_transition": "Format Change",
     "daily_mix_return": "Format Change",
     "saturday_show_open": "Show Open",
@@ -150,6 +171,9 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
     "welcome": "Welcome listeners, mention the day, introduce the format, and tease upcoming music.",
     "drive_home_welcome": "Welcome listeners to the drive-home show and tease upcoming music.",
     "daily_mix_welcome": "Welcome listeners to the Daily Mix and tease upcoming artists.",
+    "friday_mix_up_welcome": (
+        f"Welcome listeners to {FRIDAY_MIX_UP_NAME} and tease upcoming artists."
+    ),
     "lunchtime_welcome": "Welcome listeners to the lunchtime show and set a relaxed mood.",
     "music_story": "Share a brief music-related observation tied to an upcoming song or artist.",
     "personality": "Check in with listeners in the host's natural voice.",
@@ -159,6 +183,10 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
     "signoff_to_johnny": "Thank listeners and hand off to the next host.",
     "signoff": "Thank listeners and hand off to the next format or host.",
     "handoff": "Wrap up briefly and hand off to the next host.",
+    "handoff_to_kathy_friday_mix_up": (
+        f"Wrap up briefly and hand off to Kathy for {FRIDAY_MIX_UP_NAME}. "
+        f"Introduce her show as {FRIDAY_MIX_UP_NAME}."
+    ),
     "format_transition": "Acknowledge the format change and set expectations for what is coming next.",
     "daily_mix_return": "Acknowledge the return to Daily Mix and tease upcoming music.",
     "saturday_show_open": "Welcome listeners, mention Saturday morning, introduce Casey 70's, and tease upcoming artists.",
@@ -321,23 +349,137 @@ def event_type_for_row(row: dict) -> str:
     return "Check-In"
 
 
+def _person_matches(value: str, *names: str) -> bool:
+    text = re.sub(r"[\s_\-]+", " ", str(value or "").strip().lower())
+    if not text:
+        return False
+    compact = text.replace(" ", "")
+    for name in names:
+        needle = str(name or "").strip().lower()
+        if not needle:
+            continue
+        if text == needle or text.startswith(needle + " ") or text.endswith(" " + needle):
+            return True
+        if f" {needle} " in f" {text} ":
+            return True
+        if needle in compact:
+            return True
+    return False
+
+
+def _row_weekday(row: dict) -> str:
+    return str(row.get("day_of_week") or row.get("Day") or row.get("day") or "").strip().lower()
+
+
+def _row_hour(row: dict) -> int | None:
+    raw = str(row.get("Time") or row.get("time") or "").strip()
+    if not raw:
+        return None
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
+    if match:
+        hour = int(match.group(1))
+        return hour if 0 <= hour <= 23 else None
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})\s*([AaPp][Mm])", raw)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    meridiem = match.group(3).upper()
+    if hour < 1 or hour > 12 or minute > 59:
+        return None
+    if meridiem == "AM":
+        return 0 if hour == 12 else hour
+    return 12 if hour == 12 else hour + 12
+
+
+def _format_is_daily_mix(row: dict) -> bool:
+    fmt = str(row.get("Format") or row.get("format") or "").strip().lower()
+    return fmt in _DAILY_MIX_LABELS
+
+
+def is_friday_night(row: dict) -> bool:
+    """True for Friday breaks at/after evening (not daytime)."""
+    if _row_weekday(row) != "friday":
+        return False
+    hour = _row_hour(row)
+    if hour is None:
+        return False
+    return hour >= FRIDAY_NIGHT_START_HOUR
+
+
+def is_friday_mix_up_break(row: dict) -> bool:
+    """Kathy Friday-night Daily Mix, or a handoff/close into Kathy for that block."""
+    if not is_friday_night(row) or not _format_is_daily_mix(row):
+        return False
+    host = str(row.get("Host") or row.get("host") or "")
+    next_host = str(row.get("NextHost") or row.get("next_host") or "")
+    event_type = event_type_for_row(row)
+    if _person_matches(host, "kathy"):
+        return True
+    if event_type in {"Handoff", "Show Close"} and _person_matches(next_host, "kathy"):
+        return True
+    return False
+
+
+def spoken_format_for_row(row: dict) -> str:
+    """Format name hosts should say on air for this break."""
+    fmt = str(row.get("Format") or row.get("format") or "").strip()
+    if is_friday_mix_up_break(row):
+        return FRIDAY_MIX_UP_NAME
+    return fmt
+
+
+def _replace_daily_mix_name(text: str) -> str:
+    updated = re.sub(r"\b[Tt]he Daily Mix\b", FRIDAY_MIX_UP_NAME, str(text or ""))
+    return re.sub(r"\bDaily Mix\b", FRIDAY_MIX_UP_NAME, updated)
+
+
+def apply_friday_mix_up_mission(row: dict, mission: str, event_type: str = "") -> str:
+    """Rewrite mission copy so Friday night Kathy/Johnny use The Friday Mix Up."""
+    if not is_friday_mix_up_break(row):
+        return mission
+
+    normalized = normalize_event_type(event_type or event_type_for_row(row))
+    host = str(row.get("Host") or row.get("host") or "")
+    next_host = str(row.get("NextHost") or row.get("next_host") or "")
+    text = _replace_daily_mix_name(mission).strip()
+
+    if normalized == "Show Open" and _person_matches(host, "kathy"):
+        if FRIDAY_MIX_UP_NAME.lower() not in text.lower():
+            return LEGACY_MISSION_TEXT["friday_mix_up_welcome"]
+        return text
+
+    if normalized in {"Handoff", "Show Close"} and _person_matches(next_host, "kathy"):
+        if FRIDAY_MIX_UP_NAME.lower() not in text.lower():
+            return LEGACY_MISSION_TEXT["handoff_to_kathy_friday_mix_up"]
+        if "daily mix" in text.lower():
+            text = _replace_daily_mix_name(text)
+        return text
+
+    if _person_matches(host, "kathy"):
+        text = _replace_daily_mix_name(text)
+        if FRIDAY_MIX_UP_NAME.lower() not in text.lower():
+            text = f"{text} {_FRIDAY_MIX_UP_MISSION_HINT}".strip()
+        return text
+
+    return _replace_daily_mix_name(text)
+
+
 def mission_text_for_row(row: dict) -> str:
     mission = str(row.get("Mission") or row.get("mission") or "").strip()
     event_type = event_type_for_row(row)
     if not mission:
-        return default_mission_for_event_type(event_type)
+        mission = default_mission_for_event_type(event_type)
+    else:
+        legacy_key = _legacy_mission_key(mission)
+        if legacy_key in LEGACY_MISSION_TEXT:
+            mission = LEGACY_MISSION_TEXT[legacy_key]
+        elif legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
+            mission = LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
+        elif _mission_is_event_type_name(mission, event_type):
+            mission = default_mission_for_event_type(event_type)
 
-    legacy_key = _legacy_mission_key(mission)
-    if legacy_key in LEGACY_MISSION_TEXT:
-        return LEGACY_MISSION_TEXT[legacy_key]
-
-    if legacy_key in LEGACY_MISSION_MAP and _mission_is_event_type_name(mission, event_type):
-        return LEGACY_MISSION_TEXT.get(legacy_key, default_mission_for_event_type(event_type))
-
-    if _mission_is_event_type_name(mission, event_type):
-        return default_mission_for_event_type(event_type)
-
-    return mission
+    return apply_friday_mix_up_mission(row, mission, event_type)
 
 
 def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
@@ -366,7 +508,7 @@ def finalize_schedule_row(row: dict[str, str]) -> dict[str, str]:
         mission = default_mission_for_event_type(event_type)
 
     result["EventType"] = normalize_event_type(event_type)
-    result["Mission"] = mission
+    result["Mission"] = apply_friday_mix_up_mission(result, mission, result["EventType"])
     if not break_type:
         result["Type"] = schedule_type_for_event(result["EventType"])
     return result
@@ -379,3 +521,11 @@ def schedule_type_for_event(event_type: str) -> str:
 def event_coaching(event_type: str) -> str:
     normalized = normalize_event_type(event_type)
     return EVENT_COACHING.get(normalized, EVENT_COACHING["Check-In"])
+
+
+def event_coaching_for_row(row: dict) -> str:
+    """Coaching for a schedule row, including Friday Mix Up naming when applicable."""
+    base = event_coaching(event_type_for_row(row))
+    if not is_friday_mix_up_break(row):
+        return base
+    return f"{base}\n{FRIDAY_MIX_UP_COACHING}".strip()
