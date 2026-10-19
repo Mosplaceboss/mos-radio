@@ -782,7 +782,11 @@ _YEAR_FACT_RE = re.compile(
     r"\bin (?:19|20)\d{2}\b|\bin '(?:\d{2})\b)"
 )
 _OTHER_FEATURE_RE = re.compile(
-    r"(?i)\b(?:awareness month|national [\w' -]{0,40}day|happy birthday|question of the day)\b"
+    r"(?i)\b(?:awar(?:e)?ness month|national [\w' -]{0,40}day|happy birthday|question of the day)\b"
+)
+_PSA_CLOSER_RE = re.compile(
+    r"(?i)\b(?:spread awareness|offer support|not alone|facing this battle|"
+    r"early detection can save|stay up to date with their screenings)\b"
 )
 _EXTRA_PAD_RE = re.compile(
     r"(?i)^(?:stick around\b|plenty more in the mix\b|hope you are too\b|"
@@ -1033,21 +1037,41 @@ def focus_spoken_break(
                 break
             if "?" in sentence and kind not in {"question", "engagement"}:
                 break
+            if _PSA_CLOSER_RE.search(sentence) and not _on_supplied_subject(sentence, label, note):
+                continue
             expanded.append(sentence)
         sentences = expanded
     elif kind in {"handoff", "show_close"}:
         sentences = [sentence for sentence in sentences if _HANDOFF_RE.search(sentence)]
     elif kind in {"music", "music_history", "seventies", "blues", "show_open"}:
         kept_music: list[str] = []
+        year_facts = 0
         for sentence in sentences:
-            if _OTHER_FEATURE_RE.search(sentence) or _QUESTION_BAIT_RE.search(sentence.strip()):
+            if _OTHER_FEATURE_RE.search(sentence) or _PSA_CLOSER_RE.search(sentence):
                 continue
-            if kind not in {"music_history", "seventies"} and _YEAR_FACT_RE.search(sentence):
+            if _QUESTION_BAIT_RE.search(sentence.strip()):
+                continue
+            if kind == "music_history" and _YEAR_FACT_RE.search(sentence):
+                year_facts += 1
+                if year_facts > 2:
+                    continue
+            elif kind not in {"music_history", "seventies"} and _YEAR_FACT_RE.search(sentence):
                 continue
             if "?" in sentence and not _on_supplied_subject(sentence, label, note):
                 continue
             kept_music.append(sentence)
         sentences = kept_music
+
+    if kind == "fun_day" and label:
+        named = [sentence for sentence in sentences if _on_supplied_subject(sentence, label, note)]
+        if len(named) > 1:
+            sentences = [
+                sentence
+                for sentence in sentences
+                if not (_on_supplied_subject(sentence, label, note) and len(sentence.split()) <= 8)
+            ]
+            if not any(_on_supplied_subject(sentence, label, note) for sentence in sentences):
+                sentences = [max(named, key=lambda sentence: len(sentence.split()))]
 
     sentences = _drop_fingerprint_edge(sentences, recent_opening_fingerprints or [], at_end=False)
     sentences = [sentence for sentence in sentences if sentence.strip()]
