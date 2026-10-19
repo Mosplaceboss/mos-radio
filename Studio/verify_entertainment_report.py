@@ -151,7 +151,17 @@ def test_filters() -> None:
 
 def test_selection_and_feeds() -> None:
     urls = [source["url"] for source in ENTERTAINMENT_SOURCES]
-    _check("three feeds", urls == [DEADLINE_URL, TMZ_URL, VARIETY_NEWS_URL])
+    _check(
+        "report feeds",
+        urls
+        == [
+            "https://www.moviefone.com/feeds/news.rss",
+            "https://www.filmjabber.com/rss/rss-upcoming.php",
+            "https://www.boston.com/tag/entertainment/feed/",
+            "https://www.rogerebert.com/feed",
+            "https://www.etonline.com/news/rss",
+        ],
+    )
     _check("variety headlines feed", VARIETY_NEWS_URL == "https://feeds.feedburner.com/variety/headlines")
     _check("old variety film feed is not a source", OLD_VARIETY_FILM_URL not in urls)
     _check("reviews feed is not a source", RETIRED_REVIEWS_URL not in urls)
@@ -1481,7 +1491,7 @@ def test_discovery_ranking() -> None:
         "google news rss shape",
         sample == "https://news.google.com/rss/search?q=actor%20dies&hl=en-US&gl=US&ceid=US:en",
     )
-    _check("station feeds stay the original three", len(ENTERTAINMENT_SOURCES) == 3)
+    _check("station feeds are the five report feeds", len(ENTERTAINMENT_SOURCES) == 5)
     module_source = (ROOT / "app/core/entertainment_report.py").read_text(encoding="utf-8")
     lowered_module = module_source.lower()
     _check("module does not hardcode one celebrity death", "breaking bad" not in lowered_module and "rj mitte" not in lowered_module)
@@ -1873,8 +1883,78 @@ def test_story_selection_audit() -> None:
     )
 
 
+def test_approved_break_shape() -> None:
+    casting = _story(
+        "Jennifer Lawrence to Star in The Flood",
+        summary=(
+            "Preview: Jennifer Lawrence will star in the sci-fi movie The Flood. "
+            "Zach Cregger is writing and directing. "
+            "The movie has an August 11, 2028 release date."
+        ),
+        source_id="moviefone",
+        kind="entertainment_news",
+    )
+    upcoming = _story(
+        "Christmas at the Kringles",
+        summary=(
+            "October 30, 2026 - Go to FilmJabber.com to see "
+            "Christmas at the Kringles movie information."
+        ),
+        source_id="filmjabber",
+        kind="coming_soon",
+    )
+    fragment = _story(
+        "Betty McGuire, Actress on Broadway and 'Growing Pains.'",
+        summary="Betty McGuire, Actress on Broadway and 'Growing Pains.'",
+        source_id="moviefone",
+        kind="entertainment_news",
+    )
+    death = _story(
+        "R.J. Mitte Dead at 34",
+        summary="R.J. Mitte, best known for his role on Breaking Bad, has died at the age of 34.",
+        source_id="moviefone",
+        kind="entertainment_news",
+    )
+    crime = _story(
+        "Florida man killed ex-fiancee hours after the episode aired",
+        summary="Police say he killed her hours after the show aired.",
+        source_id="boston",
+        kind="local",
+    )
+    pitch = _story(
+        "Tallinn Baltic Event",
+        summary=(
+            "Tribeca-winning helmer Darko Lungulov is set to pitch works in progress "
+            "at an industry showcase."
+        ),
+        source_id="moviefone",
+        kind="entertainment_news",
+    )
+    script = michael_g_script([casting, upcoming, fragment, death, crime, pitch])
+    lowered = script.lower()
+    _check(
+        "approved break thanks Dave",
+        script.startswith("Thanks, Dave. Michael G here with the entertainment report."),
+    )
+    _check("approved break hands to Mo", script.strip().endswith("DJ Mo, back to you."))
+    _check("approved break does not thank Mo first", not lowered.startswith("thanks, mo"))
+    _check(
+        "casting sentence is spoken",
+        "Jennifer Lawrence will star in the sci-fi movie The Flood." in script,
+    )
+    _check("coming title is spoken", "Christmas at the Kringles" in script)
+    _check("coming date is spoken", "October 30" in script)
+    _check("filmjabber pointer is not spoken", "filmjabber" not in lowered and "go to" not in lowered)
+    _check("credit fragment is not spoken", "Betty McGuire" not in script and "Growing Pains" not in script)
+    _check("death sentence is spoken", "has died at the age of 34" in script)
+    _check("crime is not spoken", "ex-fiancee" not in lowered and "killed" not in lowered)
+    _check("industry pitch is not spoken", "helmer" not in lowered and "works in progress" not in lowered)
+    _check("approved break does not read the biography", "Roger Williams" not in script)
+
+
 def main() -> None:
     test_filters()
+    test_approved_break_shape()
     test_selection_and_feeds()
     test_handoff_flow()
     test_midday_handoff_flow()

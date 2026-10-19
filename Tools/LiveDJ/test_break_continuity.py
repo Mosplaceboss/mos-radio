@@ -257,9 +257,9 @@ class SpokenRepairTests(unittest.TestCase):
         self.assertNotIn("That lines up with this", fixed)
         self.assertNotIn("get to it", fixed)
         self.assertIn("MoeCarBay", fixed)
-        self.assertIn("music turned up", fixed)
+        self.assertNotIn("music turned up", fixed)
 
-    def test_unrelated_sentences_are_not_dropped_or_bridged(self) -> None:
+    def test_unrelated_topics_collapse_to_the_first_thought(self) -> None:
         script = (
             "The weather is turning cold this weekend with some snow up north. "
             "Bring a jacket if you are heading out. "
@@ -268,8 +268,295 @@ class SpokenRepairTests(unittest.TestCase):
         )
         fixed = bc.tighten_spoken_break(script, labels=[], allow_cta="")
         self.assertNotIn("That lines up with this", fixed)
+        self.assertIn("snow up north", fixed)
+        self.assertIn("jacket", fixed)
         self.assertIn("Red Sox", fixed)
         self.assertIn("pumpkin bread", fixed)
+
+
+AIRED_BAILEY = (
+    "Your speakers are ready, and so are we. "
+    "The studio's been sniffed, inspected, and approved—MoeCarBay's tail's still wagging. "
+    "We've got Jigsaw in the mix later, and a little bit of Phil Collins, just for good measure. "
+    "heeer is to another year of questionable decisions and great stories."
+)
+
+
+class DirectionTests(unittest.TestCase):
+    def test_birthday_break_names_the_person_and_keeps_the_music(self) -> None:
+        fixed = bc.tighten_spoken_break(
+            AIRED_BAILEY,
+            direction="birthday",
+            required_mentions=["John Gantz"],
+            labels=["John Gantz"],
+        )
+        self.assertIn("Happy birthday to John Gantz", fixed)
+        self.assertIn("Jigsaw", fixed)
+        self.assertIn("Phil Collins", fixed)
+        self.assertNotIn("MoeCarBay", fixed)
+        self.assertNotIn("questionable decisions", fixed)
+        self.assertNotIn("speakers are ready", fixed.lower())
+        self.assertGreater(len(fixed.split()), 12)
+
+    def test_aired_birthday_break_is_not_cut_down_to_the_name(self) -> None:
+        script = (
+            "Friday morning, and the rain's still rolling through Massachusetts. "
+            "Mo-Ca-Bay's got a glass of wine and a book open, but I'm here with you. "
+            "We've got Collective Soul in the mix later, and The J. Geils Band still ahead. "
+            "Happy birthday to John Gantz! "
+            "Here's to another year of questionable decisions and great stories."
+        )
+        fixed = bc.tighten_spoken_break(
+            script,
+            direction="birthday",
+            required_mentions=["John Gantz"],
+            labels=["John Gantz"],
+        )
+        self.assertIn("Happy birthday to John Gantz", fixed)
+        self.assertIn("rain", fixed.lower())
+        self.assertIn("Collective Soul", fixed)
+        self.assertNotIn("Mo-Ca-Bay", fixed)
+        self.assertNotIn("questionable decisions", fixed)
+        self.assertGreater(len(fixed.split()), 12)
+
+    def test_a_real_birthday_greeting_is_kept_and_the_dog_is_not(self) -> None:
+        script = (
+            "Happy birthday to John Gantz. Hope the day has a little sunshine in it. "
+            "The studio's been sniffed, inspected, and approved—MoeCarBay's tail's still wagging. "
+            "Here's to another year of questionable decisions and great stories."
+        )
+        fixed = bc.tighten_spoken_break(
+            script,
+            direction="birthday",
+            required_mentions=["John Gantz"],
+            labels=["John Gantz"],
+        )
+        self.assertIn("Happy birthday to John Gantz", fixed)
+        self.assertIn("sunshine", fixed)
+        self.assertNotIn("MoeCarBay", fixed)
+        self.assertNotIn("questionable decisions", fixed)
+
+    def test_music_break_leads_into_the_songs_without_a_toast(self) -> None:
+        fixed = bc.tighten_spoken_break(AIRED_BAILEY, direction="music")
+        self.assertIn("Jigsaw", fixed)
+        self.assertIn("Phil Collins", fixed)
+        self.assertIn("in the mix later", fixed.lower())
+        self.assertNotIn("a little later in the mix there's", fixed.lower())
+        self.assertNotIn("MoeCarBay", fixed)
+        self.assertNotIn("questionable decisions", fixed)
+        self.assertNotIn("just for good measure", fixed.lower())
+        self.assertNotIn("speakers are ready", fixed.lower())
+
+    def test_dog_break_stays_with_the_dog(self) -> None:
+        fixed = bc.tighten_spoken_break(AIRED_BAILEY, direction="dogs")
+        self.assertIn("MoeCarBay", fixed)
+        self.assertNotIn("Jigsaw", fixed)
+        self.assertNotIn("Phil Collins", fixed)
+        self.assertNotIn("questionable decisions", fixed)
+
+    def test_solemn_break_keeps_the_explanation_and_drops_the_liner(self) -> None:
+        script = (
+            "The Rolling Stones' Street Fighting Man is coming up later in the mix. "
+            "Today's National Mammography Day. "
+            "Regular mammograms can help detect breast cancer early, when treatment may be more effective. "
+            "Welcome to the musical mystery tour!"
+        )
+        fixed = bc.tighten_spoken_break(
+            script,
+            direction="fun_day",
+            labels=["National Mammography Day"],
+            solemn=True,
+        )
+        self.assertIn("breast cancer", fixed.lower())
+        self.assertIn("National Mammography Day", fixed)
+        self.assertNotIn("Street Fighting Man", fixed)
+        self.assertNotIn("mystery tour", fixed.lower())
+        self.assertNotIn("a little later in the mix there's", fixed.lower())
+
+    def test_stock_length_pad_does_not_air(self) -> None:
+        script = (
+            "Rain's been steady on the windows all morning, and the slower songs fit it. "
+            "Good company and good music — hard to beat. "
+            "More good music still ahead."
+        )
+        fixed = bc.tighten_spoken_break(script, direction="music")
+        self.assertIn("slower songs", fixed)
+        self.assertNotIn("hard to beat", fixed.lower())
+        self.assertNotIn("still ahead", fixed.lower())
+
+    def test_birthday_plan_names_the_person(self) -> None:
+        item = bc.make_candidate(
+            "birthday",
+            "listener birthdays",
+            "John Gantz",
+            must=True,
+            shared=True,
+            people=["John Gantz"],
+        )
+        plan = bc.plan_break("bailey", WHEN, "Check-In", [item], state_file=Path("missing-state.json"))
+        self.assertEqual(plan.direction, "birthday")
+        self.assertEqual(plan.required_mentions, ["John Gantz"])
+        self.assertIn("John Gantz", plan.continuity_block)
+        self.assertIn("Do not mention a dog", plan.continuity_block)
+        self.assertIn("Happy birthday to John Gantz", plan.continuity_block)
+        self.assertIn("Never say the name before happy birthday", plan.continuity_block)
+        self.assertNotIn("Do not name artists", plan.continuity_block)
+
+
+class FocusSpokenBreakTests(unittest.TestCase):
+    def test_history_break_drops_the_observance_and_the_question(self) -> None:
+        script = (
+            "Hey friends, taking a look back on this day in music history. "
+            "In 1958, Buddy Holly's final recordings captured one of rock's most powerful moments. "
+            "What's a memory that plays on loop for you? "
+            "Let us know what you think by clicking Community at mosplaceradio.com. "
+            "We would love to hear from you! "
+            "It's Breast Cancer Awareness Month. "
+            "October is Breast Cancer Awareness Month, a time to support those fighting breast cancer."
+        )
+        fixed = bc.focus_spoken_break(script, subject="music_history")
+        self.assertIn("Buddy Holly", fixed)
+        self.assertNotIn("Breast Cancer", fixed)
+        self.assertNotIn("Hey friends", fixed)
+        self.assertNotIn("Community", fixed)
+        self.assertNotIn("?", fixed)
+
+    def test_observance_stays_on_the_observance(self) -> None:
+        script = (
+            "Hey friends, taking a look back on this day in music history. "
+            "In 1958, Buddy Holly's final recordings captured one of rock's most powerful moments. "
+            "What's a memory that plays on loop for you? "
+            "It's Breast Cancer Awareness Month. "
+            "October is Breast Cancer Awareness Month, a time to support those fighting breast cancer."
+        )
+        fixed = bc.focus_spoken_break(
+            script,
+            subject="fun_day",
+            label="Breast Cancer Awareness Month",
+            note="October is Breast Cancer Awareness Month, a time to support those fighting breast cancer.",
+        )
+        self.assertIn("Breast Cancer Awareness Month", fixed)
+        self.assertNotIn("Buddy Holly", fixed)
+        self.assertNotIn("Hey friends", fixed)
+        self.assertNotIn("?", fixed)
+
+    def test_music_break_drops_stock_pads_and_the_request_closer(self) -> None:
+        script = (
+            "We've been spinning the good stuff from the seventies. "
+            "Hope you're enjoying your weekend, and the music still feels easy. "
+            "Back to the music. "
+            "Glad you're still hanging out with me. "
+            "Plenty of good songs still rolling through. "
+            "Stick around. "
+            "If you've got a request, click Request a Song at the top of mosplaceradio.com."
+        )
+        fixed = bc.focus_spoken_break(script, subject="music")
+        self.assertIn("seventies", fixed.lower())
+        self.assertIn("Back to the music", fixed)
+        self.assertNotIn("hanging out", fixed.lower())
+        self.assertNotIn("Hope you're enjoying", fixed)
+        self.assertNotIn("Request a Song", fixed)
+        self.assertNotIn("Stick around", fixed)
+
+    def test_missing_subject_uses_the_supplied_note_only(self) -> None:
+        fixed = bc.focus_spoken_break(
+            "Hey friends, the Keys are calling and I grabbed a coffee.",
+            subject="fun_day",
+            label="National Chocolate Cupcake Day",
+            note="National Chocolate Cupcake Day is a day for chocolate cupcakes.",
+        )
+        self.assertIn("Chocolate Cupcake", fixed)
+        self.assertNotIn("Keys", fixed)
+        self.assertNotIn("coffee", fixed.lower())
+
+    def test_recent_opening_is_not_reused(self) -> None:
+        script = (
+            "The slower songs fit this rainy hour. "
+            "I'll stay with that for a minute."
+        )
+        fixed = bc.focus_spoken_break(
+            script,
+            subject="music",
+            recent_opening_fingerprints=["the slower songs fit this rainy"],
+        )
+        self.assertNotIn("rainy hour", fixed.lower())
+        self.assertIn("stay with that", fixed)
+
+    def test_handoff_keeps_the_handoff(self) -> None:
+        script = (
+            "I'm Bailey, handing off to Kathy. "
+            "Hope you had a great weekend, especially with all the rain we've been having. "
+            "I've been thinking about Mo-Ca-Bay, he's still the best at sniffing out the good stuff. "
+            "If your life came with a warning label, what would it say? "
+            "Head over to mosplace.radio.com. "
+            "Have a great day everyone, remember to woosah and stay away from the filthy chooches. "
+            "Love you, bye. "
+            "Let us know what you think by clicking Community at mosplaceradio.com."
+        )
+        fixed = bc.focus_spoken_break(script, subject="handoff")
+        self.assertIn("handing off to Kathy", fixed)
+        self.assertIn("woosah", fixed)
+        self.assertIn("Love you, bye", fixed)
+        self.assertNotIn("Mo-Ca-Bay", fixed)
+        self.assertNotIn("weekend", fixed.lower())
+        self.assertNotIn("warning label", fixed.lower())
+        self.assertNotIn("mosplace", fixed.lower())
+
+    def test_peter_birthday_is_only_the_birthday(self) -> None:
+        script = (
+            "Hey everyone, Kathy heeer on Moe's Place Radio. "
+            "This afternoon, the Daily Mix is all about variety—because variety sounds good. "
+            "Hope you had a great weekend, Peter. "
+            "From all of us, happy birthday, Peter! "
+            "We've got a fresh mix rolling in—great tunes, great vibes. "
+            "Keep your ears tuned, and let the music bring you right in. "
+            "If you have got a request, click Request a Song at the top of Moe's Place Radio dot com."
+        )
+        fixed = bc.focus_spoken_break(script, subject="birthday", label="Peter")
+        self.assertEqual(fixed, "Happy birthday to Peter. Hope the day treats you well.")
+        self.assertLess(fixed.casefold().find("happy birthday"), fixed.casefold().find("peter"))
+        self.assertNotIn("weekend, peter", fixed.casefold())
+        self.assertNotIn("peter, happy birthday", fixed.casefold())
+        self.assertNotIn("heeer", fixed.lower())
+        self.assertNotIn("Hey everyone", fixed)
+        self.assertNotIn("weekend", fixed.lower())
+        self.assertNotIn("variety", fixed.lower())
+        self.assertNotIn("fresh mix", fixed.lower())
+        self.assertNotIn("Request a Song", fixed)
+        self.assertNotIn("dot com", fixed.lower())
+        self.assertNotIn("from all of us", fixed.lower())
+
+    def test_birthday_never_says_the_name_before_the_wish(self) -> None:
+        script = "Peter, happy birthday! Hope you had a great weekend, Peter."
+        fixed = bc.focus_spoken_break(script, subject="birthday", label="Peter")
+        lowered = fixed.casefold()
+        self.assertTrue(lowered.startswith("happy birthday"))
+        self.assertLess(lowered.find("happy birthday"), lowered.find("peter"))
+        self.assertNotIn("weekend, peter", lowered)
+        self.assertNotIn("peter, happy birthday", lowered)
+        self.assertNotIn("from all of us", lowered)
+        for sentence in fixed.replace("!", ".").replace("?", ".").split("."):
+            name_at = sentence.casefold().find("peter")
+            wish_at = sentence.casefold().find("happy birthday")
+            if name_at >= 0 and wish_at >= 0:
+                self.assertLess(wish_at, name_at)
+
+    def test_birthday_does_not_keep_the_weekend_story(self) -> None:
+        script = (
+            "Hope you had a great weekend. Out in the Keys the air still feels easy. "
+            "Happy birthday to John Gantz. Hope the day treats you well. "
+            "If you've got a request, click Request a Song at the top of mosplaceradio.com."
+        )
+        fixed = bc.focus_spoken_break(
+            script,
+            subject="birthday",
+            label="John Gantz",
+            note="Happy birthday to John Gantz.",
+        )
+        self.assertIn("John Gantz", fixed)
+        self.assertNotIn("Keys", fixed)
+        self.assertNotIn("Request a Song", fixed)
+        self.assertNotIn("great weekend", fixed.lower())
 
 
 if __name__ == "__main__":

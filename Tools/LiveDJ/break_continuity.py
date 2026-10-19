@@ -136,9 +136,15 @@ def make_candidate(
     heavy: bool = True,
     solemn: bool = False,
     shared: bool = False,
+    people: list[str] | None = None,
 ) -> dict[str, Any]:
     clean_key = _norm_key(key or label)
-    return {
+    names = []
+    for person in people or []:
+        name = " ".join(str(person or "").split()).strip()
+        if name and name.casefold() not in {item.casefold() for item in names}:
+            names.append(name)
+    item = {
         "family": str(family or "").strip().lower(),
         "key": clean_key,
         "label": " ".join(str(label or key or "").split()).strip(),
@@ -147,6 +153,9 @@ def make_candidate(
         "solemn": bool(solemn),
         "shared": bool(shared),
     }
+    if names:
+        item["people"] = names
+    return item
 
 
 def candidate_id(item: dict[str, Any]) -> str:
@@ -224,29 +233,131 @@ class BreakPlan:
         return any(item.get("heavy") for item in self.kept())
 
     @property
+    def direction(self) -> str:
+        if self.specialty:
+            return "specialty"
+        kept = self.kept()
+        if not kept:
+            return "music"
+        return str(kept[0].get("family") or "music")
+
+    @property
+    def required_mentions(self) -> list[str]:
+        found: list[str] = []
+
+        def add(value: str) -> None:
+            name = " ".join(str(value or "").split()).strip()
+            if name and name.casefold() not in {item.casefold() for item in found}:
+                found.append(name)
+
+        for item in self.kept():
+            for person in item.get("people") or []:
+                add(str(person))
+            if str(item.get("family") or "") == "birthday":
+                label = str(item.get("label") or "").strip()
+                if label.casefold() not in {"listener birthdays", "birthdays"}:
+                    add(label)
+        return found
+
+    def _focus_sentence(self, kept: list[dict[str, Any]]) -> str:
+        if self.specialty:
+            return (
+                "Stay on this scheduled segment. Do not add a second story, a personal bit, "
+                "a dog joke, or a website closer."
+            )
+        if not kept:
+            return (
+                "A relaxed music break in this host's own voice. Not a one-line announcement. "
+                "Use the songs and facts supplied in this prompt. Say why something fits, "
+                "what it reminds you of, or how the hour feels. "
+                "You do not have to introduce yourself, and you do not have to name the next song. "
+                "If you name a song, it has to be part of the thought. Do not end on a slogan."
+            )
+        if len(kept) > 1:
+            labels = ", ".join(str(item.get("label") or item.get("family")) for item in kept)
+            return (
+                f"{labels}. Only if they belong in the same thought. "
+                "Do not force a connection, and do not add anything else."
+            )
+        item = kept[0]
+        family = str(item.get("family") or "")
+        label = str(item.get("label") or family)
+        people = [str(name).strip() for name in (item.get("people") or []) if str(name).strip()]
+        if family == "birthday":
+            who = ", ".join(people) if people else label
+            return (
+                f"A short birthday for {who}, in this host's voice. "
+                f"Say happy birthday first, then the name: Happy birthday to {who}. "
+                "Never say the name before happy birthday, and never say the name and then tack the wish on. "
+                "Do not say from all of us. "
+                "The birthday is the whole break, not one sentence inside another story. "
+                "Do not replace it with a toast or a slogan, and do not mention the dog."
+            )
+        if self.modes.get(candidate_id(item)) == "reminder":
+            return (
+                f"A short reminder of {label}. Do not explain it again, and do not add a second subject. "
+                "Then back to the music."
+            )
+        if family == "dogs":
+            return (
+                f"One short booth moment about {label}. Stay with the dog. "
+                "Do not pivot into a song list or a toast."
+            )
+        if family == "fun_day":
+            if item.get("solemn"):
+                return (
+                    f"{label}. This is a serious observance. Use the supplied note to say "
+                    "what the day recognizes, in this host's voice, warm and respectful. "
+                    "One real observation. Do not joke, do not invent a statistic or a personal story, "
+                    "and do not give medical advice. Do not put a song title or a catchphrase "
+                    "in the same breath."
+                )
+            return (
+                f"{label}. Use the supplied note and say what the day actually is. "
+                "A couple of natural sentences in this host's voice. "
+                "Do not stop after the name, and do not finish with a slogan."
+            )
+        return (
+            f"{label}. Develop it from the facts supplied for it — a reaction, a short story, "
+            "or why it matters to a listener. Then the music, if it fits. "
+            "Do not stop after naming it, and do not finish with a slogan."
+        )
+
+    @property
     def continuity_block(self) -> str:
         kept = self.kept()
-        if self.specialty:
-            focus = "Stay on this scheduled segment. Do not add a second story, a personal bit, or a website closer."
-        elif not kept:
-            focus = "One subject, said the way a DJ in the studio would say it. Not a one-line announcement, and not a second story."
-        elif len(kept) == 1:
-            label = kept[0].get("label") or kept[0].get("family")
-            if self.modes.get(candidate_id(kept[0])) == "reminder":
-                focus = f"A short reminder of {label}. Do not explain it again. Then back to the music."
-            else:
-                focus = f"{label}. Give it room, then back to the music. Do not add another story."
-        else:
-            labels = ", ".join(str(item.get("label") or item.get("family")) for item in kept)
-            focus = f"{labels}. Only if they belong together. Do not force a connection, and do not add anything else."
+        focus = self._focus_sentence(kept)
         lines = [
             "BREAK FOCUS (every DJ — this decides the break; do not cover every available topic):",
             f"- This break: {focus}",
             "- Keep this host's own voice, humor, and interests. Do not slip into a generic announcer.",
-            "- Talk like a person between songs. One thought, then the music. No news-reader list.",
+            "- Talk like a person between songs. Develop the subject you were given. No news-reader list.",
             "- Do not invent a bridge between unrelated subjects. One subject is better than a forced segue.",
             "- Do not add filler just to make the break longer.",
+            "- Do not close with a generic toast, slogan, or \"here's to another year\" line.",
         ]
+        if self.direction == "birthday":
+            lines.append(
+                "- Say the birthday inside the break. Do not make it the only sentence, and do not stop after it."
+            )
+            lines.append("- Do not mention a dog. A toast is not a birthday greeting.")
+        elif self.direction != "dogs":
+            lines.append("- Do not mention the dog unless this break's subject is the dog.")
+        kept_solemn = any(item.get("solemn") for item in kept)
+        if self.direction == "fun_day" and kept_solemn:
+            lines.append(
+                "- Do not name a song or artist in this break, and do not add a catchphrase."
+            )
+        elif self.direction == "music":
+            lines.append(
+                "- A song mention has to say something about the song or the hour. "
+                "Do not use \"we've got X coming up\" as the whole break."
+            )
+        elif self.direction not in {"specialty", "birthday"}:
+            lines.append(
+                "- Finish the subject first. One look-ahead song may follow if it connects. "
+                "Do not add \"just for good measure\" or a slogan after it."
+            )
         if self.already:
             lines.append(
                 "- Already discussed recently: "
@@ -392,6 +503,215 @@ def plan_break(
     )
 
 
+_COLD_TOAST_RE = re.compile(
+    r"(?i)\b(?:here+['’]?s to|hee+r is to|cheers to another|questionable decisions|"
+    r"another year of|your speakers are ready|life is better with the music)\b"
+)
+_GREETING_RE = re.compile(r"(?i)\b(?:hey everyone|hey there|hey folks|hey friends|i'm |i am )\b")
+_DOG_BIT_RE = re.compile(
+    r"(?i)\b(?:moecarbay|moe[\s-]*car[\s-]*bay|mo[\s-]*ca[\s-]*bay|"
+    r"tail(?:'s| is) still wagging|been sniffed)\b"
+)
+_BIRTHDAY_WORD_RE = re.compile(r"(?i)\bhappy birthday\b")
+_ELABORATION_START_RE = re.compile(r"(?i)^(that|it|this|you|and|but|so|because|which|there)\b")
+_MUSIC_REASON_RE = re.compile(
+    r"(?i)\b(?:because|reminds|remember|favorite|fits the|mood|classic|always loved|the kind of|what i love)\b"
+)
+_ENTITY_SKIP = frozenset(
+    """
+    the a an and or but monday tuesday wednesday thursday friday saturday sunday
+    january february march april may june july august september october november december
+    am pm dj
+    """.split()
+)
+
+
+def _person_in_text(text: str, name: str) -> bool:
+    clean = " ".join(str(name or "").split()).strip()
+    if not clean:
+        return False
+    if clean.casefold() in str(text or "").casefold():
+        return True
+    parts = [part for part in re.findall(r"[A-Za-z']+", clean) if len(part) > 2]
+    if len(parts) < 2:
+        return False
+    lowered = str(text or "").casefold()
+    return all(part.casefold() in lowered for part in parts)
+
+
+def _is_cold_toast(sentence: str) -> bool:
+    return bool(_COLD_TOAST_RE.search(sentence or ""))
+
+
+def _is_dog_bit(sentence: str) -> bool:
+    return bool(_DOG_BIT_RE.search(sentence or ""))
+
+
+def _is_bare_music(sentence: str) -> bool:
+    if not _MUSIC_RE.search(sentence or ""):
+        return False
+    return not bool(_MUSIC_REASON_RE.search(sentence or ""))
+
+
+def _mid_entities(sentence: str) -> set[str]:
+    found: set[str] = set()
+    for match in re.finditer(r"\b[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+)*", str(sentence or "")):
+        if match.start() == 0:
+            continue
+        words = [word for word in match.group(0).split() if word.casefold() not in _ENTITY_SKIP]
+        if words:
+            found.add(" ".join(words).casefold())
+    return found
+
+
+_PAD_LINE_RE = re.compile(
+    r"(?i)^(?:"
+    r"glad you(?:'re| are) still hanging out|"
+    r"plenty of good songs still rolling|"
+    r"i(?:'m| am) enjoying this stretch of the mix|"
+    r"let(?:'s| us) keep it going for a little|"
+    r"good company and good music|"
+    r"more good music still ahead|"
+    r"stick around\b.{0,40}plenty more|"
+    r"let(?:'s| us) keep the music rolling"
+    r")\b"
+)
+
+
+def _strip_good_measure(sentence: str) -> str:
+    """Remove the stock tag. Leave the DJ's own sentence alone."""
+    original = " ".join(str(sentence or "").split()).strip()
+    if not original or not re.search(r"(?i)just for good measure", original):
+        return original
+    body = re.sub(r"(?i),?\s*just for good measure", "", original).strip(" ,;:-")
+    if not body:
+        return original
+    if body[-1] not in ".!?":
+        body += "."
+    return body
+
+
+def _warm_birthday(names: list[str]) -> str:
+    clean = [" ".join(str(name).split()).strip() for name in names if str(name).strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return f"Happy birthday to {clean[0]}. Hope the day treats you well."
+    if len(clean) == 2:
+        return f"Happy birthday to {clean[0]} and {clean[1]}. Hope the day treats you both well."
+    who = ", ".join(clean[:-1]) + f", and {clean[-1]}"
+    return f"Happy birthday to {who}. Hope the day treats every one of you well."
+
+
+def _rewrite_cold_greeting(sentence: str, names: list[str]) -> str:
+    if not _is_cold_toast(sentence) or not _BIRTHDAY_WORD_RE.search(sentence):
+        return sentence
+    mentioned = [name for name in names if _person_in_text(sentence, name)]
+    if mentioned:
+        return _warm_birthday(mentioned)
+    return sentence
+
+
+def _is_short_greeting(sentence: str) -> bool:
+    return bool(_GREETING_RE.search(sentence or "")) and len(str(sentence or "").split()) <= 18
+
+
+def _is_allowed_closer(sentence: str, allow_cta: str) -> bool:
+    keys = [key for key, pattern in _CLOSINGS if pattern.search(sentence or "")]
+    if not keys:
+        return False
+    allowed = _allowed_closing_keys(allow_cta)
+    return all(key in allowed for key in keys)
+
+
+def _continues_topic(previous: str, current: str) -> bool:
+    if _story_relation(previous, current) != "drop":
+        return True
+    if _is_cold_toast(current) or _is_bare_music(current):
+        return False
+    if _ELABORATION_START_RE.search(current.strip()) and not _mid_entities(current):
+        return True
+    if len(current.split()) <= 14 and not _mid_entities(current):
+        return True
+    return False
+
+
+def _align_spoken_sentences(
+    sentences: list[str],
+    *,
+    direction: str,
+    mentions: list[str],
+    labels: list[str],
+    allow_cta: str = "",
+    solemn: bool = False,
+) -> list[str]:
+    """Drop toasts, slogans, and stock pads. Keep a real thought intact."""
+    kind = str(direction or "").strip().lower()
+    names = [" ".join(str(name).split()).strip() for name in mentions if str(name).strip()]
+    feature_labels = [label for label in labels if str(label).strip()]
+    dog_also_present = any(_is_dog_bit(sentence) for sentence in sentences)
+    kept: list[str] = []
+    kept_music = False
+
+    def off_topic(sentence: str) -> bool:
+        if _is_cold_toast(sentence):
+            named_greeting = (
+                kind == "birthday"
+                and any(_person_in_text(sentence, name) for name in names)
+                and bool(_BIRTHDAY_WORD_RE.search(sentence))
+            )
+            return not named_greeting
+        if _is_dog_bit(sentence) and kind not in {"", "dogs"}:
+            return True
+        return False
+
+    for sentence in sentences:
+        if off_topic(sentence):
+            continue
+        if kind == "specialty":
+            kept.append(sentence)
+            continue
+        if _is_bare_music(sentence):
+            if kind == "dogs" or solemn:
+                continue
+            if kind == "" and dog_also_present:
+                continue
+            if kept_music:
+                continue
+            sentence = _strip_good_measure(sentence)
+            kept.append(sentence)
+            kept_music = True
+            continue
+        if kind == "birthday" and names and (
+            _BIRTHDAY_WORD_RE.search(sentence)
+            or any(_person_in_text(sentence, name) for name in names)
+        ):
+            sentence = _rewrite_cold_greeting(sentence, names)
+            kept.append(sentence)
+            continue
+        label_hit = any(_label_in_text(sentence, label) for label in feature_labels)
+        mention_hit = any(_person_in_text(sentence, name) for name in names)
+        fragment = len(sentence.split()) <= 5 and not label_hit and not mention_hit
+        slogan = solemn and len(sentence.split()) <= 8 and not label_hit and not mention_hit
+        if (fragment or slogan) and not _is_allowed_closer(sentence, allow_cta):
+            continue
+        if _is_allowed_closer(sentence, allow_cta) and not kept:
+            continue
+        kept.append(sentence)
+
+    if kind == "birthday" and names:
+        missing = [name for name in names if not any(_person_in_text(sentence, name) for sentence in kept)]
+        if missing:
+            insert_at = 1 if kept and _is_short_greeting(kept[0]) else 0
+            kept.insert(insert_at, _warm_birthday(missing))
+        kept = [
+            sentence
+            for sentence in kept
+            if not (_is_cold_toast(sentence) and not _BIRTHDAY_WORD_RE.search(sentence))
+        ]
+    return kept
+
+
 def tighten_spoken_break(
     script: str,
     *,
@@ -400,22 +720,340 @@ def tighten_spoken_break(
     recent_openers: list[str] | None = None,
     recent_opening_fingerprints: list[str] | None = None,
     recent_closing_fingerprints: list[str] | None = None,
+    direction: str = "",
+    required_mentions: list[str] | None = None,
+    solemn: bool = False,
 ) -> str:
-    """Drop a repeated opener or closer, and do not force a second story."""
+    """Drop stock pads, toasts, and slogan tags. Keep the spoken thought."""
     text = " ".join(str(script or "").split())
     if not text:
         return text
     sentences = _sentences(text)
     if not sentences:
         return text
+    sentences = [sentence for sentence in sentences if not _PAD_LINE_RE.search(sentence.strip())]
     sentences = _drop_fingerprint_edge(sentences, recent_opening_fingerprints or [], at_end=False)
     sentences = _drop_fingerprint_edge(sentences, recent_closing_fingerprints or [], at_end=True)
     sentences = _drop_repeated_openers(sentences, recent_openers or [])
     sentences = _drop_repeated_topics(sentences, labels or [])
     sentences = _drop_unwanted_closers(sentences, allow_cta)
-    sentences = _shape_story_sentences(sentences)
+    sentences = _align_spoken_sentences(
+        sentences,
+        direction=direction,
+        mentions=list(required_mentions or []),
+        labels=list(labels or []),
+        allow_cta=allow_cta,
+        solemn=solemn,
+    )
+    if not sentences:
+        if str(direction or "").strip().lower() == "birthday" and required_mentions:
+            return _warm_birthday(list(required_mentions))
+        return text
+    return " ".join(sentences).strip()
+
+
+_STOCK_OPEN_RE = re.compile(
+    r"(?i)^(?:"
+    r"hey(?: there| friends| folks| everybody| everyone| music lovers)?\b|"
+    r"hi(?: there| everybody| everyone| folks| friends)?\b|"
+    r"hello\b|"
+    r"welcome(?: in| back| to)\b|"
+    r"how(?:'s| is| are) (?:everyone|y'all|you all|you doing|things)\b|"
+    r"hope you(?:'re| are| have|'ve| had) (?:having|had|a |doing|enjoying)\b|"
+    r"good (?:morning|afternoon|evening)\b|"
+    r"thanks for (?:tuning in|joining us|spending|listening|making us)\b|"
+    r"y'all ready\b|"
+    r"you(?:'re| are) (?:tuned in|listening|here)\b|"
+    r"glad you(?:'re| are) (?:here|with us|tuning)\b"
+    r")"
+)
+_SITE_LINE_RE = re.compile(
+    r"(?i)\b(?:request a song|mosplace(?:radio)?(?:\.com|\.radio\.com)|"
+    r"moe'?s place radio dot com|click(?:ing)?\s+community|love to hear from you|"
+    r"keep those requests coming|requests are open|head over to|community section)\b"
+)
+_HANDOFF_RE = re.compile(
+    r"(?i)\b(?:hand(?:ing|s)? off|take(?:s|ing) over|love you, bye|"
+    r"woosah|filthy chooches|that(?:'s| is) it for me|signing off)\b"
+)
+_QUESTION_BAIT_RE = re.compile(r"(?i)^here(?:'s| is) a question\b")
+_YEAR_FACT_RE = re.compile(
+    r"(?i)(?:\btaking a look back\b|\bthis day in music history\b|"
+    r"\bin (?:19|20)\d{2}\b|\bin '(?:\d{2})\b)"
+)
+_OTHER_FEATURE_RE = re.compile(
+    r"(?i)\b(?:awareness month|national [\w' -]{0,40}day|happy birthday|question of the day)\b"
+)
+_EXTRA_PAD_RE = re.compile(
+    r"(?i)^(?:stick around\b|plenty more in the mix\b|hope you are too\b|"
+    r"let(?:'s| us) keep the good vibes\b|thanks for listening\b)"
+)
+_STOCK_FILLER_RE = re.compile(
+    r"(?i)\b(?:fresh mix|great tunes|great vibes|keep your ears tuned|"
+    r"variety sounds good|all about variety|let the music bring you|"
+    r"we(?:'ve| have) got a (?:fresh|great) mix|daily mix is all about)\b"
+)
+_STATION_ID_RE = re.compile(
+    r"(?i)\b(?:on moe'?s place radio|you(?:'re| are) listening to|radio dot com)\b"
+)
+_ANNOUNCER_WISH_RE = re.compile(
+    r"(?i)\b(?:from all of us|on behalf of|the whole crew|everyone here at)\b"
+)
+_STRETCH_HERE_RE = re.compile(r"(?i)\bhee+r\b")
+_FOCUSED_SUBJECTS = frozenset(
+    {
+        "fun_day",
+        "birthday",
+        "announcement",
+        "question",
+        "engagement",
+        "personal",
+        "rss",
+        "talking",
+        "friends",
+        "books",
+        "dogs",
+        "farmstand",
+    }
+)
+
+
+def recent_opening_hints(
+    when: datetime | None = None,
+    *,
+    state_file: Path | None = None,
+    limit: int = 6,
+) -> list[str]:
+    """Recent first-line fingerprints, so the next break does not reuse them."""
+    del when
+    history = _load_state(state_file)
+    return _station_fingerprints(history, "station_openings")[:limit]
+
+
+def _note_words(text: str) -> set[str]:
+    return {
+        word
+        for word in re.findall(r"[a-z0-9']+", str(text or "").casefold())
+        if len(word) >= 5 and word not in _STOP
+    }
+
+
+def _on_supplied_subject(sentence: str, label: str, note: str) -> bool:
+    if label and _label_in_text(sentence, label):
+        return True
+    supplied = _note_words(note)
+    if len(supplied) < 2:
+        return False
+    return len(supplied & _note_words(sentence)) >= 2
+
+
+def _birthday_comes_first(text: str, label: str) -> bool:
+    """The wish is spoken before the name, or the name is not in the line."""
+    if not label:
+        return True
+    name_at = str(text or "").casefold().find(str(label).casefold())
+    if name_at < 0:
+        return True
+    match = _BIRTHDAY_WORD_RE.search(text or "")
+    return bool(match) and match.start() < name_at
+
+
+def _ordered_birthday_wish(sentence: str, label: str) -> str:
+    """Happy birthday, then the name. Never the name and then the wish."""
+    wish = _warm_birthday([label]) if label else ""
+    if not wish:
+        return sentence
+    if _ANNOUNCER_WISH_RE.search(sentence) or not _birthday_comes_first(sentence, label):
+        return wish
+    direct = re.match(
+        rf"(?i)^happy birthday,\s+{re.escape(label)}\b",
+        sentence.strip(),
+    )
+    if direct:
+        return wish
+    return sentence
+
+
+def _birthday_line(label: str, note: str) -> str:
+    """Name and supplied note only. A weekend or a station slogan is not a birthday."""
+    wish = _warm_birthday([label]) if label else ""
+    detail = " ".join(str(note or "").split()).strip()
+    if detail.casefold() in {"", "none"}:
+        return wish
+    if _BIRTHDAY_WORD_RE.search(detail) and len(detail.split()) <= 8:
+        return wish or detail
+    if wish and detail.casefold() in wish.casefold():
+        return wish
+    if detail[-1] not in ".!?":
+        detail += "."
+    return f"{wish} {detail}".strip() if wish else detail
+
+
+def _birthday_only(sentences: list[str], label: str, note: str) -> list[str]:
+    kept: list[str] = []
+    for sentence in sentences:
+        if _STOCK_OPEN_RE.search(sentence.strip()) or _STOCK_FILLER_RE.search(sentence):
+            continue
+        if _SITE_LINE_RE.search(sentence) or _STATION_ID_RE.search(sentence):
+            continue
+        if label and _label_in_text(sentence, label) and not _BIRTHDAY_WORD_RE.search(sentence):
+            continue
+        if _BIRTHDAY_WORD_RE.search(sentence):
+            sentence = _ordered_birthday_wish(sentence, label)
+            if sentence and sentence not in kept:
+                kept.append(sentence)
+            continue
+        if note and _on_supplied_subject(sentence, "", note):
+            kept.append(sentence)
+    wishes = [sentence for sentence in kept if _BIRTHDAY_WORD_RE.search(sentence)]
+    rest = [sentence for sentence in kept if sentence not in wishes]
+    if wishes:
+        spoken = wishes[0]
+        tail: list[str] = []
+        for sentence in wishes[1:] + rest:
+            if label and not _birthday_comes_first(f"{spoken} {sentence}", label):
+                continue
+            tail.append(sentence)
+            spoken = f"{spoken} {sentence}".strip()
+        kept = [wishes[0], *tail]
+    if not kept or all(_BIRTHDAY_WORD_RE.search(sentence) for sentence in kept):
+        line = _birthday_line(label, note)
+        return [line] if line else kept
+    joined = " ".join(kept)
+    if label and not _birthday_comes_first(joined, label):
+        line = _birthday_line(label, note)
+        return [line] if line else kept
+    return kept
+
+
+def _grounded_subject_line(label: str, note: str, kind: str) -> str:
+    """One spoken line from the supplied subject. No added scene."""
+    title = " ".join(str(label or "").split()).strip()
+    detail = " ".join(str(note or "").split()).strip()
+    if detail.casefold() == "none":
+        detail = ""
+    if kind == "birthday" and title:
+        return _birthday_line(title, detail)
+    if detail:
+        if title and title.casefold() not in detail.casefold():
+            line = f"{title}. {detail}"
+        else:
+            line = detail
+        if line[-1] not in ".!?":
+            line += "."
+        return line
+    if not title:
+        return ""
+    if title[-1] in ".!?":
+        return title
+    return f"{title}."
+
+
+def focus_spoken_break(
+    script: str,
+    *,
+    subject: str = "",
+    label: str = "",
+    note: str = "",
+    allow_cta: str = "",
+    recent_opening_fingerprints: list[str] | None = None,
+) -> str:
+    """Keep one subject. Drop greetings, stock pads, and a second story."""
+    text = _STRETCH_HERE_RE.sub("here", " ".join(str(script or "").split()))
+    if not text:
+        return text
+    kind = str(subject or "").strip().lower()
+    sentences = [sentence for sentence in _sentences(text) if sentence]
     if not sentences:
         return text
+    sentences = [
+        sentence
+        for sentence in sentences
+        if not _PAD_LINE_RE.search(sentence.strip())
+        and not _EXTRA_PAD_RE.search(sentence.strip())
+        and not _STOCK_FILLER_RE.search(sentence)
+    ]
+    if kind not in {"show_open", "handoff", "show_close"}:
+        sentences = [
+            sentence
+            for sentence in sentences
+            if not _STATION_ID_RE.search(sentence) or _BIRTHDAY_WORD_RE.search(sentence)
+        ]
+    if kind not in {"show_open"}:
+        sentences = [
+            sentence
+            for sentence in sentences
+            if not _STOCK_OPEN_RE.search(sentence.strip())
+            or (kind != "birthday" and _on_supplied_subject(sentence, label, note))
+        ]
+    if kind == "farmstand":
+        pass
+    elif kind in {"question", "engagement"} or allow_cta == "community":
+        sentences = [
+            sentence
+            for sentence in sentences
+            if not re.search(r"(?i)\b(?:request a song|requests are open|keep those requests)\b", sentence)
+        ]
+    elif allow_cta == "request":
+        sentences = [
+            sentence
+            for sentence in sentences
+            if not re.search(r"(?i)\b(?:click(?:ing)?\s+community|love to hear from you)\b", sentence)
+        ]
+    else:
+        sentences = [sentence for sentence in sentences if not _SITE_LINE_RE.search(sentence)]
+
+    if kind == "birthday" and (label or note):
+        sentences = _birthday_only(sentences, label, note)
+    elif kind in _FOCUSED_SUBJECTS and (label or note):
+        expanded: list[str] = []
+        started = False
+        for sentence in sentences:
+            if _on_supplied_subject(sentence, label, note):
+                started = True
+                expanded.append(sentence)
+                continue
+            if not started:
+                continue
+            if _YEAR_FACT_RE.search(sentence):
+                break
+            if _SITE_LINE_RE.search(sentence):
+                if allow_cta == "community" and re.search(
+                    r"(?i)\b(?:community|love to hear from you)\b", sentence
+                ):
+                    expanded.append(sentence)
+                    continue
+                if allow_cta == "bakehouse" and re.search(r"(?i)bake\s*house", sentence):
+                    expanded.append(sentence)
+                    continue
+                break
+            if _STOCK_OPEN_RE.search(sentence.strip()) and not _on_supplied_subject(sentence, label, note):
+                break
+            if _OTHER_FEATURE_RE.search(sentence) and not _on_supplied_subject(sentence, label, note):
+                break
+            if "?" in sentence and kind not in {"question", "engagement"}:
+                break
+            expanded.append(sentence)
+        sentences = expanded
+    elif kind in {"handoff", "show_close"}:
+        sentences = [sentence for sentence in sentences if _HANDOFF_RE.search(sentence)]
+    elif kind in {"music", "music_history", "seventies", "blues", "show_open"}:
+        kept_music: list[str] = []
+        for sentence in sentences:
+            if _OTHER_FEATURE_RE.search(sentence) or _QUESTION_BAIT_RE.search(sentence.strip()):
+                continue
+            if kind not in {"music_history", "seventies"} and _YEAR_FACT_RE.search(sentence):
+                continue
+            if "?" in sentence and not _on_supplied_subject(sentence, label, note):
+                continue
+            kept_music.append(sentence)
+        sentences = kept_music
+
+    sentences = _drop_fingerprint_edge(sentences, recent_opening_fingerprints or [], at_end=False)
+    sentences = [sentence for sentence in sentences if sentence.strip()]
+    if not sentences:
+        grounded = _grounded_subject_line(label, note, kind)
+        return grounded or text
     return " ".join(sentences).strip()
 
 
@@ -632,7 +1270,11 @@ def _ending_line(ending: str, avoid_closings: list[str]) -> str:
     if ending == "request":
         return "ENDING: one song-request invite, then stop." + avoided
     if ending == "signoff":
-        return "ENDING: a short sign-off. Do not start a new story or a website pitch." + avoided
+        return (
+            "ENDING: a short sign-off, and then stop. "
+            "Do not add another sentence after the sign-off, and do not start a new story or a website pitch."
+            + avoided
+        )
     return (
         "ENDING: the song or a short thought. Do not add a request, Community, "
         "\"We would love to hear from you,\" or \"Let us know what you think.\""

@@ -82,7 +82,47 @@ SLOT_FILM_NEWS = "variety_film_news"
 SLOT_EXTRA = "more_entertainment"
 SLOT_ORDER = (SLOT_TMZ, SLOT_DEADLINE, SLOT_FILM_NEWS, SLOT_EXTRA)
 
+# Live report. Each feed fills one beat of the approved break.
 ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
+    {
+        "id": "moviefone",
+        "name": "Moviefone",
+        "kind": "entertainment_news",
+        "slot": "casting",
+        "url": "https://www.moviefone.com/feeds/news.rss",
+    },
+    {
+        "id": "filmjabber",
+        "name": "FilmJabber",
+        "kind": "coming_soon",
+        "slot": "coming_up",
+        "url": "https://www.filmjabber.com/rss/rss-upcoming.php",
+    },
+    {
+        "id": "boston",
+        "name": "Boston.com",
+        "kind": "local",
+        "slot": "local",
+        "url": "https://www.boston.com/tag/entertainment/feed/",
+    },
+    {
+        "id": "ebert",
+        "name": "Roger Ebert",
+        "kind": "critic",
+        "slot": "critic",
+        "url": "https://www.rogerebert.com/feed",
+    },
+    {
+        "id": "et",
+        "name": "ET",
+        "kind": "music",
+        "slot": "music",
+        "url": "https://www.etonline.com/news/rss",
+    },
+)
+# Older station feeds. Offline fixtures still parse them. The live report
+# does not fetch them; they were the credit-fragment and industry-pitch pool.
+_LEGACY_ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
     {
         "id": "deadline",
         "name": "Deadline",
@@ -105,6 +145,7 @@ ENTERTAINMENT_SOURCES: tuple[dict[str, str], ...] = (
         "url": "https://feeds.feedburner.com/variety/headlines",
     },
 )
+_REPORT_SOURCE_IDS = frozenset(source["id"] for source in ENTERTAINMENT_SOURCES)
 
 # Supplemental search. These are not saved as station feeds. Each query is
 # fetched whole; selection ranks the pool instead of keeping the newest few.
@@ -386,6 +427,7 @@ class EntertainmentStory:
     updated: datetime | None = None
     outlet: str = ""
     confirmed_outlets: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
 
 
 def entertainment_feed_urls() -> list[str]:
@@ -463,6 +505,17 @@ def _child_text(item: ET.Element, names: tuple[str, ...]) -> str:
         if name.lower() in found:
             return found[name.lower()]
     return ""
+
+
+def _child_categories(item: ET.Element) -> tuple[str, ...]:
+    found: list[str] = []
+    for child in list(item):
+        if _local_name(child.tag) != "category":
+            continue
+        text = _clean_text(_element_text(child))
+        if text and text not in found:
+            found.append(text)
+    return tuple(found)
 
 
 def _child_link(item: ET.Element) -> str:
@@ -547,6 +600,7 @@ def parse_feed_xml(xml_text: str, source: dict[str, str]) -> list[EntertainmentS
                 published=published,
                 updated=updated,
                 outlet=_clean_text(outlet),
+                categories=_child_categories(item),
             )
         )
     return stories
@@ -573,12 +627,19 @@ def _is_review_item(story: EntertainmentStory) -> bool:
     return _REVIEW_ITEM_RE.search(story.title) is not None
 
 
+_INDUSTRY_PITCH_RE = re.compile(
+    r"(?i)\b(?:helmer|works in progress|industry showcase|set to pitch|pitch their)\b"
+)
+
+
 def _is_unlistenable(story: EntertainmentStory) -> bool:
     """Industry copy that does not belong on a morning music-radio show."""
     blob = f"{story.title} {story.summary}"
     if _WRITERS_LAB_RE.search(blob) or _CAST_LIST_RE.search(blob):
         return True
     if _AGENCY_RE.search(blob) or _COMPANY_LAUNCH_RE.search(blob) or _SPEC_RE.search(blob):
+        return True
+    if _INDUSTRY_PITCH_RE.search(blob):
         return True
     if _UNTITLED_RE.search(blob) and not _movie_name(story.title):
         return True
@@ -1272,6 +1333,380 @@ def _emit_selection_log(log: list[dict[str, Any]]) -> None:
         )
 
 
+_BEAT_CASTING = "casting"
+_BEAT_THEATERS = "theaters"
+_BEAT_COMING = "coming_up"
+_BEAT_LOCAL = "local"
+_BEAT_CRITIC = "critic"
+_BEAT_MUSIC = "music"
+_BEAT_DEATH = "death"
+_BEAT_ORDER = (
+    _BEAT_CASTING,
+    _BEAT_THEATERS,
+    _BEAT_COMING,
+    _BEAT_LOCAL,
+    _BEAT_CRITIC,
+    _BEAT_MUSIC,
+    _BEAT_DEATH,
+)
+_BEAT_CAPS = {
+    _BEAT_CASTING: 4,
+    _BEAT_THEATERS: 3,
+    _BEAT_COMING: 6,
+    _BEAT_LOCAL: 4,
+    _BEAT_CRITIC: 3,
+    _BEAT_MUSIC: 1,
+    _BEAT_DEATH: 1,
+}
+_POINTER_RE = re.compile(
+    r"(?i)\b(?:go to|visit)\s+[a-z0-9.-]+\.(?:com|net)\b|appeared first on\b|check out some of\b"
+)
+_LOCAL_CUE_RE = re.compile(
+    r"(?i)\b(?:screening|concert|theater|theatre|boston|new england|survivor|emerson)\b"
+)
+_CASTING_CUE_RE = re.compile(
+    r"(?i)\b(?:to star|will star|have joined|has joined|agreed to|in talks|"
+    r"attached to|will play|to help shoot|is directing|writing and directing)\b"
+)
+_REVIEW_TITLE_RE = re.compile(r"(?i)^\s*(?:movie|tv)\s+review\b")
+_RELEASE_CUE_RE = re.compile(
+    r"(?i)\b(?:in theaters|opening in theaters|coming to theaters|opens in theaters)\b"
+)
+_MONTH_DATE_RE = re.compile(
+    r"(?i)\b("
+    r"january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
+    r")\.?\s+(\d{1,2})(?:,\s*(\d{4}))?\b"
+)
+_CAST_DUMP_RE = re.compile(r"(?i)\bthe cast also includes\b")
+_DEATH_SPEAK_RE = re.compile(
+    r"(?i)\b(?:has died|have died|died at|dead at|dies at|passed away|passes away)\b|\bdead\b"
+)
+
+
+def _is_report_pool(stories: list[EntertainmentStory]) -> bool:
+    return any(story.source_id in _REPORT_SOURCE_IDS for story in stories)
+
+
+def _air_text(text: str) -> str:
+    return (
+        _clean_text(text)
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
+
+
+def _clip_facts(summary: str) -> str:
+    text = _plain_body(summary)
+    text = re.split(r"(?i)\b(?:initial thoughts|related article)\b", text, maxsplit=1)[0]
+    text = re.sub(r"(?i)^preview:\s*", "", text).strip()
+    text = re.sub(r"(?i)\s*the post\s+.+?\s+appeared first on\s+boston\.com\.?", "", text)
+    return _clean_text(text)
+
+
+def _fact_sentences(text: str, limit: int = 2) -> list[str]:
+    kept: list[str] = []
+    for sentence in _story_sentences(text, 6):
+        if _POINTER_RE.search(sentence) or _CAST_DUMP_RE.search(sentence):
+            continue
+        if _FORBIDDEN_SPOKEN_RE.search(sentence):
+            continue
+        kept.append(sentence)
+    chosen = kept[:limit]
+    if chosen and not any(_MONTH_DATE_RE.search(sentence) for sentence in chosen):
+        for extra in kept[limit:limit + 2]:
+            if _MONTH_DATE_RE.search(extra):
+                chosen.append(extra)
+                break
+    return chosen
+
+
+def _is_credit_fragment(text: str) -> bool:
+    """A name and credits with no news, including no death."""
+    cleaned = _air_text(text).strip(" .")
+    if not cleaned or _DEATH_SPEAK_RE.search(cleaned) or _DEATH_ANNOUNCEMENT_RE.search(cleaned):
+        return False
+    if not re.search(r"(?i)\b(?:actress|actor)\b", cleaned):
+        return False
+    if re.search(
+        r"(?i)\b(?:will|is|are|was|were|has|have|opens|opening|stars|starring|joined|died|dies)\b",
+        cleaned,
+    ):
+        return False
+    return "," in cleaned
+
+
+def _lead_in(lead: str, sentence: str) -> str:
+    """Attach a beat label without starting the next word as a new sentence."""
+    first, separator, rest = sentence.partition(" ")
+    if first in {"This", "The", "It", "Somehow", "My"}:
+        sentence = first[:1].lower() + first[1:] + separator + rest
+    return f"{lead}{sentence}"
+
+
+def _join_names(names: list[str]) -> str:
+    cleaned = [name.strip(" .") for name in names if name.strip(" .")]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} and {cleaned[1]}"
+    return ", ".join(cleaned[:-1]) + ", and " + cleaned[-1]
+
+
+def _feed_date_phrase(text: str) -> str:
+    match = _MONTH_DATE_RE.search(text or "")
+    if not match:
+        return ""
+    month = match.group(1)
+    month = month[0].upper() + month[1:].lower()
+    if len(month) <= 3:
+        month = {
+            "Jan": "January",
+            "Feb": "February",
+            "Mar": "March",
+            "Apr": "April",
+            "Jun": "June",
+            "Jul": "July",
+            "Aug": "August",
+            "Sep": "September",
+            "Oct": "October",
+            "Nov": "November",
+            "Dec": "December",
+        }.get(month[:3].title(), month)
+    return f"{month} {int(match.group(2))}"
+
+
+def _coming_fact(story: EntertainmentStory) -> tuple[str, str] | None:
+    title = _air_text(story.title).strip(" .")
+    when = _feed_date_phrase(story.summary)
+    if not title or not when:
+        return None
+    if _POINTER_RE.search(title):
+        return None
+    return when, title
+
+
+def _casting_text(story: EntertainmentStory) -> str:
+    if _REVIEW_TITLE_RE.search(story.title):
+        return ""
+    if re.search(r"(?i)\binterview\b|\btop 10\b|didn't know|things you did", story.title):
+        return ""
+    blob = f"{story.title} {_clip_facts(story.summary)}"
+    if not _CASTING_CUE_RE.search(blob):
+        return ""
+    return " ".join(_fact_sentences(_clip_facts(story.summary), 2))
+
+
+def _is_box_office(story: EntertainmentStory) -> bool:
+    return re.search(r"(?i)\bbox office\b", story.title) is not None
+
+
+def _box_text(story: EntertainmentStory) -> str:
+    return " ".join(_fact_sentences(_clip_facts(story.summary), 2))
+
+
+def _release_text(story: EntertainmentStory) -> str:
+    sentences = _fact_sentences(_clip_facts(story.summary), 1)
+    if not sentences or not _RELEASE_CUE_RE.search(sentences[0]):
+        return ""
+    return sentences[0]
+
+
+def _local_text(story: EntertainmentStory) -> str:
+    body = _clip_facts(story.summary)
+    blob = f"{story.title} {body} {' '.join(story.categories)}"
+    if not body or not _LOCAL_CUE_RE.search(blob):
+        return ""
+    sentences = _fact_sentences(body, 1)
+    if not sentences:
+        return ""
+    return sentences[0]
+
+
+def _critic_text(story: EntertainmentStory) -> str:
+    if re.search(r"(?i)\b(?:festival|busan|dispatch)\b", f"{story.title} {' '.join(story.categories)}"):
+        return ""
+    summary = _clip_facts(story.summary)
+    if re.match(r"(?i)\s*an interview\b", summary) or re.search(r"(?i)\binterview\b", story.title):
+        return ""
+    sentences = _fact_sentences(summary, 1)
+    if not sentences:
+        return ""
+    return sentences[0]
+
+
+def _music_text(story: EntertainmentStory) -> str:
+    blob = f"{story.title} {' '.join(story.categories)}"
+    if re.search(r"(?i)\b(?:fashion|beauty|style)\b", blob):
+        return ""
+    match = re.search(r"(?i)new music[^:]*:\s*(.+)$", _air_text(story.title))
+    if not match:
+        return ""
+    names = re.sub(r"(?i),?\s+and more\.?$", "", match.group(1)).strip(" .")
+    parts = [part.strip() for part in names.split(",") if part.strip()][:6]
+    if len(parts) < 2:
+        return ""
+    return f"New music this week includes {_join_names(parts)}."
+
+
+def _death_text(story: EntertainmentStory) -> str:
+    if _is_unlistenable(story) or not is_morning_safe(story.title, story.summary):
+        return ""
+    for sentence in _fact_sentences(_clip_facts(story.summary), 3):
+        if _DEATH_SPEAK_RE.search(sentence) and not _is_credit_fragment(sentence):
+            return sentence
+    title = _headline_sentence(story.title)
+    if title and _DEATH_SPEAK_RE.search(title) and not _is_credit_fragment(title):
+        return title
+    return ""
+
+
+def _coming_text(stories: list[EntertainmentStory]) -> str:
+    groups: dict[str, list[str]] = {}
+    order: list[str] = []
+    for story in stories:
+        fact = _coming_fact(story)
+        if not fact:
+            continue
+        when, title = fact
+        if when not in groups:
+            if len(order) >= 2:
+                continue
+            order.append(when)
+            groups[when] = []
+        if len(groups[when]) >= 3:
+            continue
+        groups[when].append(title)
+    parts: list[str] = []
+    for when in order:
+        names = groups[when]
+        if not names:
+            continue
+        verb = "is dated" if len(names) == 1 else "are dated"
+        parts.append(f"{_join_names(names)} {verb} {when}")
+    if not parts:
+        return ""
+    return "Coming up, " + ". ".join(parts) + "."
+
+
+def _report_beat(story: EntertainmentStory) -> str | None:
+    if story.source_id not in _REPORT_SOURCE_IDS:
+        return None
+    if _is_credit_fragment(story.title) and _is_credit_fragment(f"{story.title} {story.summary}"):
+        return None
+    if _is_unlistenable(story):
+        return None
+    if _death_text(story):
+        return _BEAT_DEATH
+    if not is_morning_safe(story.title, story.summary):
+        return None
+    source = story.source_id
+    if source == "moviefone":
+        if _REVIEW_TITLE_RE.search(story.title):
+            return _BEAT_THEATERS if _release_text(story) else None
+        if _is_box_office(story) and _box_text(story):
+            return _BEAT_THEATERS
+        if _casting_text(story):
+            return _BEAT_CASTING
+        return None
+    if source == "filmjabber":
+        return _BEAT_COMING if _coming_fact(story) else None
+    if source == "boston":
+        return _BEAT_LOCAL if _local_text(story) else None
+    if source == "ebert":
+        return _BEAT_CRITIC if _critic_text(story) else None
+    if source == "et":
+        return _BEAT_MUSIC if _music_text(story) else None
+    return None
+
+
+def _speak_report(stories: list[EntertainmentStory]) -> list[str]:
+    """Spoken beats in the approved order. Empty beats are left out."""
+    buckets: dict[str, list[EntertainmentStory]] = {beat: [] for beat in _BEAT_ORDER}
+    for story in stories:
+        beat = _report_beat(story)
+        if not beat or len(buckets[beat]) >= _BEAT_CAPS[beat]:
+            continue
+        buckets[beat].append(story)
+    lines: list[str] = []
+    casting = [text for text in (_casting_text(story) for story in buckets[_BEAT_CASTING]) if text]
+    if casting:
+        lines.append(_air_text(" ".join(casting)))
+    box = [text for text in (_box_text(story) for story in buckets[_BEAT_THEATERS] if _is_box_office(story)) if text]
+    releases = [
+        text
+        for text in (_release_text(story) for story in buckets[_BEAT_THEATERS] if not _is_box_office(story))
+        if text
+    ]
+    if box or releases:
+        lines.append(_air_text(" ".join([*box, *releases])))
+    coming = _coming_text(buckets[_BEAT_COMING])
+    if coming:
+        lines.append(_air_text(coming))
+    local = [text for text in (_local_text(story) for story in buckets[_BEAT_LOCAL]) if text]
+    if local:
+        lines.append(_air_text(_lead_in("Closer to home, ", " ".join(local))))
+    critic = [text for text in (_critic_text(story) for story in buckets[_BEAT_CRITIC]) if text]
+    if critic:
+        lines.append(_air_text(_lead_in("On the critic side, ", " ".join(critic))))
+    music = [text for text in (_music_text(story) for story in buckets[_BEAT_MUSIC]) if text]
+    if music:
+        lines.append(_air_text(music[0]))
+    deaths = [text for text in (_death_text(story) for story in buckets[_BEAT_DEATH]) if text]
+    if deaths:
+        lines.append(_air_text(deaths[0]))
+    return lines
+
+
+def _rank_report_beats(
+    stories: list[EntertainmentStory],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    clock = _as_utc(now)
+    log: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    selected: list[EntertainmentStory] = []
+
+    def note(story: EntertainmentStory, status: str, reason: str) -> None:
+        published = _as_utc(story.published).isoformat() if story.published is not None else ""
+        log.append(
+            {
+                "title": story.title,
+                "source": _source_label(story),
+                "status": status,
+                "reason": reason,
+                "published": published,
+                "confirmed": [],
+                "story_key": str(id(story)),
+                "event": _event_key(story),
+            }
+        )
+
+    for story in stories:
+        note(story, "considered", "in the pool")
+        beat = _report_beat(story)
+        if not beat:
+            note(story, "rejected", "not a report beat")
+            continue
+        if counts.get(beat, 0) >= _BEAT_CAPS[beat]:
+            note(story, "rejected", "ranked below the report beats")
+            continue
+        counts[beat] = counts.get(beat, 0) + 1
+        selected.append(_with_slot(story, beat))
+        note(story, "selected", beat)
+    ordered: list[EntertainmentStory] = []
+    for beat in _BEAT_ORDER:
+        ordered.extend(story for story in selected if story.slot == beat)
+    return _rank_result(ordered, log, clock)
+
+
 def rank_entertainment_stories(
     stories: list[EntertainmentStory],
     *,
@@ -1285,6 +1720,8 @@ def rank_entertainment_stories(
     within seven days (Friday first), then streaming, box office, and other
     entertainment to fill.
     """
+    if _is_report_pool(stories):
+        return _rank_report_beats(stories, now=now)
     clock = _as_utc(now)
     log: list[dict[str, Any]] = []
     resolved: set[int] = set()
@@ -1484,20 +1921,18 @@ def collect_entertainment_report(
     limit: int = ENTERTAINMENT_STORY_COUNT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Parse every feed item plus supplemental search, then rank.
+    """Parse the report feeds, then rank them into the spoken beats.
 
     Pass `xml_by_url` for offline fixtures. Set `fetch` to download the
-    three station feeds and the Google News searches. Each request fails
-    on its own. The returned log is for the operator, not the script.
+    live report feeds. Legacy fixture URLs still parse when supplied.
+    Each request fails on its own. The returned log is for the operator,
+    not the script.
     """
     payloads: dict[str, str | BaseException] = {}
     if xml_by_url is not None:
         payloads = dict(xml_by_url)
     elif fetch:
-        targets = list(ENTERTAINMENT_SOURCES) + [
-            _google_source(google_news_rss_url(query)) for query in ENTERTAINMENT_SEARCH_QUERIES
-        ]
-        for source in targets:
+        for source in ENTERTAINMENT_SOURCES:
             url = source["url"]
             try:
                 payloads[url] = _fetch_feed_xml(url, timeout=timeout)
@@ -1506,7 +1941,8 @@ def collect_entertainment_report(
 
     stories: list[EntertainmentStory] = []
     seen_urls: set[str] = set()
-    for source in ENTERTAINMENT_SOURCES:
+    known_sources = (*ENTERTAINMENT_SOURCES, *_LEGACY_ENTERTAINMENT_SOURCES)
+    for source in known_sources:
         seen_urls.add(source["url"])
         payload = payloads.get(source["url"])
         if payload is None or isinstance(payload, BaseException):
@@ -1915,7 +2351,14 @@ def michael_g_script(
     handoff: str = MICHAEL_HANDOFF,
 ) -> str:
     """Spoken fallback. The introduction is here even when OpenAI is not called."""
-    selected = list(stories or [])[:ENTERTAINMENT_STORY_COUNT]
+    selected = list(stories or [])
+    if _is_report_pool(selected):
+        lines = [michael_straight_open_for(thanks_to)]
+        beats = _speak_report(selected)
+        lines.extend(beats or [empty_line])
+        lines.append(handoff or MICHAEL_HANDOFF)
+        return "\n".join(lines)
+    selected = selected[:ENTERTAINMENT_STORY_COUNT]
     lines = michael_open_lines(selected, thanks_to=thanks_to)
     if stories:
         lines.extend(
