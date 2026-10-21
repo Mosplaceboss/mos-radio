@@ -884,3 +884,35 @@ def repair_human_dj_script(
     text = ensure_bakehouse_invite(text)
     text = limit_to_one_cta(text, preferred_cta)
     return tidy_double_punctuation(text)
+
+
+def validate_conversational_break(
+    script: str,
+    *,
+    event_type: str = "",
+    subject: str = "",
+    label: str = "",
+    note: str = "",
+    host: str = "",
+    station_alert: bool = False,
+    custom_script: bool = False,
+):
+    """Structure gate used by Producer / ai_provider_policy after repair+focus.
+
+    Returns break_structure.StructureResult when available; otherwise a trivial pass.
+    """
+    try:
+        import break_structure
+    except Exception:
+        return None
+    return break_structure.validate_break_structure(
+        script,
+        subject=subject,
+        label=label,
+        note=note,
+        event_type=event_type,
+        host=host,
+        station_alert=station_alert,
+        custom_script=custom_script,
+        paraphrase_expected=True,
+    )

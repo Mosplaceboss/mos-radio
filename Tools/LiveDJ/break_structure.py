@@ -572,11 +572,6 @@ def birthday_extra_coaching(label: str = "", event_type: str = "", **_kwargs) ->
 birthday_structure_coaching = birthday_extra_coaching
 
 
-def needs_conversational_structure(subject: str = "", event_type: str = "") -> bool:
-    """Positional helper for break_continuity.focus_spoken_break."""
-    return requires_conversational_structure(subject=subject, event_type=event_type)
-
-
 def _note_is_verbatim(script: str, note: str) -> bool:
     detail = _norm_cf(note)
     spoken = _norm_cf(script)
