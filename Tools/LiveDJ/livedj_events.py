@@ -39,11 +39,15 @@ DEFAULT_STATION_FORMATS: tuple[str, ...] = (
 
 EVENT_COACHING: dict[str, str] = {
     "Show Open": """
-Welcome listeners.
+Welcome listeners with a natural greeting that fits the daypart and this host.
 Mention the day and time naturally.
 Mention the show's format.
-Tease two or three upcoming artists from the supplied music context.
-Sound like the host's personality profile — never read like a generic announcer.
+If a daily content item is supplied (celebrity birthday, fun day, question, announcement, etc.),
+lead into it conversationally, paraphrase the verified facts in the host's voice, and never read
+the source note verbatim.
+Finish with a natural transition into the music or the first talking point.
+Tease two or three upcoming artists from the supplied music context when music is part of this open.
+Sound like the host's personality profile — never read like a generic announcer or a database entry.
 Do not invent countdown rankings, chart positions, or "#1 song" claims unless explicitly supplied.
 """.strip(),
     "Check-In": """
@@ -165,7 +169,10 @@ LEGACY_MISSION_TEXT: dict[str, str] = {
 }
 
 DEFAULT_MISSIONS: dict[str, str] = {
-    "Show Open": "Welcome listeners, mention the day, introduce the format, and tease upcoming music.",
+    "Show Open": (
+        "Welcome listeners, introduce the host and format, conversationally cover any supplied "
+        "daily content (never verbatim), and transition into the music."
+    ),
     "Check-In": "Check in with listeners and reference the current daypart naturally.",
     "Weekend Check-In": "Weekend check-in and mention two upcoming artists.",
     "Artist Spotlight": "Share one brief verified fact about an upcoming artist.",
